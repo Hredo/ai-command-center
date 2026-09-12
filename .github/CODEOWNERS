@@ -1,0 +1,4 @@
+# Toda pull request pide automaticamente la revision del responsable.
+# Junto con la proteccion de main, es lo que hace que nada entre sin pasar
+# por aqui.
+* @Hredo
