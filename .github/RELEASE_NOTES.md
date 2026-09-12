@@ -1,69 +1,105 @@
-## Descargar
+## ⬇ Descargar · Download
 
-| Archivo | Para quién |
-|---|---|
-| `AI Command Center-Setup-<versión>.exe` | Lo normal. Instalador con acceso directo y desinstalador. |
-| `AI Command Center-<versión>-x64.zip` | Versión portátil. Descomprime y ejecuta el `.exe` de dentro. Sin instalar nada. |
-| `SHA256SUMS.txt` | Para verificar la descarga (opcional, abajo se explica). |
+| Archivo · File | Español | English |
+|---|---|---|
+| `AI Command Center-Setup-*.exe` | **Instalador.** Lo normal: crea accesos directos y desinstalador. No pide permisos de administrador. | **Installer.** The normal choice: creates shortcuts and an uninstaller. No admin rights needed. |
+| `AI Command Center-*-x64.zip` | **Portátil.** Descomprime y ejecuta. No instala nada. | **Portable.** Extract and run. Installs nothing. |
+| `SHA256SUMS.txt` | Para verificar la descarga. | To verify your download. |
 
-Sólo Windows 10/11 de 64 bits. No hace falta Node, ni Python, ni Visual Studio:
-va todo dentro.
+Windows 10 (22H2+) u 11, 64 bits · *Windows 10 (22H2+) or 11, 64-bit*
+No necesitas Node, Python ni Visual Studio · *No Node, Python or Visual Studio required*
 
 ---
 
-## Windows va a avisarte, y es normal
+## 🇪🇸 Español
 
-**La aplicación no está firmada digitalmente.** Firmar cuesta un certificado de
-pago, y este proyecto no tiene ninguno todavía. Eso no dice nada de si el
-programa es seguro o no: dice que nadie ha pagado por acreditar quién lo
-publica. El código está entero en este repositorio y puedes compilarlo tú mismo
-(`pnpm install && pnpm dist`) si prefieres no fiarte del binario.
+### Windows te va a avisar, y es normal
 
-Lo que vas a ver al abrirlo:
+**La aplicación no está firmada digitalmente.** Firmarla exige un certificado de pago de
+200-400 € al año, y este proyecto es gratuito y no tiene ninguno. El aviso **no dice que
+el programa sea peligroso**: dice que nadie ha pagado por acreditar quién lo publica.
 
-> **Windows protegió su PC** — Windows Defender SmartScreen impidió el inicio de
-> una aplicación no reconocida.
+Al abrirlo verás *«Windows protegió su PC»*. Pulsa **Más información** y después
+**Ejecutar de todas formas**. Sólo pasa la primera vez.
 
-Pulsa **Más información** y luego **Ejecutar de todas formas**. Eso es todo.
+**¿No aparece ese botón?** Tienes **Smart App Control** activado, que viene de fábrica en
+las instalaciones limpias de Windows 11 y no ofrece ninguna opción. Entonces:
 
-### Si no aparece el botón «Ejecutar de todas formas»
+1. Prueba el **`.zip` portátil**. Antes de descomprimirlo: clic derecho → **Propiedades**
+   → marca **Desbloquear**.
+2. O **compílalo tú mismo**, que es la vía que siempre funciona:
+   `git clone` → `pnpm install` → `pnpm dist`.
+3. Desactivar Smart App Control es **irreversible sin reinstalar Windows**. No lo hagas
+   por una aplicación.
 
-Entonces tienes **Smart App Control** activado, que viene de fábrica en las
-instalaciones limpias de Windows 11 y bloquea todo ejecutable sin firmar sin
-dar opción. Tienes tres salidas:
-
-1. **Prueba primero el `.zip` portátil.** A veces pasa donde el instalador no.
-2. **Compílalo tú**: clona el repositorio y ejecuta `pnpm install && pnpm dist`.
-   Lo que compilas en tu propia máquina no pasa por ese filtro.
-3. Desactivar Smart App Control es posible, pero **es irreversible sin
-   reinstalar Windows**, así que no lo recomiendo por una aplicación.
-
-## Verificar la descarga
-
-En PowerShell, en la carpeta donde la guardaste:
+### Verificar lo que has descargado
 
 ```powershell
 Get-FileHash '.\AI Command Center-Setup-0.4.0.exe' -Algorithm SHA256
 ```
 
-El resultado tiene que coincidir con la línea correspondiente de
-`SHA256SUMS.txt`.
+Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
+lo ejecutes.
+
+### La primera vez
+
+Arranca vacía a propósito: sin claves, sin cuenta y sin conectarse a nada. Necesitas al
+menos una de estas tres cosas:
+
+- **Una clave de API** — en Ajustes → Proveedores. Se guarda cifrada con DPAPI en tu
+  perfil de Windows y no sale de tu equipo.
+- **Un agente de línea de comandos** ya instalado (Claude Code, Codex, Aider, OpenCode,
+  Gemini CLI…). Se detecta solo, y no hace falta ninguna clave.
+- **Ollama** corriendo, para modelos locales sin pagar nada.
+
+Opcionales: `git` para el panel de git, la CLI `gh` para el de GitHub. Lo que falte se
+señala en su pantalla y el resto funciona igual.
+
+📖 [Instrucciones completas](https://github.com/Hredo/ai-command-center#instalación)
 
 ---
 
-## Qué te vas a encontrar la primera vez
+## 🇬🇧 English
 
-La aplicación arranca vacía a propósito: no trae ninguna clave ni se conecta a
-nada por su cuenta.
+### Windows will warn you, and that's expected
 
-- **Para hablar con modelos por API** ve a Ajustes y pega tu clave del proveedor
-  que uses. Se guarda cifrada con DPAPI en tu perfil de Windows; no sale de tu
-  equipo.
-- **Para los agentes de línea de comandos** (Claude Code, Codex, Aider,
-  OpenCode…) la aplicación detecta los que ya tengas instalados. Los que no
-  tengas aparecen como no encontrados, y el resto funciona igual.
-- **El panel de git** necesita `git` en el PATH; el de GitHub, la CLI `gh`.
-  Sin ellos esas dos pantallas lo dicen y ya está.
-- **Ollama**, si lo tienes corriendo, lo encuentra solo en `localhost:11434`.
+**The application is not code-signed.** Signing requires a paid certificate costing
+€200–400 a year, and this project is free and doesn't have one. The warning **does not say
+the program is dangerous**: it says nobody has paid to certify who publishes it.
 
-No hay cuenta que crear, ni servidor, ni telemetría.
+On opening it you'll see *"Windows protected your PC"*. Click **More info**, then
+**Run anyway**. It only happens the first time.
+
+**No such button?** You have **Smart App Control** enabled — it ships on by default on
+clean Windows 11 installations and offers no choice. In that case:
+
+1. Try the **portable `.zip`**. Before extracting: right-click → **Properties** → tick
+   **Unblock**.
+2. Or **build it yourself**, which always works:
+   `git clone` → `pnpm install` → `pnpm dist`.
+3. Turning Smart App Control off **cannot be undone without reinstalling Windows**. Don't
+   do it for one application.
+
+### Verifying your download
+
+```powershell
+Get-FileHash '.\AI Command Center-Setup-0.4.0.exe' -Algorithm SHA256
+```
+
+It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.
+
+### First run
+
+It starts empty on purpose: no keys, no account, no connections of its own. You need at
+least one of these three:
+
+- **An API key** — in Settings → Providers. Stored encrypted with DPAPI in your Windows
+  profile; it never leaves your machine.
+- **A command-line agent** you already have (Claude Code, Codex, Aider, OpenCode, Gemini
+  CLI…). Detected automatically, and no key required.
+- **Ollama** running, for local models at no cost.
+
+Optional: `git` for the git panel, the `gh` CLI for the GitHub panel. Anything missing is
+flagged on its own screen and everything else works the same.
+
+📖 [Full instructions](https://github.com/Hredo/ai-command-center/blob/main/README.en.md#installation)

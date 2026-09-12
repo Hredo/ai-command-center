@@ -1,58 +1,300 @@
+<div align="center">
+
+<img src="build/icon.png" alt="AI Command Center" width="120">
+
 # AI Command Center
 
-Aplicación de escritorio para Windows que unifica en un solo sitio el acceso a tus IAs,
-la analítica de lo que gastas y tardas, y la gestión de tus proyectos y agentes.
+**Español** · [English](README.en.md)
 
-Todo corre en local: las claves se guardan cifradas con DPAPI en tu perfil de usuario y
-el histórico vive en ficheros tuyos. No hay servidor, ni cuenta, ni telemetría.
+Centro de mando local para tus IAs, tus agentes y tus proyectos.
+Todo en tu equipo: sin cuenta, sin servidor y sin telemetría.
 
-[![ci](https://github.com/Hrval/ai-command-center/actions/workflows/ci.yml/badge.svg)](https://github.com/Hrval/ai-command-center/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/v/release/Hrval/ai-command-center)](https://github.com/Hrval/ai-command-center/releases/latest)
+[![ci](https://github.com/Hredo/ai-command-center/actions/workflows/ci.yml/badge.svg)](https://github.com/Hredo/ai-command-center/actions/workflows/ci.yml)
+[![última versión](https://img.shields.io/github/v/release/Hredo/ai-command-center?label=descargar)](https://github.com/Hredo/ai-command-center/releases/latest)
+[![descargas](https://img.shields.io/github/downloads/Hredo/ai-command-center/total?label=descargas)](https://github.com/Hredo/ai-command-center/releases)
 [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](#requisitos)
 
-## Descargar
+**[⬇ Descargar la última versión](https://github.com/Hredo/ai-command-center/releases/latest)**
 
-**[→ Última versión](https://github.com/Hrval/ai-command-center/releases/latest)**
+</div>
 
-Windows 10 u 11 de 64 bits. No necesitas Node, ni Python, ni Visual Studio: el
-instalador lo trae todo.
+---
 
-| Archivo | Para quién |
+## Índice
+
+- [Qué es](#qué-es)
+- [**Instalación**](#instalación) — [requisitos](#requisitos) · [instalador](#opción-a--instalador-recomendado) · [portátil](#opción-b--versión-portátil-sin-instalar) · [compilar](#opción-c--compilarlo-tú-mismo)
+- [Windows te va a avisar: por qué, y qué hacer](#windows-te-va-a-avisar-por-qué-y-qué-hacer)
+- [Verificar la descarga](#verificar-la-descarga)
+- [Primeros pasos](#primeros-pasos)
+- [Actualizar y desinstalar](#actualizar-y-desinstalar)
+- [Problemas frecuentes](#problemas-frecuentes)
+- [Qué hace](#qué-hace)
+- [Proveedores](#proveedores)
+- [Desarrollo](#desarrollo)
+- [Publicar una versión](#publicar-una-versión)
+- [Estructura](#estructura)
+- [Dónde guarda los datos](#dónde-guarda-los-datos)
+- [Contribuir](#contribuir)
+- [Licencia](#licencia)
+
+---
+
+## Qué es
+
+Una aplicación de escritorio para Windows que reúne en un solo sitio tres cosas que
+normalmente están repartidas entre media docena de pestañas y terminales:
+
+- **El acceso a tus IAs** — más de 8.000 modelos de 32 proveedores por API, los agentes
+  de línea de comandos que ya tengas instalados (Claude Code, Codex, Aider, OpenCode…) y
+  los modelos locales que corras con Ollama, todos desde la misma consola.
+- **La analítica de lo que gastas** — coste por día, tokens, latencia hasta el primer
+  token, velocidad de generación, tasa de error y ranking de modelos. Incluidas las
+  sesiones que lanzaste fuera de la aplicación.
+- **Tus proyectos** — ficheros, editor con coloreado, git completo con árbol de commits,
+  GitHub, terminales reales y agentes ejecutándose dentro de cada carpeta.
+
+Todo corre en local. Las claves se guardan cifradas con DPAPI en tu perfil de Windows y
+el histórico vive en ficheros tuyos. No hay servidor, ni cuenta que crear, ni telemetría.
+
+---
+
+## Instalación
+
+### Requisitos
+
+| | |
 |---|---|
-| `AI Command Center-Setup-<versión>.exe` | Lo normal: instala, crea el acceso directo y deja desinstalador. |
-| `AI Command Center-<versión>-x64.zip` | Portátil. Descomprime y ejecuta. No instala nada ni toca el registro. |
-| `SHA256SUMS.txt` | Para verificar la descarga. |
+| **Sistema** | Windows 10 (22H2 o superior) o Windows 11, **64 bits** |
+| **Disco** | Unos 400 MB |
+| **Permisos** | **No hace falta ser administrador.** Se instala en tu perfil de usuario |
+| **Y nada más** | No necesitas Node, ni Python, ni Visual Studio: va todo dentro |
 
-### Windows te va a avisar, y es normal
+Opcionales. Cada uno desbloquea una parte, y ninguno es obligatorio:
 
-La aplicación **no está firmada digitalmente**: firmarla exige un certificado de
-pago que este proyecto todavía no tiene. Eso no dice nada sobre si el programa es
-seguro, sólo que nadie ha pagado por acreditar quién lo publica. El código está
-entero aquí y puedes compilarlo tú mismo si prefieres no fiarte del binario.
+| Programa | Para qué | Cómo instalarlo |
+|---|---|---|
+| `git` | El panel de git y el árbol de commits | `winget install --id Git.Git` |
+| `gh` | El panel de GitHub | `winget install --id GitHub.cli` |
+| [Ollama](https://ollama.com) | Modelos locales | `winget install --id Ollama.Ollama` |
+| Cualquier agente CLI | Ejecutarlo desde la app | Claude Code, Codex, Aider, OpenCode, Gemini CLI… |
 
-Al abrirlo verás *«Windows protegió su PC»*. Pulsa **Más información** →
-**Ejecutar de todas formas**.
+Lo que no tengas instalado aparece como «no encontrado» en su pantalla y el resto de la
+aplicación funciona igual. No hay nada que se rompa por faltar.
 
-Si ese botón no aparece, tienes **Smart App Control** activado —viene de fábrica
-en las instalaciones limpias de Windows 11— y bloquea todo ejecutable sin firmar
-sin dar opción. Entonces: prueba el `.zip` portátil, o compílalo tú con
-`pnpm install && pnpm dist`. Desactivar Smart App Control es irreversible sin
-reinstalar Windows, así que no lo recomiendo por una aplicación.
+---
 
-### La primera vez
+### Opción A — Instalador (recomendado)
 
-Arranca vacía a propósito: no trae ninguna clave ni se conecta a nada por su
-cuenta. Para que haga algo necesitas **al menos una** de estas dos cosas:
+1. Abre la **[página de descargas](https://github.com/Hredo/ai-command-center/releases/latest)**.
+2. En la sección **Assets**, descarga el archivo que acaba en `.exe`:
 
-- **Una clave de API** de cualquier proveedor, pegada en Ajustes. Se guarda
-  cifrada con DPAPI en tu perfil de Windows y no sale de tu equipo.
-- **Un agente de línea de comandos** ya instalado (Claude Code, Codex, Aider,
-  OpenCode, Gemini CLI…). La aplicación detecta los que tengas; los que no,
-  aparecen como no encontrados y el resto sigue funcionando.
+   ```
+   AI Command Center-Setup-0.4.0.exe
+   ```
 
-Complementos opcionales: `git` en el PATH para el panel de git, la CLI `gh` para
-el de GitHub, y Ollama corriendo en `localhost:11434` si quieres modelos locales.
-Sin ellos esas pantallas lo dicen y ya está; no rompen nada.
+3. Ejecútalo haciendo doble clic. **Windows va a mostrarte un aviso azul**; es normal y
+   está explicado [aquí abajo](#windows-te-va-a-avisar-por-qué-y-qué-hacer): pulsa
+   **Más información** y después **Ejecutar de todas formas**.
+4. Elige la carpeta de instalación o deja la que propone.
+5. Al terminar tendrás el acceso directo en el escritorio y en el menú de inicio.
+
+No pide permisos de administrador y no toca nada fuera de tu perfil de usuario.
+
+---
+
+### Opción B — Versión portátil (sin instalar)
+
+Útil si no quieres instalar nada, si vas a llevártela en un USB, o si el instalador se te
+queda bloqueado.
+
+1. Descarga el archivo que acaba en `.zip`:
+
+   ```
+   AI Command Center-0.4.0-x64.zip
+   ```
+
+2. **Antes de descomprimir**, haz clic derecho sobre el `.zip`, entra en **Propiedades**,
+   marca **Desbloquear** abajo del todo y pulsa **Aceptar**.
+
+   > Este paso importa. Windows marca todo lo que se descarga de internet, y esa marca se
+   > contagia a cada archivo que salga del zip. Desbloqueando el zip antes, te ahorras el
+   > aviso en todos los archivos de dentro.
+
+3. Descomprime la carpeta donde quieras.
+4. Entra y ejecuta **`AI Command Center.exe`**.
+
+No escribe en el registro ni deja rastro fuera de su carpeta y de la carpeta de datos.
+Para desinstalarla, se borra la carpeta.
+
+---
+
+### Opción C — Compilarlo tú mismo
+
+Es la vía más limpia: lo que compilas en tu propia máquina no pasa por ningún filtro de
+reputación, así que no hay avisos de ningún tipo.
+
+Necesitas [Node 22](https://nodejs.org) y **pnpm** (nunca npm: rompe el árbol de
+`node_modules`):
+
+```bash
+npm install -g pnpm
+```
+
+Y después:
+
+```bash
+git clone https://github.com/Hredo/ai-command-center.git
+```
+
+```bash
+cd ai-command-center && pnpm install
+```
+
+```bash
+pnpm dist
+```
+
+El instalador aparece en `release/`. Si tu Windows tampoco deja generarlo, usa
+`pnpm dist:zip`, que produce la versión portátil y no necesita lanzar ningún ejecutable
+durante el empaquetado.
+
+Para trabajar sobre el código sin empaquetar nada: `pnpm dev`.
+
+---
+
+## Windows te va a avisar: por qué, y qué hacer
+
+**La aplicación no está firmada digitalmente.** Firmar un programa para Windows exige
+comprar un certificado que cuesta entre 200 y 400 € al año, y este proyecto es gratuito y
+no tiene ninguno.
+
+Conviene entender qué significa eso exactamente, porque el aviso de Windows suena peor de
+lo que es: **no dice que el programa sea peligroso**. Dice que nadie ha pagado por
+acreditar quién lo publica. Es una afirmación sobre el papeleo, no sobre el código.
+
+Lo que puedes hacer en vez de fiarte de mi palabra:
+
+- El código está **entero en este repositorio**, hasta la última línea.
+- Los binarios los **compila GitHub Actions** en una máquina limpia y a la vista de todos:
+  cada Release enlaza el registro de la compilación que la produjo.
+- Puedes **compilarlo tú** con la [Opción C](#opción-c--compilarlo-tú-mismo) y no
+  descargar ningún binario.
+- Puedes **verificar** que lo que bajaste es exactamente lo que se compiló, con los
+  [SHA-256](#verificar-la-descarga).
+
+### El aviso normal
+
+> **Windows protegió su PC**
+>
+> Windows Defender SmartScreen impidió el inicio de una aplicación no reconocida.
+> Ejecutar esta aplicación puede poner en riesgo su PC.
+
+Pulsa **Más información** y aparecerá el botón **Ejecutar de todas formas**. Eso es todo,
+y sólo pasa la primera vez.
+
+### Si no aparece «Ejecutar de todas formas»
+
+Entonces tienes activado **Smart App Control**, una protección que viene de fábrica en las
+instalaciones limpias de Windows 11 y que bloquea todo ejecutable sin firmar sin ofrecer
+ninguna opción. Tienes tres salidas, en este orden:
+
+1. **Prueba la [versión portátil](#opción-b--versión-portátil-sin-instalar)**, acordándote
+   de desbloquear el zip antes de descomprimir. A veces pasa donde el instalador no.
+2. **[Compílalo tú mismo](#opción-c--compilarlo-tú-mismo).** Lo que sale de tu propia
+   máquina no pasa por ese filtro. Es la vía que siempre funciona.
+3. Desactivar Smart App Control es técnicamente posible, pero **es irreversible sin
+   reinstalar Windows entero**. No lo recomiendo por una aplicación: usa la opción 2.
+
+---
+
+## Verificar la descarga
+
+Cada Release incluye un archivo `SHA256SUMS.txt` con la huella de todos los binarios. Para
+comprobar que lo que has descargado es exactamente eso, abre PowerShell en la carpeta de
+descargas y ejecuta:
+
+```powershell
+Get-FileHash '.\AI Command Center-Setup-0.4.0.exe' -Algorithm SHA256
+```
+
+El valor que salga tiene que coincidir, letra por letra, con la línea correspondiente de
+`SHA256SUMS.txt`. Si no coincide, **no lo ejecutes**: bórralo y vuelve a descargarlo.
+
+---
+
+## Primeros pasos
+
+La aplicación **arranca vacía a propósito**: no trae ninguna clave, no crea ninguna cuenta
+y no se conecta a nada por su cuenta. Para que haga algo necesitas al menos una de estas
+tres cosas.
+
+### 1. Una clave de API
+
+Sirve cualquiera de los [32 proveedores](#proveedores).
+
+1. Abre **Ajustes** y entra en **Proveedores**.
+2. Busca el tuyo y pega la clave.
+3. Listo: ya aparece en la Consola, en la Arena y en el catálogo de Modelos.
+
+> **Dónde acaba tu clave.** Se guarda cifrada con DPAPI —el sistema de credenciales del
+> propio Windows, atado a tu cuenta de usuario— en
+> `%APPDATA%\AI Command Center\data\secrets.json`. No sale de tu equipo salvo hacia el
+> proveedor al que se la mandas, y nunca se escribe en el histórico ni en los registros.
+> Si prefieres no guardarla, la app también lee las variables de entorno habituales
+> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`…).
+
+### 2. Un agente de línea de comandos
+
+Si ya usas Claude Code, Codex, Aider, OpenCode o Gemini CLI, no necesitas ninguna clave:
+la aplicación los busca en tu `PATH` y los ejecuta con tu sesión de siempre.
+
+1. Abre **Agentes**. Los que tengas instalados salen detectados, con su versión.
+2. Selecciona uno en la Consola y escribe.
+
+### 3. Modelos locales, sin pagar nada a nadie
+
+1. Instala [Ollama](https://ollama.com) y arráncalo.
+2. Abre **Ajustes** y entra en **Local**. La app lo detecta solo en `localhost:11434`.
+3. Desde ahí ves tu hardware, los modelos que tienes y las recomendaciones calculadas con
+   la VRAM real de tu GPU. Se instalan y se borran con un botón.
+
+---
+
+## Actualizar y desinstalar
+
+**Actualizar** — descarga el instalador de la versión nueva y ejecútalo encima. Conserva
+tu configuración, tus claves y todo el histórico. Para enterarte de cuándo hay versión
+nueva, pulsa *Watch → Custom → Releases* arriba en este repositorio.
+
+**Desinstalar** — desde *Configuración de Windows → Aplicaciones*, o con el desinstalador
+del menú de inicio. Si usaste la versión portátil, borra la carpeta.
+
+**Tus datos no se borran al desinstalar.** Siguen en `%APPDATA%\AI Command Center\` para
+que reinstalar no te deje a cero. Si quieres borrarlos de verdad, elimina esa carpeta a
+mano.
+
+---
+
+## Problemas frecuentes
+
+| Síntoma | Qué pasa | Solución |
+|---|---|---|
+| Windows dice «protegió su PC» | La app no está firmada | **Más información** → **Ejecutar de todas formas** |
+| No sale el botón «Ejecutar de todas formas» | Smart App Control activo | [Usa el zip o compílalo](#si-no-aparece-ejecutar-de-todas-formas) |
+| El antivirus lo pone en cuarentena | Falso positivo habitual con binarios de Electron sin firmar | Verifica el [SHA-256](#verificar-la-descarga) y añade una excepción, o compílalo tú |
+| La app abre pero está todo vacío | Es lo normal al principio | Añade una clave o un agente: ver [Primeros pasos](#primeros-pasos) |
+| La terminal se abre y se queda colgada | Faltan los binarios de la consola nativa | Vuelve a descargar; si compilas tú, ejecuta `pnpm install` y luego `pnpm dist` |
+| El panel de git dice que no hay git | `git` no está en el `PATH` | `winget install --id Git.Git` y reinicia la app |
+| El panel de GitHub pide iniciar sesión | Falta la CLI de GitHub | `winget install --id GitHub.cli`, después `gh auth login --web` |
+| Ollama no aparece | El servidor no está corriendo | Arráncalo, o usa el botón de **Ajustes → Local** |
+| Un proveedor responde 401 | Clave incorrecta o caducada | Vuelve a pegarla en **Ajustes → Proveedores** |
+
+¿Nada de esto lo arregla? [Abre una incidencia](https://github.com/Hredo/ai-command-center/issues/new/choose)
+contando tu versión de Windows, cómo instalaste la app y qué hiciste justo antes.
+
+---
 
 ## Qué hace
 
@@ -91,6 +333,7 @@ van aparte —si se sumaran con los demás saldrían cientos de millones en una 
 dinero es lo que costaría a precio de API, que con plan de pago no es lo que pagas. El
 tope del plan no lo publica nadie, así que no se pinta ningún porcentaje: se enseña el
 gasto real y la hora del reinicio, y ahí se para.
+
 - **Archivos que toca**: los que cambiaron de verdad, medidos comparando el repositorio
   antes y después, con sus líneas añadidas y quitadas; y aparte los que el agente dice
   haber abierto, distinguiendo lo que sólo leyó de lo que editó.
@@ -215,7 +458,7 @@ emborronados. La animación se para sola cuando te vas a otra pestaña.
 **Notificaciones** — avisos del sistema al terminar un prompt, un agente, una comparativa,
 una descarga de modelo o un comando de terminal que haya tardado más de doce segundos.
 
-## Detalles que importan
+### Detalles que importan
 
 **Nada se interrumpe al cambiar de pantalla, ni al cambiar de ventana.** Las
 conversaciones, los agentes, las terminales y la Arena viven en un almacén global del
@@ -245,17 +488,32 @@ pocos segundos y avisa al renderer cuando uno aparece o desaparece: arrancar Oll
 app abierta se nota sin pulsar nada. Si el motor sólo responde por una de las dos
 direcciones (`127.0.0.1` o `localhost`), se guarda la que funciona.
 
+### Seguridad
+
+La ventana del renderer corre con `sandbox`, `contextIsolation` y sin acceso a Node. No
+puede navegar a ningún sitio, abrir ventanas nuevas ni pedir cámara, micrófono o
+ubicación. Una política de contenido (CSP) impide cargar nada que no sea suyo. Los
+mensajes que llegan por IPC se comprueban: que vengan de la ventana correcta, y que los
+argumentos sean del tipo y del tamaño que se espera. Abrir un enlace externo significa
+`http(s)` y nada más. Todo eso vive en [`src/main/security.ts`](src/main/security.ts), y
+la aplicación lo enseña en su propia pantalla de Seguridad: si alguien afloja un ajuste,
+se ve.
+
+---
+
 ## Proveedores
 
 32 en el catálogo, hablando cuatro protocolos: Anthropic, OpenAI (y los ~20 compatibles),
 Google Gemini y Ollama nativo.
 
-En la nube: Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, xAI, Mistral, Together,
-Fireworks, Cerebras, Perplexity, Cohere, Moonshot, Zhipu, Qwen, NVIDIA, SambaNova, Nebius,
-Hyperbolic, Hugging Face, GitHub Models y Azure OpenAI.
+**En la nube** — Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, xAI, Mistral,
+Together, Fireworks, Cerebras, Perplexity, Cohere, Moonshot, Zhipu, Qwen, NVIDIA,
+SambaNova, Nebius, Hyperbolic, Hugging Face, GitHub Models y Azure OpenAI.
 
-En local, detectados por sondeo de puertos: Ollama, LM Studio, llama.cpp, vLLM, Jan,
+**En local**, detectados por sondeo de puertos — Ollama, LM Studio, llama.cpp, vLLM, Jan,
 LocalAI, GPT4All, KoboldCpp y Text generation WebUI.
+
+---
 
 ## Desarrollo
 
@@ -273,13 +531,13 @@ pnpm install
 pnpm dev            # app en caliente con recarga
 pnpm build          # compila a out/
 pnpm dist           # genera el instalador en release/
+pnpm dist:zip       # genera sólo la versión portátil
+pnpm typecheck      # comprueba los tipos de los dos procesos
 ```
 
 Verificación:
 
 ```bash
-pnpm exec tsc --noEmit -p tsconfig.node.json
-pnpm exec tsc --noEmit -p tsconfig.web.json
 pnpm exec electron scripts/smoke.cjs         # arranca y captura pantalla
 pnpm exec electron scripts/test-engine.cjs   # motor de streaming, con un SSE falso
 pnpm exec electron scripts/test-pty.cjs      # terminal real: opencode, Ctrl+C, códigos
@@ -299,58 +557,7 @@ los mismos eventos que Claude Code y OpenCode, capturados de las dos herramienta
 reales—, así que no gastan tokens ni tocan ninguna cuenta. Las de git y ficheros montan un
 repositorio temporal y lo borran al acabar.
 
-## Publicar una versión
-
-Los binarios los genera GitHub Actions, no esta máquina. La razón es concreta:
-aquí Smart App Control está activado y en modo de imposición, así que el
-instalador NSIS **no se puede ni generar** —electron-builder necesita lanzar un
-ejecutable temporal para escribir el desinstalador y Windows no le deja— ni
-ejecutar una vez hecho. El runner de GitHub es un Windows limpio sin esa
-restricción: allí sale siempre, y sale igual cada vez.
-
-Publicar es empujar una etiqueta:
-
-```bash
-git tag v0.4.0
-git push origin v0.4.0
-```
-
-`.github/workflows/release.yml` comprueba tipos, verifica los binarios nativos,
-compila, empaqueta el instalador y el zip portátil, calcula los SHA-256 y crea la
-Release con todo dentro. `.github/workflows/ci.yml` hace lo mismo sin empaquetar
-en cada empujón a `main`.
-
-### Probar en esta máquina sin instalador
-
-El zip portátil sí se puede generar en local, porque no lanza ningún ejecutable
-durante el empaquetado:
-
-```bash
-pnpm dist:zip
-```
-
-Y para actualizar la copia ya instalada sin tocar el ejecutable —que Windows ya
-tiene permitido— todo el código vive en `resources\app.asar`, así que basta con
-sustituir eso:
-
-```bash
-pnpm build
-pnpm exec electron-builder --win --dir
-powershell -ExecutionPolicy Bypass -File .\scripts\actualizar-instalacion.ps1
-```
-
-El script pide elevación, cierra la aplicación si está abierta, guarda una copia
-fechada en `release\respaldo-<fecha>` y copia lo nuevo. Para volver atrás, se
-copia el `app.asar` del respaldo encima. Sólo vale mientras la versión de
-Electron no cambie; si cambia, hace falta un instalador de verdad.
-
-### Firma
-
-Nada de lo anterior firma la aplicación, y sin firma Windows avisa a quien la
-descargue (y Smart App Control directamente la bloquea). Cuando haya
-certificado, se añade al workflow y deja de hacer falta explicarle nada a nadie.
-
-## Dependencias nativas
+### Dependencias nativas
 
 Sólo una: `@homebridge/node-pty-prebuilt-multiarch`, que es la que da la consola real.
 Trae binarios precompilados, así que **no** hace falta Visual Studio ni node-gyp. Si algún
@@ -361,6 +568,48 @@ El resto no tiene nada nativo a propósito: el histórico es JSONL en vez de SQL
 
 pnpm 11 exige autorizar los scripts de instalación en `allowBuilds`, dentro de
 `pnpm-workspace.yaml`. Sin eso el módulo se instala sin binario y en silencio.
+
+---
+
+## Publicar una versión
+
+Los binarios los genera GitHub Actions, no la máquina de desarrollo. La razón es concreta:
+allí Smart App Control está activado y en modo de imposición, así que el instalador NSIS
+**no se puede ni generar** —electron-builder necesita lanzar un ejecutable temporal para
+escribir el desinstalador y Windows no le deja— ni ejecutar una vez hecho. El runner de
+GitHub es un Windows limpio sin esa restricción: allí sale siempre, y sale igual cada vez.
+
+Publicar es empujar una etiqueta:
+
+```bash
+git tag v0.4.0 && git push origin v0.4.0
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) comprueba tipos, verifica
+los binarios nativos, compila, empaqueta el instalador y el zip portátil, calcula los
+SHA-256 y crea la Release con todo dentro.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) hace lo mismo sin empaquetar, en
+cada empujón y en cada pull request.
+
+### Actualizar una instalación sin instalador
+
+Todo el código de la aplicación vive en `resources\app.asar`, así que en una máquina donde
+el instalador esté bloqueado basta con sustituir eso y dejar el ejecutable —que Windows ya
+tiene permitido— en paz:
+
+```bash
+pnpm build && pnpm exec electron-builder --win --dir
+```
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\actualizar-instalacion.ps1
+```
+
+El script pide elevación, cierra la aplicación si está abierta, guarda una copia fechada
+en `release\respaldo-<fecha>` y copia lo nuevo. Para volver atrás, se copia el `app.asar`
+del respaldo encima. Sólo vale mientras la versión de Electron no cambie.
+
+---
 
 ## Estructura
 
@@ -390,6 +639,7 @@ src/
     github.ts          sesión y repositorios a través de gh
     attach.ts          adjuntos del prompt
     effort.ts          el esfuerzo, traducido a cada proveedor
+    security.ts        endurecimiento: CSP, permisos y validación de IPC
     providers/
       catalog.ts       los 32 proveedores
       models.ts        catálogo dinámico y cálculo de precios
@@ -405,6 +655,7 @@ src/
     lib/house.ts       el plano de La Casa: habitaciones, puertas, sitios y el
                        vaivén de los vecinos
     lib/pixelArt.ts    el dibujo de La Casa, píxel a píxel, sin imágenes
+    lib/i18n.tsx       los textos, en español y en inglés
     components/        Terminal (xterm.js), FilesPanel, Code (editor coloreado),
                        GitPanel, GitGraph (árbol, merges y rebases), GithubPanel,
                        AgentPanel (contexto, consumo, plan de Claude, ramas),
@@ -413,15 +664,50 @@ src/
     pages/             las diez secciones
 ```
 
+---
+
 ## Dónde guarda los datos
 
 `%APPDATA%\AI Command Center\data\`
 
-- `config.json` — proveedores, agentes, proyectos y preferencias
-- `secrets.json` — API keys cifradas con las credenciales de Windows
-- `runs.jsonl` — una línea por ejecución, con todas sus métricas
-- `sessions.json` — conversaciones y sesiones de agente
-- `models-cache.json` — catálogo de modelos y precios
-- `shell-init.ps1` — integración de shell que carga la terminal
+| Fichero | Qué lleva |
+|---|---|
+| `config.json` | Proveedores, agentes, proyectos y preferencias |
+| `secrets.json` | API keys cifradas con las credenciales de Windows |
+| `runs.jsonl` | Una línea por ejecución, con todas sus métricas |
+| `sessions.json` | Conversaciones y sesiones de agente |
+| `models-cache.json` | Catálogo de modelos y precios |
+| `shell-init.ps1` | Integración de shell que carga la terminal |
 
-Se abre desde Ajustes → Preferencias → Abrir carpeta de datos.
+Se abre desde **Ajustes → Preferencias → Abrir carpeta de datos**.
+
+Nada de esto sale de tu equipo. No hay servidor al que mandarlo, ni telemetría, ni
+comprobación de licencia.
+
+---
+
+## Contribuir
+
+Las aportaciones son bienvenidas, por el camino habitual de GitHub:
+
+1. Haz un **fork** del repositorio.
+2. Crea una rama para tu cambio (`git checkout -b arregla-lo-que-sea`).
+3. Comprueba que pasa `pnpm typecheck` y `pnpm build`.
+4. Abre un **pull request** contra `main`.
+
+**La rama `main` está protegida.** No se puede empujar a ella directamente, ni forzar el
+histórico, ni borrarla: todo entra por pull request, con la CI en verde, y el merge lo
+aprueba el responsable del repositorio. Por eso el paso 1 es un fork.
+
+Para informar de un fallo, usa la
+[plantilla de incidencias](https://github.com/Hredo/ai-command-center/issues/new/choose):
+pide la versión y cómo instalaste la app, que es lo que hace falta para reproducirlo.
+
+---
+
+## Licencia
+
+[MIT](LICENSE) — © 2026 Hredo.
+
+Puedes usarlo, modificarlo y distribuirlo, incluso comercialmente, conservando el aviso de
+copyright. Se entrega **sin garantía de ningún tipo**.

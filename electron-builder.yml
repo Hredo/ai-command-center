@@ -1,6 +1,6 @@
 appId: com.hrval.aicommandcenter
 productName: AI Command Center
-copyright: Copyright (c) 2026 Hrval
+copyright: Copyright (c) 2026 Hredo
 directories:
   buildResources: build
   output: release

@@ -3,7 +3,7 @@
   "productName": "AI Command Center",
   "version": "0.4.0",
   "description": "Centro de mando local para IAs, agentes y proyectos",
-  "author": "Hrval",
+  "author": "Hredo",
   "license": "MIT",
   "private": true,
   "main": "./out/main/index.js",
@@ -50,11 +50,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Hrval/ai-command-center.git"
+    "url": "git+https://github.com/Hredo/ai-command-center.git"
   },
-  "homepage": "https://github.com/Hrval/ai-command-center",
+  "homepage": "https://github.com/Hredo/ai-command-center",
   "bugs": {
-    "url": "https://github.com/Hrval/ai-command-center/issues"
+    "url": "https://github.com/Hredo/ai-command-center/issues"
   },
   "engines": {
     "node": ">=22"
