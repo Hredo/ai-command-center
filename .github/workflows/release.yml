@@ -58,10 +58,15 @@ jobs:
       - name: Empaquetar
         run: pnpm exec electron-builder --win nsis zip --publish never
 
+      # Sin -Recurse y solo ficheros: dentro de release/win-unpacked esta la
+      # aplicacion entera desempaquetada, con sus propios .exe (OpenConsole y
+      # compania). Recorrerla mete esos binarios donde no pintan nada.
       - name: Calcular SHA-256
         shell: pwsh
         run: |
-          $files = Get-ChildItem release -Include *.exe, *.zip -Recurse
+          $files = Get-ChildItem -Path release -File |
+                   Where-Object { $_.Extension -in '.exe', '.zip' }
+          if (-not $files) { throw 'No hay artefactos en release/' }
           $lines = foreach ($f in $files) {
             $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
             "$h  $($f.Name)"
@@ -85,8 +90,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $assets = Get-ChildItem release -Include *.exe, *.exe.blockmap, *.zip, SHA256SUMS.txt -Recurse |
+          $assets = Get-ChildItem -Path release -File |
+                    Where-Object { $_.Extension -in '.exe', '.zip', '.blockmap' -or
+                                   $_.Name -eq 'SHA256SUMS.txt' } |
                     ForEach-Object { $_.FullName }
+          if (-not $assets) { throw 'No hay nada que publicar en release/' }
+          Write-Host 'Se publican:'
+          $assets | ForEach-Object { Write-Host "  $_" }
           gh release create $env:GITHUB_REF_NAME @assets `
             --title "AI Command Center $env:GITHUB_REF_NAME" `
             --notes-file .github/RELEASE_NOTES.md
