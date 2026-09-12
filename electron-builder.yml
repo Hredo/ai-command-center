@@ -1,0 +1,46 @@
+appId: com.hrval.aicommandcenter
+productName: AI Command Center
+copyright: Copyright (c) 2026 Hrval
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+  # Explicito aunque electron-builder ya incluye las dependencias de
+  # produccion: deja claro que el binario del PTY tiene que viajar.
+  - node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*
+# El unico modulo nativo trae binarios precompilados compatibles con la ABI de
+# Electron 44 (verificado), asi que no hay que recompilar nada. Sin esto
+# electron-builder llama a node-gyp y falla por no encontrar Visual Studio.
+npmRebuild: false
+asar: true
+# El PTY es un modulo nativo: sus .node, la DLL de ConPTY y OpenConsole.exe
+# tienen que quedar fuera del asar para que Windows pueda cargarlos.
+asarUnpack:
+  - '**/node_modules/@homebridge/node-pty-prebuilt-multiarch/**'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    # El zip es la salida de emergencia: quien tenga Smart App Control activado
+    # no puede ejecutar el instalador, pero descomprimir y abrir suele pasar.
+    # Tambien es el unico artefacto que se puede generar en esta maquina, porque
+    # no necesita lanzar ningun ejecutable temporal durante el empaquetado.
+    - target: zip
+      arch:
+        - x64
+  icon: build/icon.png
+  # Nombre por defecto (lo hereda el zip); el instalador lo pisa abajo.
+  artifactName: ${productName}-${version}-${arch}.${ext}
+nsis:
+  artifactName: ${productName}-Setup-${version}.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: AI Command Center
+  deleteAppDataOnUninstall: false

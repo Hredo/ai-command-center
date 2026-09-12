@@ -1,0 +1,508 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Sistema visual.
+
+   Todo lo que se ve sale de variables CSS. Los valores que hay aquí son sólo
+   el punto de partida: en cuanto arranca, `prefs.tsx` los reescribe en el
+   elemento raíz con los del tema elegido. Por eso cambiar de tema no vuelve a
+   montar ni un componente — se reescriben unas variables y el navegador
+   repinta— y por eso conviene que nadie escriba un color a pelo en un
+   componente: lo que no pase por aquí no cambia con el tema.
+   --------------------------------------------------------------------------- */
+@theme {
+  --color-void: #08090d;
+  --color-panel: #0f1117;
+  --color-raised: #151824;
+  --color-hover: #1b1f2d;
+  --color-line: #1e2231;
+  --color-line-soft: #171a26;
+
+  --color-ink: #e7eaf2;
+  --color-muted: #8b93a7;
+  --color-dim: #5b6377;
+
+  --color-accent: #22d3ee;
+  --color-accent-dim: #0e7490;
+  --color-accent-soft: #6ee0f3;
+  --color-violet: #a78bfa;
+  --color-ok: #34d399;
+  --color-warn: #f59e0b;
+  --color-bad: #fb7185;
+
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+  --font-sans: 'Segoe UI Variable Display', 'Segoe UI', Inter, system-ui, sans-serif;
+
+  /* Redondeo. Lo cambia el ajuste de esquinas, y con él toda la aplicación. */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+}
+
+/* ---------------------------------------------------------------------------
+   Valores que no son colores de tema pero también se ajustan.
+   --------------------------------------------------------------------------- */
+:root {
+  --ui-size: 13.5px;
+  --anim-fast: 0.12s;
+  --anim-base: 0.18s;
+  --scrollbar-size: 10px;
+  --grid-alpha: 0.018;
+  --panel-alpha: 1;
+
+  --code-size: 12px;
+  --code-lh: 1.55;
+  --code-tracking: 0px;
+  --code-tab: 2;
+  --code-ligatures: normal;
+
+  --editor-bg: #07080c;
+  --editor-active-line: #111623;
+  --editor-selection: #24425c;
+  --editor-gutter: #3a4255;
+
+  --tok-com: #5a6379;
+  --tok-key: #c084fc;
+  --tok-str: #7fe0a1;
+  --tok-num: #f2b45c;
+  --tok-fn: #56b6ff;
+  --tok-typ: #5fe3d0;
+  --tok-lit: #ff9d6b;
+  --tok-prop: #8fd0ff;
+  --tok-tag: #ff7b93;
+  --tok-attr: #f2c55c;
+  --tok-op: #7c869c;
+  --tok-guide: #313a52;
+
+  --tok-br1: #22d3ee;
+  --tok-br2: #a78bfa;
+  --tok-br3: #f59e0b;
+  --tok-br4: #34d399;
+  --tok-br5: #fb7185;
+  --tok-br6: #8fd0ff;
+}
+
+* {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--ui-size);
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-line) 70%, var(--color-muted));
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-line) 40%, var(--color-muted));
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+textarea {
+  resize: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Con las animaciones apagadas no queda ni una transición viva. Es un ajuste
+   de verdad, no un adorno: en un equipo justo quita trabajo real al compositor
+   y la interfaz responde antes. */
+[data-motion='off'] *,
+[data-motion='off'] *::before,
+[data-motion='off'] *::after {
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* Y si el sistema pide menos movimiento, se respeta sin preguntar. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* La barra de título es la zona arrastrable de la ventana. */
+.drag {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Rejilla sutil de fondo, da sensación de panel técnico sin hacer ruido. */
+.grid-bg {
+  background-image:
+    linear-gradient(rgb(255 255 255 / var(--grid-alpha)) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / var(--grid-alpha)) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* En tema claro la rejilla tiene que ser oscura o no se ve. */
+[data-scheme='light'] .grid-bg {
+  background-image:
+    linear-gradient(rgb(0 0 0 / var(--grid-alpha)) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(0 0 0 / var(--grid-alpha)) 1px, transparent 1px);
+}
+
+/* Los paneles pueden dejar ver el fondo si se baja su opacidad. */
+.bg-panel {
+  background-color: rgb(var(--rgb-panel, 15 17 23) / var(--panel-alpha));
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-raised) 0%,
+    var(--color-line) 50%,
+    var(--color-raised) 100%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-up {
+  animation: fade-up var(--anim-base) ease-out;
+}
+
+/* Cursor de escritura mientras el modelo genera. */
+.caret::after {
+  content: '▌';
+  color: var(--color-accent);
+  animation: pulse-dot 1s steps(2) infinite;
+  margin-left: 1px;
+}
+
+/* Markdown renderizado dentro de las respuestas. */
+.md {
+  font-size: var(--ui-size);
+  line-height: 1.65;
+}
+.md > *:first-child { margin-top: 0; }
+.md > *:last-child { margin-bottom: 0; }
+.md p { margin: 0.6em 0; }
+.md h1, .md h2, .md h3, .md h4 {
+  margin: 1.1em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.md h1 { font-size: 1.35em; }
+.md h2 { font-size: 1.2em; }
+.md h3 { font-size: 1.06em; }
+.md ul, .md ol { margin: 0.6em 0; padding-left: 1.4em; }
+.md li { margin: 0.25em 0; }
+.md a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px; }
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+.md pre {
+  background: var(--editor-bg);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.md pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: var(--code-size);
+  /* Igual que el editor: las guías de indentación miden en esta unidad. */
+  line-height: var(--code-lh);
+  letter-spacing: var(--code-tracking);
+  font-variant-ligatures: var(--code-ligatures);
+}
+.md blockquote {
+  border-left: 2px solid var(--color-accent-dim);
+  padding-left: 12px;
+  margin: 0.8em 0;
+  color: var(--color-muted);
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  display: block;
+  overflow-x: auto;
+}
+.md th, .md td {
+  border: 1px solid var(--color-line);
+  padding: 5px 10px;
+  text-align: left;
+}
+.md th { background: var(--color-raised); font-weight: 600; }
+.md hr { border: 0; border-top: 1px solid var(--color-line); margin: 1.2em 0; }
+
+/* ---------------------------------------------------------------------------
+   Código: colores de sintaxis, guías y parejas de paréntesis.
+
+   Los nombres de clase son cortos a propósito: cada línea coloreada mete uno de
+   éstos por palabra, y en un fichero grande son decenas de miles de etiquetas.
+   --------------------------------------------------------------------------- */
+.t-com { color: var(--tok-com); font-style: italic; }
+.t-key { color: var(--tok-key); }
+.t-str { color: var(--tok-str); }
+.t-num { color: var(--tok-num); }
+.t-fn { color: var(--tok-fn); }
+.t-typ { color: var(--tok-typ); }
+.t-lit { color: var(--tok-lit); }
+.t-prop { color: var(--tok-prop); }
+.t-tag { color: var(--tok-tag); }
+.t-attr { color: var(--tok-attr); }
+.t-op { color: var(--tok-op); }
+
+.t-br1 { color: var(--tok-br1); }
+.t-br2 { color: var(--tok-br2); }
+.t-br3 { color: var(--tok-br3); }
+.t-br4 { color: var(--tok-br4); }
+.t-br5 { color: var(--tok-br5); }
+.t-br6 { color: var(--tok-br6); }
+
+/* Los puntos de los espacios: visibles, pero sin robar atención. */
+.t-ws {
+  color: var(--tok-guide);
+  opacity: 0.85;
+}
+
+/* Un nivel de sangría: ocupa exactamente lo que ocupaba el hueco y pinta la
+   línea guía a la izquierda, así que las columnas no se mueven ni un píxel.
+   Cuando las guías están apagadas, `--tok-guide` vale `transparent` y el bloque
+   sigue ahí midiendo lo mismo: se apaga el color, no la caja. */
+.t-ind {
+  display: inline-block;
+  height: calc(var(--code-lh) * 1em);
+  vertical-align: top;
+  box-shadow: inset 1px 0 0 var(--tok-guide);
+  color: var(--tok-guide);
+  opacity: 0.85;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   Editor: un textarea transparente encima del código pintado.
+   Las dos capas tienen que compartir tipografía, tamaño, interlineado y
+   relleno hasta el último píxel o el cursor se despega de las letras. Todo lo
+   que se pueda ajustar sale de la misma variable para las dos.
+   --------------------------------------------------------------------------- */
+.code-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--editor-bg);
+}
+
+.code-layer,
+.code-input {
+  margin: 0;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--code-size);
+  line-height: var(--code-lh);
+  letter-spacing: var(--code-tracking);
+  font-variant-ligatures: var(--code-ligatures);
+  tab-size: var(--code-tab);
+  white-space: pre;
+  overflow-wrap: normal;
+  border: 0;
+}
+
+/* Con ajuste de línea las dos capas tienen que cortar por el mismo sitio. */
+.code-wrap[data-wrap='on'] .code-layer,
+.code-wrap[data-wrap='on'] .code-input {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.code-wrap[data-wrap='bounded'] .code-layer,
+.code-wrap[data-wrap='bounded'] .code-input {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: calc(var(--wrap-col, 100) * 1ch + 24px);
+}
+
+.code-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--color-ink);
+}
+
+.code-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--color-accent);
+  outline: none;
+  resize: none;
+}
+
+/* La selección tiene que verse aunque el texto sea transparente. */
+.code-input::selection {
+  background: var(--editor-selection);
+  color: transparent;
+}
+
+/* Cursor de bloque y subrayado: no hay propiedad CSS para eso, así que se
+   consigue ensanchando el propio cursor con una sombra del mismo color. */
+[data-cursor='block'] .code-input {
+  caret-shape: block;
+}
+[data-cursor='underline'] .code-input {
+  caret-shape: underscore;
+}
+[data-cursor-blink='off'] .code-input {
+  caret-animation: manual;
+}
+
+/* La franja de la línea donde está el cursor. Se dibuja en la capa de abajo,
+   nunca en el textarea: ahí taparía el texto. */
+.code-active-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: calc(var(--code-lh) * var(--code-size));
+  background: var(--editor-active-line);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Regla vertical en la columna configurada. */
+.code-ruler {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--tok-guide);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Columna de números de línea. */
+.code-gutter {
+  font-family: var(--font-mono);
+  font-size: var(--code-size);
+  line-height: var(--code-lh);
+  letter-spacing: var(--code-tracking);
+  color: var(--editor-gutter);
+  padding: 8px 8px 8px 10px;
+  text-align: right;
+  user-select: none;
+}
+.code-gutter .on {
+  color: var(--color-ink);
+}
+
+/* Minimapa: un lienzo estrecho a la derecha con la silueta del fichero. */
+.code-minimap {
+  position: relative;
+  background: var(--editor-bg);
+  border-left: 1px solid var(--color-line);
+  cursor: pointer;
+}
+.code-minimap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.code-minimap .view {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: rgb(var(--rgb-accent) / 0.14);
+  border-top: 1px solid rgb(var(--rgb-accent) / 0.3);
+  border-bottom: 1px solid rgb(var(--rgb-accent) / 0.3);
+  pointer-events: none;
+}
+
+/* Sólo lectura: el mismo código pintado, sin textarea encima. */
+.code-view {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--code-size);
+  line-height: var(--code-lh);
+  letter-spacing: var(--code-tracking);
+  font-variant-ligatures: var(--code-ligatures);
+  tab-size: var(--code-tab);
+  white-space: pre;
+  overflow-x: auto;
+}

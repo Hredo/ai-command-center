@@ -1,0 +1,42 @@
+name: Informar de un fallo
+description: Algo no funciona o no arranca
+labels: [fallo]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de nada: si Windows te bloquea el instalador y no te deja la opción
+        de «Ejecutar de todas formas», eso es Smart App Control y está explicado
+        en el README. Prueba el `.zip` portátil.
+  - type: input
+    id: version
+    attributes:
+      label: Versión de la aplicación
+      description: Sale en Ajustes, abajo del todo.
+      placeholder: "0.4.0"
+    validations: { required: true }
+  - type: dropdown
+    id: origen
+    attributes:
+      label: Cómo la instalaste
+      options: [Instalador .exe, Zip portátil, Compilada desde el código]
+    validations: { required: true }
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: Qué pasa
+      description: Qué esperabas y qué ocurrió en su lugar.
+    validations: { required: true }
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Cómo reproducirlo
+      placeholder: |
+        1. Abrir la pantalla de...
+        2. Pulsar en...
+        3. Sale...
+  - type: textarea
+    id: entorno
+    attributes:
+      label: Entorno
+      description: Versión de Windows, y si tienes git, gh u Ollama instalados.

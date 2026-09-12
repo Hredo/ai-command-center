@@ -1,0 +1,92 @@
+# Genera el instalador de Windows en una máquina limpia.
+#
+# Existe por una razón concreta: en el equipo de desarrollo Smart App Control
+# está en modo de imposición y no deja a electron-builder lanzar el ejecutable
+# temporal con el que escribe el desinstalador, así que el NSIS no llega ni a
+# generarse. El runner de GitHub es un Windows sin esa restricción: aquí el
+# instalador sale siempre, y sale igual cada vez.
+#
+# Empuja una etiqueta para publicar:  git tag v0.4.0 && git push origin v0.4.0
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # --frozen-lockfile: si el lockfile no cuadra con package.json, para.
+      # Así lo que se publica es exactamente el árbol que se probó.
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Comprobar tipos (proceso principal)
+        run: pnpm exec tsc --noEmit -p tsconfig.node.json
+
+      - name: Comprobar tipos (ventana)
+        run: pnpm exec tsc --noEmit -p tsconfig.web.json
+
+      # Sin estos binarios la app arranca y la terminal se cuelga al abrir la
+      # primera pestaña. Mejor romper la build que publicar eso.
+      - name: Comprobar la consola nativa
+        run: node scripts/check-native.cjs
+
+      - name: Compilar
+        run: pnpm build
+
+      # nsis = instalador; zip = versión portátil, que es la salida de emergencia
+      # para quien tenga Smart App Control activado y no pueda correr el .exe.
+      - name: Empaquetar
+        run: pnpm exec electron-builder --win nsis zip --publish never
+
+      - name: Calcular SHA-256
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem release -Include *.exe, *.zip -Recurse
+          $lines = foreach ($f in $files) {
+            $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($f.Name)"
+          }
+          $lines | Out-File -FilePath release/SHA256SUMS.txt -Encoding utf8
+          Get-Content release/SHA256SUMS.txt
+
+      - name: Guardar artefactos
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-command-center-windows
+          path: |
+            release/*.exe
+            release/*.zip
+            release/SHA256SUMS.txt
+          retention-days: 30
+
+      - name: Publicar la Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $assets = Get-ChildItem release -Include *.exe, *.exe.blockmap, *.zip, SHA256SUMS.txt -Recurse |
+                    ForEach-Object { $_.FullName }
+          gh release create $env:GITHUB_REF_NAME @assets `
+            --title "AI Command Center $env:GITHUB_REF_NAME" `
+            --notes-file .github/RELEASE_NOTES.md

@@ -1,0 +1,12 @@
+# Normaliza finales de linea: en el repositorio siempre LF, en disco lo que
+# toque en cada sistema. Sin esto un clon en Linux ve todo el arbol modificado.
+* text=auto eol=lf
+
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+*.png binary
+*.ico binary
+*.exe binary
+*.node binary
