@@ -1,7 +1,7 @@
 {
   "name": "ai-command-center",
   "productName": "AI Command Center",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Centro de mando local para IAs, agentes y proyectos",
   "author": "Hredo",
   "license": "MIT",

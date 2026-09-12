@@ -33,10 +33,13 @@ win:
       arch:
         - x64
   icon: build/icon.png
-  # Nombre por defecto (lo hereda el zip); el instalador lo pisa abajo.
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  # Con guiones y no con espacios: GitHub sustituye los espacios por puntos al
+  # subir un asset, y entonces el fichero descargado deja de llamarse como dice
+  # el SHA256SUMS.txt. Este nombre sobrevive intacto.
+  # Por defecto lo hereda el zip; el instalador lo pisa abajo.
+  artifactName: AI-Command-Center-${version}-${arch}.${ext}
 nsis:
-  artifactName: ${productName}-Setup-${version}.${ext}
+  artifactName: AI-Command-Center-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

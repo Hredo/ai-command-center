@@ -2,8 +2,8 @@
 
 | Archivo · File | Español | English |
 |---|---|---|
-| `AI Command Center-Setup-*.exe` | **Instalador.** Lo normal: crea accesos directos y desinstalador. No pide permisos de administrador. | **Installer.** The normal choice: creates shortcuts and an uninstaller. No admin rights needed. |
-| `AI Command Center-*-x64.zip` | **Portátil.** Descomprime y ejecuta. No instala nada. | **Portable.** Extract and run. Installs nothing. |
+| `AI-Command-Center-Setup-*.exe` | **Instalador.** Lo normal: crea accesos directos y desinstalador. No pide permisos de administrador. | **Installer.** The normal choice: creates shortcuts and an uninstaller. No admin rights needed. |
+| `AI-Command-Center-*-x64.zip` | **Portátil.** Descomprime y ejecuta. No instala nada. | **Portable.** Extract and run. Installs nothing. |
 | `SHA256SUMS.txt` | Para verificar la descarga. | To verify your download. |
 
 Windows 10 (22H2+) u 11, 64 bits · *Windows 10 (22H2+) or 11, 64-bit*
@@ -35,7 +35,7 @@ las instalaciones limpias de Windows 11 y no ofrece ninguna opción. Entonces:
 ### Verificar lo que has descargado
 
 ```powershell
-Get-FileHash '.\AI Command Center-Setup-0.4.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.4.1.exe' -Algorithm SHA256
 ```
 
 Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
@@ -83,7 +83,7 @@ clean Windows 11 installations and offers no choice. In that case:
 ### Verifying your download
 
 ```powershell
-Get-FileHash '.\AI Command Center-Setup-0.4.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.4.1.exe' -Algorithm SHA256
 ```
 
 It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.
