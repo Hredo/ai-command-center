@@ -1,5 +1,6 @@
 import { appendFileSync, readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { paths } from './paths'
+import { notifyChange } from './live'
 import type { RunRecord, StatsBucket } from '@shared/types'
 
 let memo: RunRecord[] | null = null
@@ -23,8 +24,21 @@ export function allRuns(): RunRecord[] {
 }
 
 export function addRun(run: RunRecord): RunRecord {
-  allRuns().push(run)
-  appendFileSync(paths.runs, JSON.stringify(run) + '\n', 'utf8')
+  const runs = allRuns()
+  // Una sesión de Claude Code lanzada desde aquí también deja su transcripción,
+  // y el vigilante la va importando mientras trabaja para que el gasto se vea
+  // en vivo. En cuanto se guarda la ejecución de verdad esa copia sobra: si se
+  // quedara, la sesión contaría dos veces.
+  const imported = run.cliSessionId ? runs.findIndex((r) => r.id === 'claude-' + run.cliSessionId) : -1
+  if (imported !== -1) {
+    runs.splice(imported, 1)
+    runs.push(run)
+    rewrite()
+  } else {
+    runs.push(run)
+    appendFileSync(paths.runs, JSON.stringify(run) + '\n', 'utf8')
+  }
+  notifyChange('runs')
   return run
 }
 
@@ -39,6 +53,7 @@ export function updateRun(id: string, patch: Partial<RunRecord>): RunRecord | nu
   if (i === -1) return null
   runs[i] = { ...runs[i], ...patch }
   rewrite()
+  notifyChange('runs')
   return runs[i]
 }
 
@@ -72,18 +87,37 @@ export function upsertRuns(list: RunRecord[]): number {
     }
   }
 
-  if (changed) rewrite()
+  if (changed) {
+    rewrite()
+    notifyChange('runs')
+  }
   return changed
 }
 
 export function deleteRun(id: string): void {
   memo = allRuns().filter((r) => r.id !== id)
   rewrite()
+  notifyChange('runs')
+}
+
+/** Quita varias ejecuciones de una vez, con una sola escritura. Devuelve cuántas quitó. */
+export function removeRuns(ids: Iterable<string>): number {
+  const drop = new Set(ids)
+  if (!drop.size) return 0
+  const before = allRuns().length
+  memo = allRuns().filter((r) => !drop.has(r.id))
+  const removed = before - memo.length
+  if (removed) {
+    rewrite()
+    notifyChange('runs')
+  }
+  return removed
 }
 
 export function clearRuns(): void {
   memo = []
   writeFileSync(paths.runs, '', 'utf8')
+  notifyChange('runs')
 }
 
 export interface RunQuery {

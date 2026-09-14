@@ -7,7 +7,7 @@ import { homedir } from 'node:os'
 import { handle } from './ipc'
 import {
   createTerm, runInTerm, writeTerm, interruptTerm, closeTerm, listTerms,
-  availableShells, defaultShell, termCwd, resizeTerm, ptyAvailable
+  availableShells, defaultShell, termCwd, resizeTerm, terminalStatus
 } from './terminal'
 import {
   listSessions, getSession, saveSession, patchSession, removeSession,
@@ -54,9 +54,9 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   }
 
   handle('term:resize', (id: string, cols: number, rows: number) => resizeTerm(id, cols, rows))
-  handle('term:pty', () => ptyAvailable())
+  handle('term:pty', () => terminalStatus())
 
-  handle('term:create', (opts: {
+  handle('term:create', async (opts: {
     cwd?: string; shell?: string; projectId?: string; title?: string
     cols?: number; rows?: number; forcePipe?: boolean
   }) => {
@@ -66,7 +66,7 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     const holder: { id?: string } = {}
     const queue: Omit<TermEvent, 'termId'>[] = []
 
-    const info = createTerm({ ...opts, shell }, (e) => {
+    const info = await createTerm({ ...opts, shell }, (e) => {
       if (holder.id) dispatch(holder.id, e)
       else queue.push(e)
     })
@@ -88,10 +88,10 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   })
   handle('term:list', () => listTerms())
   handle('term:cwd', (id: string) => termCwd(id) ?? null)
-  handle('term:shells', () => ({
+  handle('term:shells', async () => ({
     shells: availableShells(),
     current: getConfig().settings.shellPath || defaultShell(),
-    pty: ptyAvailable()
+    pty: await terminalStatus()
   }))
   handle('term:home', () => homedir())
 

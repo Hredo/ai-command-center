@@ -105,7 +105,7 @@ export function ModelPicker({
       </button>
 
       {open ? (
-        <div className="absolute z-40 mt-1.5 w-full min-w-[340px] bg-panel border border-line rounded-xl shadow-2xl overflow-hidden fade-up">
+        <div className="absolute z-40 mt-1.5 w-full bg-panel border border-line rounded-xl shadow-2xl overflow-hidden fade-up">
           <div className="flex items-center gap-2 px-3 h-10 border-b border-line">
             <Search size={14} className="text-dim shrink-0" />
             <input

@@ -19,7 +19,7 @@ import { LiveMetrics } from '../components/Stats'
 import { useStore } from '../lib/store'
 import { cost, tokens, ms, tps, shortModel, colorFor, relTime } from '../lib/format'
 import {
-  useArena, setArena, setContenders, emptyContender, launchArena, stopArena,
+  useArena, setArena, setContenders, emptyContender, launchArena, stopArena, useRunsVersion,
   type Contender
 } from '../lib/engine'
 import type { RunRecord } from '@shared/types'
@@ -63,9 +63,12 @@ export default function Arena(): React.JSX.Element {
     if (r.ok && r.data) setSessions(r.data.slice(0, 25))
   }, [])
 
+  // Se relee con cada cambio del histórico: una comparativa votada o borrada
+  // desde otra pantalla se ve aquí sin tocar nada.
+  const runsVersion = useRunsVersion()
   useEffect(() => {
     void loadSessions()
-  }, [loadSessions])
+  }, [loadSessions, runsVersion])
 
   // Al acabar una comparativa se refresca el listado de guardadas.
   useEffect(() => {

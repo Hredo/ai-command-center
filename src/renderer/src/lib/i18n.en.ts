@@ -325,6 +325,38 @@ export const en: Record<string, string> = {
     'Refresh the model and price catalog at startup',
   'Adjuntar archivos al prompt': 'Attach files to the prompt',
   'Adjuntar contexto del proyecto': 'Attach project context',
+  // Tiempo real
+  'Incluye lo que se está generando ahora, estimado': 'Includes what is being generated right now, estimated',
+  // Modo agente de los modelos por API
+  'Modo agente': 'Agent mode',
+  agente: 'agent',
+  trabajando: 'working',
+  generando: 'generating',
+  Permitir: 'Allow',
+  Rechazar: 'Deny',
+  'esperando permiso': 'waiting for permission',
+  'espera tu permiso': 'needs your permission',
+  'Quiere ejecutar este comando en el proyecto.': 'Wants to run this command in the project.',
+  'Quiere modificar este archivo.': 'Wants to modify this file.',
+  'Edita solo': 'Edits on its own',
+  Pregunta: 'Asks first',
+  'Sólo plan': 'Plan only',
+  'Sin límites': 'No limits',
+  'lee y edita archivos sin preguntar; cada comando espera a que lo permitas':
+    'reads and edits files without asking; every command waits for your permission',
+  'cada edición y cada comando esperan a que los permitas aquí':
+    'every edit and every command waits for your permission here',
+  'lee y busca, pero no puede tocar nada': 'reads and searches, but cannot change anything',
+  'edita y ejecuta comandos sin preguntar: ojo con lo que le pides':
+    'edits and runs commands without asking: be careful what you ask for',
+  'Lee, busca y edita los archivos del proyecto con herramientas, y ejecuta comandos si le dejas.':
+    'Reads, searches and edits the project files with tools, and runs commands if you let it.',
+  'Sólo conversa: no puede abrir ni tocar los archivos del proyecto.':
+    'Chat only: it cannot open or touch the project files.',
+  'Elige un proyecto para que el modelo pueda trabajar como agente sobre sus archivos.':
+    'Pick a project so the model can work on its files as an agent.',
+  'Hace falta un modelo que admita herramientas (llamadas a funciones).':
+    'It needs a model that supports tools (function calling).',
   Agente: 'Agent',
   'Agente CLI': 'CLI agent',
   'Agente de línea de comandos': 'Command-line agent',

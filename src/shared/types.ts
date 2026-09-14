@@ -214,7 +214,7 @@ export interface RunRecord {
 
 export interface StreamDelta {
   runId: string
-  type: 'start' | 'text' | 'reasoning' | 'usage' | 'done' | 'error' | 'limit'
+  type: 'start' | 'text' | 'reasoning' | 'usage' | 'done' | 'error' | 'limit' | 'step' | 'files'
   text?: string
   run?: RunRecord
   error?: string
@@ -222,6 +222,14 @@ export interface StreamDelta {
   /** Lo que dicen las cabeceras del proveedor sobre tus límites. */
   usageLimit?: UsageLimit
   contextLimit?: number
+  /** Modo agente: lo que ocupa la conversación tras la última vuelta. */
+  contextUsed?: number
+  /** Modo agente: un paso nuevo, o uno que ya estaba y ahora trae más datos. */
+  step?: AgentStep
+  /** Modo agente: archivos cambiados en disco (medido con git). */
+  files?: FileChange[]
+  /** Modo agente: archivos que dice haber leído o editado. */
+  touched?: FileTouch[]
 }
 
 /** Idioma de la interfaz. */
@@ -485,6 +493,8 @@ export interface AgentStep {
   removed?: number
   /** El agente pidió permiso y no lo tenía. */
   denied?: boolean
+  /** Agente por API: el paso espera tu permiso, o ya lo tuvo, o se le negó. */
+  approval?: 'pending' | 'approved' | 'denied'
 }
 
 /**
@@ -600,6 +610,18 @@ export const PERMISSION_MODES = [
   { id: 'bypassPermissions', label: 'Sin límites', hint: 'hace cualquier cosa sin pedir nada: ojo con lo que le mandas' }
 ] as const
 
+/**
+ * Lo mismo para un modelo por API que trabaja como agente. Aquí la app sí
+ * puede preguntarte: lo que necesita permiso se queda esperando en la
+ * conversación con sus botones de permitir y rechazar.
+ */
+export const API_PERMISSION_MODES = [
+  { id: 'acceptEdits', label: 'Edita solo', hint: 'lee y edita archivos sin preguntar; cada comando espera a que lo permitas' },
+  { id: 'manual', label: 'Pregunta', hint: 'cada edición y cada comando esperan a que los permitas aquí' },
+  { id: 'plan', label: 'Sólo plan', hint: 'lee y busca, pero no puede tocar nada' },
+  { id: 'bypassPermissions', label: 'Sin límites', hint: 'edita y ejecuta comandos sin preguntar: ojo con lo que le pides' }
+] as const
+
 export const EFFORTS: Effort[] = ['auto', 'minimal', 'low', 'medium', 'high', 'max']
 
 /** Un archivo adjunto al prompt. */
@@ -689,8 +711,12 @@ export interface RunOptions {
   /** Cuánto debe pensar. 'auto' o sin valor: no se toca la petición. */
   effort?: Effort
   attachments?: Attachment[]
-  /** Ruta del proyecto: sólo para contar los archivos que cambian. */
+  /** Ruta del proyecto: donde trabaja en modo agente y donde se cuentan los archivos que cambian. */
   projectPath?: string
+  /** Trabaja como agente: con herramientas para leer, editar y ejecutar dentro del proyecto. */
+  agentMode?: boolean
+  /** Qué puede hacer sin preguntar en modo agente. Ver API_PERMISSION_MODES. */
+  permissionMode?: string
 }
 
 export interface ChatMessage {
@@ -902,6 +928,11 @@ export interface StoredSession {
   cliModel?: string
   /** Qué deja hacer al agente sin preguntar. */
   permissionMode?: string
+  /**
+   * Chat por API con proyecto: si el modelo trabaja como agente, con
+   * herramientas sobre los archivos. Sin valor cuenta como sí.
+   */
+  agentMode?: boolean
   turns: SessionTurn[]
   pinned?: boolean
   /** Cerrada: sigue guardada y se puede reabrir. */

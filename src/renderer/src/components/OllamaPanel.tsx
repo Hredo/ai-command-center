@@ -101,6 +101,9 @@ export function OllamaPanel(): React.JSX.Element {
     void refresh()
   }, [refresh])
 
+  // Arrancar o parar Ollama, o bajar un modelo desde fuera, se ve aquí solo.
+  useEffect(() => window.api.app.onLocalChanged(() => void refresh()), [refresh])
+
   // El avance de las descargas llega por evento desde el proceso principal.
   useEffect(() => {
     return window.api.ollama.onPullProgress((p) => {

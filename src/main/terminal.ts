@@ -1,18 +1,26 @@
 /**
  * Terminales integradas.
  *
- * Motor principal: una consola de verdad. En Windows se abre un ConPTY a
- * través de node-pty, así que las aplicaciones de pantalla completa —opencode,
- * vim, los agentes en modo interactivo— funcionan exactamente igual que en
- * Windows Terminal: detectan que hay terminal, pintan su interfaz, responden
- * al teclado y aceptan Ctrl+C de verdad.
+ * Motor principal: una consola de verdad (ConPTY en Windows), así que las
+ * aplicaciones de pantalla completa —opencode, vim, los agentes en modo
+ * interactivo— funcionan exactamente igual que en Windows Terminal: detectan
+ * que hay terminal, pintan su interfaz, responden al teclado y aceptan Ctrl+C
+ * de verdad.
  *
- * Motor de respaldo: si el módulo nativo no carga (por ejemplo tras subir de
- * versión de Electron), se cae a una shell por tuberías que organiza la salida
- * en bloques delimitados por un centinela. Es menos capaz —nada interactivo
- * funciona— pero la app no se queda sin terminal.
+ * Esa consola se abre de una de dos formas, por orden:
  *
- * Sobre el PTY se inyecta una integración de shell mínima: el prompt de
+ *  1. node-pty, un módulo nativo. Es lo más directo, pero su `conpty.node` no
+ *     va firmado y Smart App Control lo bloquea en los equipos que lo tienen
+ *     activado.
+ *  2. Un puente en PowerShell (ver conpty.ts) que llama a la misma API de
+ *     Windows sin cargar ningún binario propio. La consola que sale es la
+ *     misma.
+ *
+ * Motor de respaldo: si ninguna de las dos funciona, se cae a una shell por
+ * tuberías que organiza la salida en bloques delimitados por un centinela. Es
+ * menos capaz —nada interactivo funciona— pero la app no se queda sin terminal.
+ *
+ * Sobre la consola se inyecta una integración de shell mínima: el prompt de
  * PowerShell emite, invisible, el directorio actual y el código de salida de
  * cada comando. De ahí salen la ruta de la pestaña y las duraciones, sin tener
  * que adivinar nada del texto.
@@ -24,14 +32,27 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { paths } from './paths'
 import { StringDecoder } from 'node:string_decoder'
+import { bridgeStatus, markBridgeBroken, probeBridge, spawnBridge, type Bridge } from './conpty'
 import type { TermBackend, TermEvent, TermInfo } from '@shared/types'
 
 export type TermEventFn = (e: Omit<TermEvent, 'termId'>) => void
 
 type ShellKind = 'powershell' | 'cmd' | 'posix'
 
+/** Con qué se abre la consola: módulo nativo, puente de PowerShell o tuberías. */
+export type TermEngine = 'native' | 'bridge' | 'pipe'
+
 const ESC = String.fromCharCode(0x1b)
 const BEL = String.fromCharCode(0x07)
+
+/**
+ * Para pruebas: ACC_TERMINAL_ENGINE=bridge se salta node-pty y usa el puente;
+ * =pipe se salta los dos.
+ */
+function forcedEngine(): 'bridge' | 'pipe' | null {
+  const v = (process.env['ACC_TERMINAL_ENGINE'] ?? '').trim().toLowerCase()
+  return v === 'bridge' || v === 'pipe' ? v : null
+}
 
 /* ------------------------------------------------------------------ *
  * Carga del PTY                                                      *
@@ -80,10 +101,15 @@ function loadNativeBindings(): void {
   }
 }
 
-/** El módulo es nativo: si falla, se informa y se sigue con el respaldo. */
+/** El módulo es nativo: si falla, se informa y se sigue con el siguiente motor. */
 function loadPty(): PtyModule | null {
   if (ptyTried) return ptyModule
   ptyTried = true
+  const forced = forcedEngine()
+  if (forced) {
+    ptyLoadError = `módulo nativo desactivado con ACC_TERMINAL_ENGINE=${forced}`
+    return null
+  }
   try {
     // require en vez de import: el binario se resuelve en tiempo de ejecución
     // desde node_modules, fuera del empaquetado de Vite.
@@ -93,15 +119,40 @@ function loadPty(): PtyModule | null {
     ptyModule = mod
   } catch (err: any) {
     ptyModule = null
-    ptyLoadError = err?.message?.split('\n')[0] ?? String(err)
-    console.error('[terminal] sin PTY nativo, se usará el respaldo por tuberías:', ptyLoadError)
+    // Windows acaba sus mensajes con \r\n: sin recortar, el motivo llega con
+    // un retorno de carro colgando.
+    ptyLoadError = (err?.message?.split('\n')[0] ?? String(err)).trim()
+    console.error('[terminal] el módulo nativo del PTY no carga:', ptyLoadError)
   }
   return ptyModule
 }
 
-export function ptyAvailable(): { available: boolean; reason?: string } {
+/** El puente sólo tiene sentido en Windows y si no se ha pedido ir por tuberías. */
+function bridgeAllowed(): boolean {
+  return process.platform === 'win32' && forcedEngine() !== 'pipe'
+}
+
+/**
+ * Qué motor tendrá la próxima terminal, con lo que se sabe ahora mismo. Si el
+ * puente todavía no se ha sondeado, cuenta como no disponible: para una
+ * respuesta segura está `terminalStatus`.
+ */
+export function ptyAvailable(): { available: boolean; engine: TermEngine; reason?: string } {
   loadPty()
-  return { available: Boolean(ptyModule), reason: ptyLoadError ?? undefined }
+  if (ptyModule) return { available: true, engine: 'native' }
+  const bridge = bridgeAllowed() ? bridgeStatus() : null
+  if (bridge?.ok) {
+    return { available: true, engine: 'bridge', reason: ptyLoadError ?? undefined }
+  }
+  const reasons = [ptyLoadError, bridge?.reason ? `puente de PowerShell: ${bridge.reason}` : null].filter(Boolean)
+  return { available: false, engine: 'pipe', reason: reasons.join(' · ') || undefined }
+}
+
+/** Lo mismo que ptyAvailable, pero esperando al sondeo del puente si hace falta. */
+export async function terminalStatus(): Promise<{ available: boolean; engine: TermEngine; reason?: string }> {
+  loadPty()
+  if (!ptyModule && bridgeAllowed()) await probeBridge()
+  return ptyAvailable()
 }
 
 /** Un fallo al abrir la consola real invalida el motor para las siguientes. */
@@ -118,8 +169,9 @@ interface Term {
   id: string
   backend: TermBackend
   backendReason?: string
-  /** Uno de los dos, según el motor. */
+  /** Uno de los tres, según el motor. */
   pty?: PtyProcess
+  bridge?: Bridge
   child?: ChildProcess
   shell: string
   shellLabel: string
@@ -194,7 +246,7 @@ function ptyEnv(): Record<string, string> {
 }
 
 /* ------------------------------------------------------------------ *
- * Integración de shell sobre el PTY                                  *
+ * Integración de shell sobre la consola                              *
  * ------------------------------------------------------------------ */
 
 /**
@@ -270,6 +322,13 @@ function posixEnvIntegration(env: Record<string, string>): void {
     (process.env['PROMPT_COMMAND'] ? `; ${process.env['PROMPT_COMMAND']}` : '')
 }
 
+/** Entorno completo de la shell de una consola real, con su integración. */
+function consoleEnv(kind: ShellKind): Record<string, string> {
+  const env = ptyEnv()
+  if (kind === 'posix') posixEnvIntegration(env)
+  return env
+}
+
 /**
  * Extrae los marcadores de la salida y los devuelve como eventos aparte.
  * El texto sale intacto salvo los propios marcadores, que se quitan para que
@@ -321,7 +380,7 @@ function normalizeExit(raw: string): number {
  * Creación                                                           *
  * ------------------------------------------------------------------ */
 
-export function createTerm(
+export async function createTerm(
   opts: {
     cwd?: string
     shell?: string
@@ -333,7 +392,7 @@ export function createTerm(
     forcePipe?: boolean
   },
   emit: TermEventFn
-): TermInfo {
+): Promise<TermInfo> {
   const shell = opts.shell?.trim() || defaultShell()
   const { kind, label } = classify(shell)
   const cwd = opts.cwd && existsSync(opts.cwd) ? opts.cwd : homedir()
@@ -341,12 +400,9 @@ export function createTerm(
   const cols = Math.max(20, opts.cols ?? 120)
   const rows = Math.max(5, opts.rows ?? 30)
 
-  const lib = opts.forcePipe ? null : loadPty()
-
   const term: Term = {
     id,
-    backend: lib ? 'pty' : 'pipe',
-    backendReason: lib ? undefined : (ptyLoadError ?? (opts.forcePipe ? 'forzado para pruebas' : undefined)),
+    backend: 'pty',
     shell,
     shellLabel: label,
     kind,
@@ -360,21 +416,39 @@ export function createTerm(
     emit
   }
 
+  let started = false
+
+  const lib = opts.forcePipe ? null : loadPty()
   if (lib) {
     try {
       startPty(term, lib)
+      started = true
     } catch (err: any) {
       // Abrir la consola real puede fallar aunque el módulo haya cargado.
-      // Antes eso dejaba la pestaña en blanco: ahora se cae al respaldo y se
-      // dice en pantalla por qué.
-      const why = err?.message?.split('\n')[0] ?? String(err)
-      console.error('[terminal] la consola real falló al abrirse:', why)
-      demotePty(why)
-      term.backend = 'pipe'
-      term.backendReason = `la consola real falló al abrirse: ${why}`
-      startPipe(term)
+      // Antes eso dejaba la pestaña en blanco: ahora se prueba lo siguiente.
+      const why = (err?.message?.split('\n')[0] ?? String(err)).trim()
+      console.error('[terminal] la consola nativa falló al abrirse:', why)
+      demotePty(`la consola nativa falló al abrirse: ${why}`)
     }
-  } else {
+  }
+
+  if (!started && !opts.forcePipe && bridgeAllowed()) {
+    const probe = await probeBridge()
+    if (probe.ok) {
+      try {
+        startBridge(term)
+        started = true
+      } catch (err: any) {
+        const why = (err?.message?.split('\n')[0] ?? String(err)).trim()
+        console.error('[terminal] el puente de PowerShell falló al abrirse:', why)
+        markBridgeBroken(why)
+      }
+    }
+  }
+
+  if (!started) {
+    term.backend = 'pipe'
+    term.backendReason = opts.forcePipe ? 'forzado para pruebas' : ptyAvailable().reason
     startPipe(term)
   }
 
@@ -390,7 +464,7 @@ function info(t: Term): TermInfo {
     cwd: t.cwd,
     alive: t.alive,
     createdAt: t.createdAt,
-    pid: t.pty?.pid ?? t.child?.pid,
+    pid: t.pty?.pid ?? t.bridge?.shellPid ?? t.bridge?.pid ?? t.child?.pid,
     projectId: t.projectId,
     title: t.title,
     backend: t.backend,
@@ -399,26 +473,16 @@ function info(t: Term): TermInfo {
 }
 
 /* ------------------------------------------------------------------ *
- * Motor PTY                                                          *
+ * Consola real: node-pty o puente                                    *
  * ------------------------------------------------------------------ */
 
-function startPty(t: Term, lib: PtyModule): void {
-  // Con perfil del usuario: es su terminal, con sus alias y su PATH.
-  const env = ptyEnv()
-  if (t.kind === 'posix') posixEnvIntegration(env)
-
-  const p = lib.spawn(t.shell, ptyArgs(t.kind), {
-    name: 'xterm-256color',
-    cols: t.cols,
-    rows: t.rows,
-    cwd: t.cwd,
-    env
-  })
-  t.pty = p
-
+/**
+ * Lo que sale de la consola, venga del motor que venga: se recogen los
+ * marcadores de la integración y el resto va tal cual a la ventana.
+ */
+function consoleOutput(t: Term): (data: string) => void {
   let carry = ''
-
-  p.onData((data) => {
+  return (data) => {
     // Los marcadores pueden partirse entre dos trozos: se retiene la cola que
     // empiece un OSC sin cerrar.
     const buf = carry + data
@@ -448,16 +512,49 @@ function startPty(t: Term, lib: PtyModule): void {
       }
     )
     if (clean) t.emit({ type: 'out', data: clean })
-  })
+  }
+}
 
-  p.onExit(({ exitCode }) => {
-    t.alive = false
-    t.emit({ type: 'exit', exitCode })
-    terms.delete(t.id)
+function consoleEnded(t: Term, exitCode: number): void {
+  t.alive = false
+  t.emit({ type: 'exit', exitCode })
+  terms.delete(t.id)
+}
+
+function startPty(t: Term, lib: PtyModule): void {
+  // Con perfil del usuario: es su terminal, con sus alias y su PATH.
+  const p = lib.spawn(t.shell, ptyArgs(t.kind), {
+    name: 'xterm-256color',
+    cols: t.cols,
+    rows: t.rows,
+    cwd: t.cwd,
+    env: consoleEnv(t.kind)
   })
+  t.pty = p
+  p.onData(consoleOutput(t))
+  p.onExit(({ exitCode }) => consoleEnded(t, exitCode))
 
   // La integración ya viene cargada por los argumentos de arranque: aquí no
   // se escribe nada en la shell, para que no haya eco en pantalla.
+  t.emit({ type: 'ready', cwd: t.cwd })
+}
+
+function startBridge(t: Term): void {
+  t.bridge = spawnBridge({
+    file: t.shell,
+    args: ptyArgs(t.kind),
+    cwd: t.cwd,
+    cols: t.cols,
+    rows: t.rows,
+    env: consoleEnv(t.kind),
+    onData: consoleOutput(t),
+    onExit: (code, started) => {
+      // Si ni siquiera llegó a arrancar la shell, el puente no sirve en este
+      // equipo: las terminales siguientes irán directas al respaldo.
+      if (!started) markBridgeBroken('la consola no llegó a abrirse')
+      consoleEnded(t, code)
+    }
+  })
   t.emit({ type: 'ready', cwd: t.cwd })
 }
 
@@ -632,7 +729,7 @@ function safeCut(tail: string, marker: string): number {
  * de códigos deja de importar. Se usa Invoke-Expression y no el operador de
  * llamada porque éste crearía un ámbito hijo y un `cd` no persistiría.
  *
- * En el PTY no hace falta: la consola habla UTF-8.
+ * En la consola real no hace falta: habla UTF-8.
  */
 function encodePipeCommand(kind: ShellKind, command: string): string {
   const line = command.replace(/\r?\n$/, '')
@@ -647,8 +744,13 @@ export function runInTerm(id: string, command: string): boolean {
   if (!t || !t.alive) return false
   t.pending = { startedAt: Date.now() }
 
-  if (t.backend === 'pty' && t.pty) {
-    t.pty.write(command.replace(/\r?\n$/, '') + '\r')
+  const line = command.replace(/\r?\n$/, '') + '\r'
+  if (t.pty) {
+    t.pty.write(line)
+    return true
+  }
+  if (t.bridge) {
+    t.bridge.write(line)
     return true
   }
   t.child?.stdin?.write(encodePipeCommand(t.kind, command) + '\r\n')
@@ -660,11 +762,9 @@ export function runInTerm(id: string, command: string): boolean {
 export function writeTerm(id: string, data: string): boolean {
   const t = terms.get(id)
   if (!t || !t.alive) return false
-  if (t.backend === 'pty' && t.pty) {
-    t.pty.write(data)
-    return true
-  }
-  t.child?.stdin?.write(data)
+  if (t.pty) t.pty.write(data)
+  else if (t.bridge) t.bridge.write(data)
+  else t.child?.stdin?.write(data)
   return true
 }
 
@@ -673,27 +773,34 @@ export function resizeTerm(id: string, cols: number, rows: number): boolean {
   if (!t || !t.alive) return false
   t.cols = Math.max(20, Math.floor(cols))
   t.rows = Math.max(5, Math.floor(rows))
-  if (t.backend === 'pty' && t.pty) {
+  if (t.pty) {
     try {
       t.pty.resize(t.cols, t.rows)
     } catch {
       // Si la consola ya se cerró, no hay nada que redimensionar.
     }
+  } else if (t.bridge) {
+    t.bridge.resize(t.cols, t.rows)
   }
   return true
 }
 
 /**
- * Ctrl+C. Con PTY es el carácter 0x03 de verdad, que es lo que espera
- * cualquier programa. En el respaldo no hay consola a la que señalizar, así
- * que se matan los procesos hijos de la shell y se deja la shell viva.
+ * Ctrl+C. En una consola real es el carácter 0x03 de verdad, que es lo que
+ * espera cualquier programa. En el respaldo no hay consola a la que
+ * señalizar, así que se matan los procesos hijos de la shell y se deja la
+ * shell viva.
  */
 export function interruptTerm(id: string): Promise<boolean> {
   const t = terms.get(id)
   if (!t || !t.alive) return Promise.resolve(false)
 
-  if (t.backend === 'pty' && t.pty) {
+  if (t.pty) {
     t.pty.write('\u0003')
+    return Promise.resolve(true)
+  }
+  if (t.bridge) {
+    t.bridge.write('\u0003')
     return Promise.resolve(true)
   }
 
@@ -742,6 +849,8 @@ export function closeTerm(id: string): boolean {
     } catch {
       // Puede haber muerto ya por su cuenta.
     }
+  } else if (t.bridge) {
+    t.bridge.kill()
   } else if (t.child) {
     if (process.platform === 'win32' && t.child.pid) {
       spawn('taskkill', ['/PID', String(t.child.pid), '/T', '/F'], { windowsHide: true })

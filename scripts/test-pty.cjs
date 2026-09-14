@@ -9,7 +9,14 @@
  * Uso: pnpm exec electron scripts/test-pty.cjs
  */
 const { app, BrowserWindow } = require('electron')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 
+// Datos aparte: la prueba no toca tu configuración y puede correr con la app
+// instalada abierta, que si no se quedaría con el candado de instancia única.
+// Con ACC_TERMINAL_ENGINE=bridge se prueba el puente de PowerShell.
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'acc-pty-')))
 require('../out/main/index.js')
 
 const results = []
