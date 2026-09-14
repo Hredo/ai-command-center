@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { paths } from './paths'
+import { notifyChange } from './live'
 import { DEFAULT_APPEARANCE, DEFAULT_EDITOR } from '@shared/defaults'
 import type { AppConfig, Settings, Agent, CliAgent, Project } from '@shared/types'
 
@@ -89,6 +90,7 @@ export function getConfig(): AppConfig {
 export function saveConfig(cfg: AppConfig): AppConfig {
   cache = cfg
   writeFileSync(paths.config, JSON.stringify(cfg, null, 2), 'utf8')
+  notifyChange('config')
   return cfg
 }
 

@@ -13,7 +13,7 @@ import {
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
   ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch
 } from 'lucide-react'
-import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal } from '../components/ui'
+import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
 import { Markdown } from '../components/Markdown'
 import { AgentActivity } from '../components/AgentActivity'
@@ -26,10 +26,12 @@ import { useStore } from '../lib/store'
 import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
-  unarchiveSession, deleteSession, sendChat, sendCli, stopSession, loadSessions,
+  unarchiveSession, deleteSession, sendChat, sendCli, stopSession, loadSessions, approveStep,
   type Turn
 } from '../lib/engine'
-import { PERMISSION_MODES, type Attachment, type Effort, type StoredSession } from '@shared/types'
+import {
+  API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession
+} from '@shared/types'
 import { Pane } from '../components/Resizable'
 
 import { useT } from '../lib/i18n'
@@ -228,7 +230,11 @@ function TurnView({ turn, isCli }: { turn: Turn; isCli: boolean }): React.JSX.El
             ) : null}
 
             {/* Lo que va haciendo: herramientas, archivos y pensamientos. */}
-            <AgentActivity steps={turn.steps} running={turn.streaming} />
+            <AgentActivity
+              steps={turn.steps}
+              running={turn.streaming}
+              onApprove={turn.runId ? (stepId, allow) => approveStep(turn.runId!, stepId, allow) : undefined}
+            />
 
             {turn.content ? (
               // Los agentes que hablan por eventos (Claude Code, OpenCode)
@@ -363,6 +369,9 @@ export default function Chat(): React.JSX.Element {
 
   // El esfuerzo se guarda en la sesión: al reabrirla sigue como lo dejaste.
   const effort: Effort = session?.effort ?? 'auto'
+  // Un chat por API con proyecto trabaja como agente salvo que lo apagues: sin
+  // proyecto no tiene dónde trabajar y se queda en conversación.
+  const agentOn = !isCli && Boolean(project) && session?.agentMode !== false
   const effortSupported = !isCli || (cliAgent ? EFFORT_CLIS.has(cliAgent.command.toLowerCase()) : false)
 
   // Al cambiar de conversación los adjuntos no se arrastran.
@@ -435,11 +444,13 @@ export default function Chat(): React.JSX.Element {
       projectName: project?.name,
       projectPath: project?.path,
       effort,
-      attachments: attachments.length ? attachments : undefined
+      attachments: attachments.length ? attachments : undefined,
+      agentMode: agentOn,
+      permissionMode: agentOn ? (session.permissionMode ?? 'acceptEdits') : undefined
     })
     if (run?.status === 'error') toast('error', run.error ?? 'Error desconocido')
     if (project) reloadGit()
-  }, [input, session, running, isCli, pick, project, apiAgent, cliAgent, toast, effort, attachments, reloadGit])
+  }, [input, session, running, isCli, pick, project, apiAgent, cliAgent, toast, effort, attachments, reloadGit, agentOn])
 
   // Un agente de API fija modelo, prompt de sistema y parámetros de golpe.
   const applyAgent = (agentId: string): void => {
@@ -549,38 +560,70 @@ export default function Chat(): React.JSX.Element {
 
       {/* ------------------------------------------------ Conversación */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="h-12 px-5 border-b border-line flex items-center justify-between gap-3 shrink-0 bg-void">
-          <div className="flex items-center gap-2.5 min-w-0">
-            {isCli ? <Cpu size={15} className="text-warn shrink-0" /> : <Sparkles size={15} className="text-accent shrink-0" />}
-            <span className="font-medium truncate">{session?.title ?? 'Consola'}</span>
-            {project ? (
-              <Badge tone="violet">
-                <FolderGit2 size={10} /> {project.name}
-              </Badge>
-            ) : null}
-            {totalTok > 0 ? (
-              <span className="num text-[11.5px] text-dim shrink-0">
-                {tokens(totalTok)} tokens · {cost(totalCost)}
+        {/* Cabecera en dos franjas: arriba lo fijo de la sesión y, debajo y
+            sólo mientras genera, las métricas en vivo. Antes iba todo en una
+            fila y al arrancar un agente las métricas empujaban hasta montarse
+            encima del título, del proyecto y de la rama. */}
+        <div className="border-b border-line shrink-0 bg-void">
+          {/* Cuando falta sitio lo primero que cede es el título (se lee
+              entero al pasar el ratón); proyecto y rama aguantan, y a la
+              derecha los tokens se esconden y queda el coste. */}
+          <div className="@container h-12 px-5 flex items-center gap-3">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              {isCli ? <Cpu size={15} className="text-warn shrink-0" /> : <Sparkles size={15} className="text-accent shrink-0" />}
+              <span className="font-medium truncate min-w-[48px] shrink-[20]" title={session?.title}>
+                {session?.title ?? 'Consola'}
               </span>
-            ) : null}
-            <BranchPicker
-              path={project?.path}
-              info={git}
-              onChanged={() => {
-                reloadGit()
-                toast('ok', t('Rama cambiada'))
-              }}
-              onError={(m) => toast('error', m)}
-            />
+              {agentOn ? (
+                <Badge
+                  tone="accent"
+                  className="shrink-0"
+                  title={t('Lee, busca y edita los archivos del proyecto con herramientas, y ejecuta comandos si le dejas.')}
+                >
+                  <Bot size={10} /> <span className="@max-[32rem]:hidden">{t('agente')}</span>
+                </Badge>
+              ) : null}
+              {project ? (
+                <Badge tone="violet" className="min-w-[64px] max-w-[180px] @max-[26rem]:hidden" title={project.path}>
+                  <FolderGit2 size={10} className="shrink-0" />
+                  <span className="truncate">{project.name}</span>
+                </Badge>
+              ) : null}
+              <div className="shrink-0">
+                <BranchPicker
+                  path={project?.path}
+                  info={git}
+                  onChanged={() => {
+                    reloadGit()
+                    toast('ok', t('Rama cambiada'))
+                  }}
+                  onError={(m) => toast('error', m)}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+              {totalTok > 0 ? (
+                <span className="num text-[11.5px] text-dim" title={`${tokens(totalTok)} tokens · ${cost(totalCost)}`}>
+                  <span className="@max-[44rem]:hidden">{tokens(totalTok)} tokens · </span>
+                  {cost(totalCost)}
+                </span>
+              ) : null}
+              <ContextGauge compact used={contextUsed} limit={contextLimit} />
+              <UsageLimitView compact limit={lastLimit} />
+            </div>
           </div>
 
           {/* Las métricas en vivo también aquí arriba: se ven aunque hayas
               subido a leer un mensaje anterior. */}
-          <div className="flex items-center gap-2 shrink-0">
-            <ContextGauge compact used={contextUsed} limit={contextLimit} />
-            <UsageLimitView compact limit={lastLimit} />
-            {liveTurn?.live ? <LiveMetrics live={liveTurn.live} compact /> : null}
-          </div>
+          {liveTurn?.live ? (
+            <div className="h-7 px-5 border-t border-line-soft flex items-center gap-3 overflow-hidden">
+              <span className="flex items-center gap-1.5 text-[11px] text-ok shrink-0">
+                <Dot tone="ok" pulse /> {liveTurn.steps?.length ? t('trabajando') : t('generando')}
+              </span>
+              <LiveMetrics live={liveTurn.live} compact className="min-w-0" />
+            </div>
+          ) : null}
         </div>
 
         <div ref={scroller} onScroll={onScroll} className="flex-1 overflow-y-auto px-5 py-5">
@@ -802,16 +845,58 @@ export default function Chat(): React.JSX.Element {
               </Select>
             </Field>
 
-            {project && !isCli ? (
-              <label className="flex items-center gap-2 text-[12px] text-muted cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={session.includeContext ?? true}
-                  onChange={(e) => patchSessionConfig(session.id, { includeContext: e.target.checked })}
-                  className="accent-cyan-400"
-                />
-                {t('Adjuntar contexto del proyecto')}
-              </label>
+            {/* Con proyecto, un modelo por API trabaja como agente: lee, busca y
+                edita sus archivos. Se puede apagar para sólo conversar. */}
+            {!isCli ? (
+              project ? (
+                <div className="border border-line rounded-lg p-3 space-y-2.5">
+                  <Toggle
+                    checked={agentOn}
+                    onChange={(v) => patchSessionConfig(session.id, { agentMode: v })}
+                    label={t('Modo agente')}
+                  />
+                  <p className="text-[11px] text-dim leading-relaxed">
+                    {agentOn
+                      ? t('Lee, busca y edita los archivos del proyecto con herramientas, y ejecuta comandos si le dejas.') +
+                        ' ' +
+                        t('Hace falta un modelo que admita herramientas (llamadas a funciones).')
+                      : t('Sólo conversa: no puede abrir ni tocar los archivos del proyecto.')}
+                  </p>
+                  {agentOn ? (
+                    <Field label={t('Permisos')}>
+                      <Select
+                        value={API_PERMISSION_MODES.find((m) => m.id === session.permissionMode)?.id ?? 'acceptEdits'}
+                        onChange={(e) => patchSessionConfig(session.id, { permissionMode: e.target.value })}
+                      >
+                        {API_PERMISSION_MODES.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {t(m.label)}
+                          </option>
+                        ))}
+                      </Select>
+                      <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
+                        {t(
+                          (API_PERMISSION_MODES.find((m) => m.id === session.permissionMode) ?? API_PERMISSION_MODES[0])
+                            .hint
+                        )}
+                      </p>
+                    </Field>
+                  ) : null}
+                  <label className="flex items-center gap-2 text-[12px] text-muted cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={session.includeContext ?? true}
+                      onChange={(e) => patchSessionConfig(session.id, { includeContext: e.target.checked })}
+                      className="accent-cyan-400"
+                    />
+                    {t('Adjuntar contexto del proyecto')}
+                  </label>
+                </div>
+              ) : (
+                <p className="text-[11px] text-dim leading-relaxed">
+                  {t('Elige un proyecto para que el modelo pueda trabajar como agente sobre sus archivos.')}
+                </p>
+              )
             ) : null}
 
             {/* La temperatura y el máximo de tokens ya no se tocan desde aquí:

@@ -6,10 +6,11 @@ import { paths } from './paths'
 import { getConfig } from './config'
 import { refreshCatalog, getCatalog } from './providers/models'
 import { watchLocalServers, stopWatchingLocalServers } from './detect'
-import { closeAllTerms, ptyAvailable } from './terminal'
+import { closeAllTerms, terminalStatus } from './terminal'
 import { initNotify } from './notify'
 import { initWatch, stopAllWatches } from './watch'
 import { initUsage } from './usage'
+import { initLive } from './live'
 import { watchClaude, stopWatchingClaude } from './claudeWatch'
 import { applyCsp, hardenApp, lockDownNavigation, lockDownPermissions, RENDERER_PREFS } from './security'
 
@@ -75,9 +76,11 @@ process.on('unhandledRejection', (reason) => {
  * versión instalada, si la consola nativa cargó o si la terminal está en modo
  * de respaldo: dentro del paquete no hay consola donde leer los mensajes.
  */
-function writeDiagnostics(): void {
+async function writeDiagnostics(): Promise<void> {
   try {
-    const pty = ptyAvailable()
+    // Espera al sondeo del puente de PowerShell si el módulo nativo no carga:
+    // así el diagnóstico dice qué motor tendrá de verdad la terminal.
+    const pty = await terminalStatus()
     writeFileSync(
       join(paths.dir, 'diagnostics.json'),
       JSON.stringify(
@@ -88,9 +91,17 @@ function writeDiagnostics(): void {
           node: process.versions.node,
           abi: process.versions.modules,
           packaged: app.isPackaged,
-          terminal: pty.available
-            ? { backend: 'pty', detail: 'consola real (ConPTY)' }
-            : { backend: 'pipe', detail: pty.reason ?? 'el módulo nativo no cargó' }
+          terminal:
+            pty.engine === 'native'
+              ? { backend: 'pty', engine: 'native', detail: 'consola real (ConPTY con node-pty)' }
+              : pty.engine === 'bridge'
+                ? {
+                    backend: 'pty',
+                    engine: 'bridge',
+                    detail: 'consola real (ConPTY a través de PowerShell)',
+                    nativeModule: pty.reason
+                  }
+                : { backend: 'pipe', engine: 'pipe', detail: pty.reason ?? 'no hay consola real' }
         },
         null,
         2
@@ -112,8 +123,16 @@ app.whenReady().then(() => {
   // van a la ventana en cuanto se sabe: la interfaz no pregunta, escucha.
   initWatch((e) => mainWindow?.webContents.send('git:changed', e))
   initUsage((all) => mainWindow?.webContents.send('usage:updated', all))
+  // El histórico y la configuración avisan al cambiar, venga el cambio de
+  // donde venga: el Panel, el Histórico y la barra de título se releen solos.
+  initLive((topics) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('live:changed', { topics })
+  })
 
-  writeDiagnostics()
+  // No frena el arranque: si hay que sondear el puente de la terminal, el
+  // diagnóstico se escribe cuando termine. De paso, la primera terminal ya se
+  // encuentra el sondeo hecho.
+  void writeDiagnostics()
   registerIpc(() => mainWindow)
   createWindow()
 

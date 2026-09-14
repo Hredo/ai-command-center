@@ -5,7 +5,7 @@ import {
 import { Panel, PanelHeader, Stat, Button, Tabs, Empty, Meter, Badge, Dot, cx } from '../components/ui'
 import { useStore } from '../lib/store'
 import { ClaudeWindows, UsageRows, useClaudeUsage } from '../components/AgentPanel'
-import { useRunsVersion } from '../lib/engine'
+import { useInFlight, useRunsVersion } from '../lib/engine'
 import { useIsPageActive } from '../lib/pageActive'
 import { cost, tokens, ms, tps, relTime, shortModel, colorFor, pct } from '../lib/format'
 import type { RunRecord, StatsBucket } from '@shared/types'
@@ -26,6 +26,8 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
   const version = useRunsVersion()
   const claude = useClaudeUsage()
   const active = useIsPageActive()
+  // Lo que se está generando y aún no ha entrado al histórico, estimado.
+  const inflight = useInFlight()
 
   // Con el panel a la vista se relee en cuanto termina una ejecución. Oculto no
   // se lee nada: al volver, `active` cambia y el efecto se dispara solo, así que
@@ -83,14 +85,19 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
           />
           <Stat
             label={t('Gasto')}
-            value={ov ? cost(ov.totalCost) : '—'}
-            sub={ov ? `${cost(ov.costMonth)} este mes` : ''}
+            value={ov ? cost(ov.totalCost + inflight.cost) : '—'}
+            sub={
+              ov
+                ? `${cost(ov.costMonth + inflight.cost)} este mes` +
+                  (inflight.count ? ` · ${inflight.count} en curso` : '')
+                : ''
+            }
             tone="accent"
             icon={<DollarSign size={14} />}
           />
           <Stat
             label="Tokens"
-            value={ov ? tokens(ov.totalTokensIn + ov.totalTokensOut) : '—'}
+            value={ov ? tokens(ov.totalTokensIn + ov.totalTokensOut + inflight.tokens) : '—'}
             sub={ov ? `${tokens(ov.totalTokensIn)} in · ${tokens(ov.totalTokensOut)} out` : ''}
             icon={<Coins size={14} />}
           />

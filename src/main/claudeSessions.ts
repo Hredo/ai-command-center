@@ -24,7 +24,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { paths } from './paths'
 import { computeCost, priceFor } from './providers/models'
-import { allRuns, upsertRuns } from './runs'
+import { allRuns, removeRuns, upsertRuns } from './runs'
 import type { RunRecord, UsageWindow } from '@shared/types'
 
 const ROOT = join(homedir(), '.claude', 'projects')
@@ -403,7 +403,17 @@ function projectOf(cwd?: string): string | undefined {
 export function importClaudeSessions(): number {
   load()
   const runs = allRuns()
-  const fromApp = new Set(runs.filter((r) => r.cliSessionId).map((r) => r.cliSessionId as string))
+  // Las filas importadas también llevan su id de sesión. Antes se contaban
+  // como «lanzadas desde la app», así que una sesión viva en otra terminal se
+  // importaba una vez y ya no crecía por mucho que siguiera gastando.
+  const fromApp = new Set(
+    runs.filter((r) => r.cliSessionId && !r.id.startsWith('claude-')).map((r) => r.cliSessionId as string)
+  )
+  // Y si una sesión lanzada desde aquí llegó a importarse mientras corría, la
+  // copia sobra en cuanto existe la ejecución de verdad.
+  const dropped = removeRuns(
+    runs.filter((r) => r.id.startsWith('claude-') && fromApp.has(r.cliSessionId ?? '')).map((r) => r.id)
+  )
 
   const pending: RunRecord[] = []
   for (const st of Object.values(index.files)) {
@@ -451,11 +461,11 @@ export function importClaudeSessions(): number {
     })
   }
 
-  return upsertRuns(pending)
+  return upsertRuns(pending) + dropped
 }
 
 /** Un repaso completo: leer lo nuevo y volcarlo al histórico. */
-export async function refreshClaude(): Promise<{ imported: number }> {
-  await scanClaude()
-  return { imported: importClaudeSessions() }
+export async function refreshClaude(): Promise<{ imported: number; files: number }> {
+  const scan = await scanClaude()
+  return { imported: importClaudeSessions(), files: scan.files }
 }

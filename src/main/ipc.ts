@@ -4,7 +4,7 @@ import { getConfig, saveConfig, updateSettings, saveAgent, saveCliAgent, savePro
 import { setKey, getStoredKey, listKeyStatus, mask, resolveKey } from './secrets'
 import { PROVIDERS } from './providers/catalog'
 import { fetchProviderModels, refreshCatalog, getCatalog, searchCatalog, priceFor, enrich } from './providers/models'
-import { runPrompt, abortRun, testProvider } from './providers/run'
+import { runPrompt, abortRun, testProvider, answerApproval } from './providers/run'
 import { runCliAgent, killCli } from './agents/cli'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
 import { scanProject, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
@@ -154,6 +154,9 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     return { ok: run.status !== 'error', data: run, error: run.error }
   })
   handle('run:abort', (runId: string) => abortRun(runId))
+  handle('run:approve', (runId: string, stepId: string, allow: boolean) =>
+    answerApproval(String(runId), String(stepId), allow === true)
+  )
 
   ipcMain.handle('cli:run', async (_e, opts: CliRunOptions, runId: string) => {
     const win = getWindow()

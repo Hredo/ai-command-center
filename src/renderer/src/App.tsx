@@ -8,7 +8,7 @@ import { StoreProvider, useStore } from './lib/store'
 import { PrefsProvider, usePrefs, usePaneSize } from './lib/prefs'
 import { I18nProvider, useT } from './lib/i18n'
 import { PageActiveProvider, useDocumentVisible } from './lib/pageActive'
-import { EngineProvider, useBusyCount, useRunsVersion } from './lib/engine'
+import { EngineProvider, useBusyCount, useInFlight, useRunsVersion } from './lib/engine'
 import { cx } from './components/ui'
 import { Pane } from './components/Resizable'
 import { cost } from './lib/format'
@@ -93,6 +93,9 @@ function TitleBar(): React.JSX.Element {
   const busy = useBusyCount()
   const version = useRunsVersion()
   const [spend, setSpend] = useState(0)
+  // Lo que está generando ahora mismo, estimado: el gasto del mes se mueve
+  // mientras trabaja y no sólo al terminar.
+  const inflight = useInFlight()
 
   // El gasto se relee al terminar cada ejecución; el reloj queda de red por
   // si algo se ejecuta fuera de esta ventana.
@@ -138,8 +141,12 @@ function TitleBar(): React.JSX.Element {
           <Boxes size={12} />
           <span className="num">{models.length}</span> {t('common.models')}
         </span>
-        <span className="flex items-center gap-1.5 text-dim">
-          {t('common.month')} <span className="num text-muted">{cost(spend)}</span>
+        <span
+          className="flex items-center gap-1.5 text-dim"
+          title={inflight.count ? t('Incluye lo que se está generando ahora, estimado') : undefined}
+        >
+          {t('common.month')}{' '}
+          <span className={cx('num', inflight.count ? 'text-ok' : 'text-muted')}>{cost(spend + inflight.cost)}</span>
         </span>
       </div>
     </div>

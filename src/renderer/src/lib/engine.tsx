@@ -20,6 +20,7 @@ import type {
   ChatMessage, SessionKind, UsageLimit, FileChange, FileTouch, Attachment, Effort,
   AgentStep, CliLimit
 } from '@shared/types'
+import { useStore } from './store'
 
 /* ------------------------------------------------------------------ *
  * Almacén mínimo                                                     *
@@ -471,6 +472,19 @@ function markTtft(runId: string, ttftMs: number): void {
   })
 }
 
+/**
+ * Un paso del agente. Si ya estaba se actualiza en su sitio: es la misma
+ * acción, que ahora tiene resultado o respuesta a su petición de permiso.
+ */
+function applyStep(runId: string, step: AgentStep): void {
+  patchRunningTurn(runId, (t) => {
+    const prev = t.steps ?? []
+    const at = prev.findIndex((s) => s.id === step.id)
+    const steps = at === -1 ? [...prev, step] : prev.map((s, i) => (i === at ? { ...s, ...step } : s))
+    return { ...t, steps }
+  })
+}
+
 function wire(): void {
   if (wired) return
   wired = true
@@ -481,6 +495,20 @@ function wire(): void {
       if (d.ttftMs != null) markTtft(d.runId, d.ttftMs)
     } else if (d.type === 'reasoning') {
       queueText(d.runId, '', d.text ?? '')
+    } else if (d.type === 'step' && d.step) {
+      // Lo que llega en modo agente se pinta igual que lo de un CLI.
+      applyStep(d.runId, d.step)
+    } else if (d.type === 'files') {
+      patchRunningTurn(d.runId, (t) => ({ ...t, files: d.files ?? t.files, touched: d.touched ?? t.touched }))
+    } else if (d.type === 'usage') {
+      patchRunningTurn(d.runId, (t) => ({
+        ...t,
+        live: {
+          ...(t.live ?? { startedAt: Date.now(), chars: 0, approxTokens: 0 }),
+          contextUsed: d.contextUsed ?? t.live?.contextUsed,
+          contextLimit: d.contextLimit ?? t.live?.contextLimit
+        }
+      }))
     } else if (d.type === 'limit' || d.type === 'start') {
       // Los límites llegan en las cabeceras de la respuesta, así que se ven
       // en cuanto el proveedor contesta, no al final.
@@ -544,6 +572,13 @@ function wire(): void {
   })
 
   window.api.term.onEvent(handleTermEvent)
+
+  // Cualquier cambio en el histórico —una ejecución de aquí, una sesión de
+  // Claude Code en otra terminal que sigue gastando, un borrado— llega como
+  // aviso, y las pantallas que leen de él se releen solas.
+  window.api.live.onChanged((e) => {
+    if (e.topics.includes('runs')) runsVersion.update((n) => n + 1)
+  })
 }
 
 /* ------------------------------------------------------------------ *
@@ -1019,6 +1054,10 @@ export async function sendChat(
     projectPath?: string
     effort?: Effort
     attachments?: Attachment[]
+    /** Modo agente: trabaja sobre los archivos del proyecto con herramientas. */
+    agentMode?: boolean
+    /** Qué puede hacer sin preguntar, en modo agente. */
+    permissionMode?: string
   }
 ): Promise<RunRecord | undefined> {
   const state = chats.get()[sessionId]
@@ -1075,6 +1114,8 @@ export async function sendChat(
       projectPath: opts.projectPath,
       effort: opts.effort,
       attachments: opts.attachments,
+      agentMode: opts.agentMode,
+      permissionMode: opts.permissionMode,
       conversationId: sessionId,
       kind: 'chat'
     },
@@ -1083,6 +1124,15 @@ export async function sendChat(
 
   finishTurn(sessionId, runId, res.data)
   return res.data
+}
+
+/**
+ * Contesta a un agente por API que espera permiso. El paso se marca ya en
+ * pantalla, para que los botones desaparezcan sin esperar al proceso principal.
+ */
+export function approveStep(runId: string, stepId: string, allow: boolean): void {
+  applyStep(runId, { id: stepId, approval: allow ? 'approved' : 'denied' } as AgentStep)
+  void window.api.run.approve(runId, stepId, allow)
 }
 
 /** Lanza un agente de línea de comandos dentro de una sesión. */
@@ -1344,7 +1394,7 @@ export function useTick(): number {
 if (typeof window !== 'undefined') {
   ;(window as unknown as Record<string, unknown>).__accEngine = {
     newSession, openSession, archiveSession, unarchiveSession, deleteSession,
-    patchSessionConfig, renameSession, sendChat, sendCli, stopSession,
+    patchSessionConfig, renameSession, sendChat, sendCli, stopSession, approveStep,
     flushPersist, loadSessions,
     openTerm, sendTermCommand, writeTerm, closeTerm, interruptTerm, clearTerm,
     resizeTerm, termScrollback, onTermData,
@@ -1361,6 +1411,57 @@ if (typeof window !== 'undefined') {
  * Sube cada vez que termina una ejecución. Quien lo lea vuelve a pedir sus
  * datos y deja de enseñar números de hace un rato.
  */
+export interface InFlight {
+  /** Ejecuciones por API generando ahora mismo. */
+  count: number
+  tokens: number
+  /** Coste estimado de lo que llevan: entrada aproximada y salida contada. */
+  cost: number
+}
+
+/**
+ * Lo que se está gastando ahora mismo en la app y aún no está en el histórico.
+ *
+ * Una ejecución sólo entra al histórico al terminar; hasta entonces el gasto se
+ * estima con lo que va llegando y el precio del modelo, para que las cifras se
+ * muevan mientras genera. Al acabar, la estimación desaparece y la sustituye la
+ * cifra real. Los agentes de línea de comandos no entran aquí: Claude Code
+ * escribe su transcripción mientras trabaja y el vigilante ya la vuelca al
+ * histórico en vivo, así que sumarlos otra vez los contaría dos veces.
+ */
+export function useInFlight(): InFlight {
+  const all = useSlice(chats)
+  const board = useSlice(arena)
+  const { models } = useStore()
+
+  let count = 0
+  let tokens = 0
+  let total = 0
+  const add = (providerId: string | undefined, model: string | undefined, inTok: number, outTok: number): void => {
+    const m = models.find((x) => x.providerId === providerId && x.id === model)
+    count++
+    tokens += inTok + outTok
+    total += (inTok * (m?.priceIn ?? 0) + outTok * (m?.priceOut ?? 0)) / 1_000_000
+  }
+
+  for (const st of Object.values(all)) {
+    if (!st.runningRunId || st.session.kind === 'cli') continue
+    const at = st.turns.findIndex((t) => t.runId === st.runningRunId && t.streaming)
+    if (at === -1) continue
+    const turn = st.turns[at]
+    const before = st.turns.slice(0, at).reduce((n, t) => n + t.content.length, 0)
+    const inTok =
+      turn.live?.promptTokens ?? turn.live?.contextUsed ?? Math.ceil(((st.session.systemPrompt?.length ?? 0) + before) / 4)
+    add(turn.providerId, turn.model, inTok, turn.live?.approxTokens ?? 0)
+  }
+  for (const c of board.contenders) {
+    if (c.mode !== 'api' || !c.streaming) continue
+    const inTok = c.live?.promptTokens ?? Math.ceil((board.prompt.length + board.system.length) / 4)
+    add(c.providerId, c.model, inTok, c.live?.approxTokens ?? 0)
+  }
+  return { count, tokens, cost: total }
+}
+
 export function useRunsVersion(): number {
   return useSlice(runsVersion)
 }

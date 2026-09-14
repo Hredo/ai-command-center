@@ -77,6 +77,8 @@ const api = {
   run: {
     prompt: (opts: RunOptions, runId: string) => call<RunRecord>('run:prompt', opts, runId),
     abort: (runId: string) => call<boolean>('run:abort', runId),
+    /** Contesta a un agente por API que pide permiso para un paso. */
+    approve: (runId: string, stepId: string, allow: boolean) => call<boolean>('run:approve', runId, stepId, allow),
     /** Devuelve la función para desuscribirse. */
     onDelta: (cb: (d: StreamDelta) => void) => {
       const listener = (_e: unknown, payload: StreamDelta): void => cb(payload)
@@ -134,7 +136,7 @@ const api = {
     /** Ajusta la rejilla de la consola al tamaño del panel. */
     resize: (id: string, cols: number, rows: number) => call<boolean>('term:resize', id, cols, rows),
     /** Si hay consola de verdad (PTY) o se está usando el respaldo. */
-    pty: () => call<{ available: boolean; reason?: string }>('term:pty'),
+    pty: () => call<{ available: boolean; engine?: 'native' | 'bridge' | 'pipe'; reason?: string }>('term:pty'),
     /** Lanza un comando y abre un bloque nuevo. */
     run: (id: string, command: string) => call<boolean>('term:run', id, command),
     /** Escritura cruda en stdin, para responder a un programa que pregunta. */
@@ -264,6 +266,16 @@ const api = {
   attach: {
     pick: () => call<Attachment[]>('attach:pick'),
     describe: (path: string) => call<Attachment>('attach:describe', path)
+  },
+  /** Avisos de que algo cambió en el proceso principal: quien lo lea se relee. */
+  live: {
+    onChanged: (cb: (e: { topics: string[] }) => void) => {
+      const listener = (_e: unknown, payload: { topics: string[] }): void => cb(payload)
+      ipcRenderer.on('live:changed', listener)
+      return () => {
+        ipcRenderer.removeListener('live:changed', listener)
+      }
+    }
   },
   notify: {
     /** La Arena avisa como grupo cuando todas sus columnas han terminado. */

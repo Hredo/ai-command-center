@@ -94,8 +94,10 @@ export function LiveMetrics({
   return (
     <div
       className={cx(
-        'flex items-center gap-3 flex-wrap',
-        compact ? '' : 'mt-2.5 pt-2.5 border-t border-line-soft',
+        'flex items-center gap-3',
+        // En la cabecera no se parte en dos renglones: se saldría de su franja
+        // y taparía lo que hay debajo.
+        compact ? 'flex-nowrap whitespace-nowrap' : 'flex-wrap mt-2.5 pt-2.5 border-t border-line-soft',
         className
       )}
     >

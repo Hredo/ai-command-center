@@ -110,9 +110,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }): Reac
       }
     })
 
+    // La configuración también cambia por detrás —la detección de CLIs, otra
+    // parte de la app que guarda—: se relee en cuanto el proceso principal avisa.
+    const offLive = window.api.live.onChanged((e) => {
+      if (e.topics.includes('config')) void reload()
+    })
+
     return () => {
       offCatalog()
       offLocal()
+      offLive()
     }
   }, [reload, reloadStatus, reloadModels, toast])
 

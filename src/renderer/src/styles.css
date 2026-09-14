@@ -85,9 +85,14 @@
   --tok-br6: #8fd0ff;
 }
 
-* {
-  box-sizing: border-box;
-  min-width: 0;
+/* En la capa base y no suelta: con Tailwind 4 el CSS fuera de capas gana a
+   las utilidades, y este `min-width: 0` anulaba cualquier `min-w-*` de la app
+   (el título de la consola llegaba a quedarse en cero píxeles). */
+@layer base {
+  * {
+    box-sizing: border-box;
+    min-width: 0;
+  }
 }
 
 html,
