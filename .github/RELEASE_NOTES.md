@@ -11,6 +11,17 @@ No necesitas Node, Python ni Visual Studio · *No Node, Python or Visual Studio 
 
 ---
 
+## ✨ Novedades en 0.5.0 · What's new in 0.5.0
+
+| Español | English |
+|---|---|
+| **La Consola trabaja como un agente.** Con un proyecto elegido, cualquier modelo por API (Ollama, OpenAI y compatibles, Anthropic, Gemini) lee, busca, edita y escribe archivos del proyecto y ejecuta comandos. Tú eliges los permisos: edita solo, pregunta antes, sólo plan o sin límites. | **The Console works as an agent.** With a project selected, any API model (Ollama, OpenAI and compatibles, Anthropic, Gemini) reads, searches, edits and writes project files and runs commands. You pick the permissions: edit freely, ask first, plan only or unrestricted. |
+| **Todo en tiempo real.** El panel, el gasto, el histórico y la Arena se actualizan solos, también con lo que gastas en Claude Code desde otras terminales, en menos de un segundo. Lo que se está generando ya cuenta en el gasto. | **Everything live.** Dashboard, spend, history and Arena update on their own, including what you spend in Claude Code from other terminals, in under a second. Whatever is being generated already counts towards spend. |
+| **Terminales con Smart App Control.** Si Windows bloquea el módulo nativo de consola, la terminal usa una consola real a través de PowerShell en lugar de quedarse en modo reducido. | **Terminals under Smart App Control.** If Windows blocks the native console module, the terminal uses a real console through PowerShell instead of falling back to reduced mode. |
+| **Cabecera de la Consola sin solapes** mientras un agente trabaja, a cualquier ancho de ventana. | **Console header no longer overlaps** while an agent is working, at any window width. |
+
+---
+
 ## 🇪🇸 Español
 
 ### Windows te va a avisar, y es normal
@@ -35,7 +46,7 @@ las instalaciones limpias de Windows 11 y no ofrece ninguna opción. Entonces:
 ### Verificar lo que has descargado
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.4.1.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
 ```
 
 Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
@@ -83,7 +94,7 @@ clean Windows 11 installations and offers no choice. In that case:
 ### Verifying your download
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.4.1.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
 ```
 
 It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.
