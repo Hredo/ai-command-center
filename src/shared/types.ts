@@ -80,6 +80,10 @@ export interface Agent {
   createdAt: number
   /** Contexto extra: rutas relativas dentro del proyecto que se adjuntan. */
   contextGlobs?: string[]
+  /** Cuánto piensa por omisión. */
+  effort?: Effort
+  /** Qué puede hacer sin preguntar. Ver API_PERMISSION_MODES. */
+  permissionMode?: string
 }
 
 /** Definición de un agente de línea de comandos (claude, codex, aider...). */
@@ -933,6 +937,8 @@ export interface StoredSession {
    * herramientas sobre los archivos. Sin valor cuenta como sí.
    */
   agentMode?: boolean
+  /** Sesión de la pestaña Agente de un proyecto que trabaja con un modelo por API. */
+  projectTab?: boolean
   turns: SessionTurn[]
   pinned?: boolean
   /** Cerrada: sigue guardada y se puede reabrir. */
@@ -964,6 +970,18 @@ export interface OllamaStatus {
   baseUrl: string
   models: OllamaModel[]
   error?: string
+}
+
+/** Un modelo que OpenCode puede usar, con lo que hace falta para elegirlo. */
+export interface OpencodeModel {
+  /** Tal cual se elige: proveedor/modelo. Los de Ollama llevan el nombre del modelo, no el de su variante. */
+  id: string
+  provider: 'opencode' | 'ollama'
+  name: string
+  /** Niveles de esfuerzo que admite (`--variant`); vacío si no tiene. */
+  variants: string[]
+  context?: number
+  free?: boolean
 }
 
 export interface GpuInfo {

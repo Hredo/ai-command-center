@@ -3,7 +3,7 @@ import type {
   AppConfig, Settings, ProviderDef, ProviderStatus, ModelInfo, Agent, CliAgent, Project,
   ProjectInfo, RunOptions, CliRunOptions, RunRecord, DetectionResult, DetectedCli,
   DetectedServer, StatsBucket, StreamDelta, CliEvent, TermInfo, TermEvent,
-  StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks,
+  StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks, OpencodeModel,
   GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
   GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage
 } from '@shared/types'
@@ -91,6 +91,8 @@ const api = {
   cli: {
     run: (opts: CliRunOptions, runId: string) => call<RunRecord>('cli:run', opts, runId),
     kill: (runId: string) => call<boolean>('cli:kill', runId),
+    /** Modelos de OpenCode: los de Zen y, con Ollama encendido, los locales. */
+    opencodeModels: (force?: boolean) => call<OpencodeModel[]>('cli:opencodeModels', force),
     onEvent: (cb: (e: CliEvent) => void) => {
       const listener = (_e: unknown, payload: CliEvent): void => cb(payload)
       ipcRenderer.on('cli:event', listener)
@@ -103,7 +105,9 @@ const api = {
     save: (a: Agent) => call<AppConfig>('agents:save', a),
     saveCli: (a: CliAgent) => call<AppConfig>('agents:saveCli', a),
     remove: (id: string) => call<AppConfig>('agents:remove', id),
-    removeCli: (id: string) => call<AppConfig>('agents:removeCli', id)
+    removeCli: (id: string) => call<AppConfig>('agents:removeCli', id),
+    /** Carpeta donde trabaja un agente cuando no hay proyecto. */
+    workspace: (id?: string) => call<string>('agents:workspace', id)
   },
   projects: {
     pick: () => call<string | null>('projects:pick'),

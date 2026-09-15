@@ -91,7 +91,7 @@ aplicación funciona igual. No hay nada que se rompa por faltar.
 2. En la sección **Assets**, descarga el archivo que acaba en `.exe`:
 
    ```
-   AI-Command-Center-Setup-0.5.0.exe
+   AI-Command-Center-Setup-0.6.0.exe
    ```
 
 3. Ejecútalo haciendo doble clic. **Windows va a mostrarte un aviso azul**; es normal y
@@ -112,7 +112,7 @@ queda bloqueado.
 1. Descarga el archivo que acaba en `.zip`:
 
    ```
-   AI-Command-Center-0.5.0-x64.zip
+   AI-Command-Center-0.6.0-x64.zip
    ```
 
 2. **Antes de descomprimir**, haz clic derecho sobre el `.zip`, entra en **Propiedades**,
@@ -216,7 +216,7 @@ comprobar que lo que has descargado es exactamente eso, abre PowerShell en la ca
 descargas y ejecuta:
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.6.0.exe' -Algorithm SHA256
 ```
 
 El valor que salga tiene que coincidir, letra por letra, con la línea correspondiente de
@@ -412,10 +412,15 @@ Cada proyecto tiene además:
   buscas, y clonas cualquiera eligiendo carpeta: queda dado de alta como proyecto en el
   mismo gesto.
 
-**Agentes** — dos tipos. Los de API son un preset de modelo, prompt de sistema y
-parámetros. Los de línea de comandos son los CLIs que ya tienes instalados (Claude Code,
-Codex, opencode, Aider, Gemini CLI…): la app los busca en tu PATH y los ejecuta dentro del
-proyecto. De Claude Code extrae tokens y coste reales.
+**Agentes** — dos tipos, y los dos trabajan como agentes: usan herramientas y dan las
+vueltas que haga falta hasta acabar la tarea. Los de API son un modelo con sus
+instrucciones, su esfuerzo y sus permisos: leen, buscan, editan y ejecutan comandos con las
+herramientas de la app, en el proyecto o, si no hay, en su propia carpeta. Los de línea de
+comandos son los CLIs que ya tienes instalados (Claude Code, Codex, opencode, Aider, Gemini
+CLI…): la app los busca en tu PATH y los ejecuta dentro del proyecto. De Claude Code y
+OpenCode extrae tokens y coste reales. A OpenCode le eliges proveedor —Zen o tus modelos de
+Ollama—, modelo y esfuerzo; con Ollama, cada modelo va siempre con su ventana de contexto
+entera.
 
 Y también las sesiones que **no** lanzaste desde aquí: si abres `claude` en una terminal
 cualquiera, esa conversación entra igualmente en el histórico y en las estadísticas, con
@@ -582,7 +587,7 @@ GitHub es un Windows limpio sin esa restricción: allí sale siempre, y sale igu
 Publicar es empujar una etiqueta:
 
 ```bash
-git tag v0.5.0 && git push origin v0.5.0
+git tag v0.6.0 && git push origin v0.6.0
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) comprueba tipos, verifica

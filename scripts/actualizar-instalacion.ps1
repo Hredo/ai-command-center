@@ -27,9 +27,39 @@ function Anota($texto) {
   Add-Content -Path $registro -Value $texto -Encoding utf8
 }
 
+# La version que lleva dentro un app.asar, leida de su package.json. Formato:
+# 8 bytes con el tamano del indice, el indice en JSON y detras los archivos,
+# con posiciones contadas desde el final del indice.
+function VersionDe($asar) {
+  $fs = [IO.File]::OpenRead($asar)
+  try {
+    $br = New-Object IO.BinaryReader($fs)
+    $null = $br.ReadUInt32()
+    $tamIndice = $br.ReadUInt32()
+    $null = $br.ReadUInt32()
+    $largo = $br.ReadInt32()
+    $indice = [Text.Encoding]::UTF8.GetString($br.ReadBytes($largo)) | ConvertFrom-Json
+    $pkg = $indice.files.'package.json'
+    $fs.Position = 8 + [int64]$tamIndice + [int64]$pkg.offset
+    return ([Text.Encoding]::UTF8.GetString($br.ReadBytes([int]$pkg.size)) | ConvertFrom-Json).version
+  } finally {
+    $fs.Dispose()
+  }
+}
+
 Set-Content -Path $registro -Value "inicio $(Get-Date -Format s)" -Encoding utf8
 
 try {
+  # 0. Que lo empaquetado sea la version del repositorio. Si se empaqueta y
+  # despues se sube la version, se instala codigo nuevo con el numero viejo y la
+  # aplicacion sigue diciendo la version anterior: paso con la 0.5.0.
+  $esperada = (Get-Content (Join-Path $raiz 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+  $empaquetada = VersionDe (Join-Path $origen 'app.asar')
+  if ($empaquetada -ne $esperada) {
+    throw "el empaquetado es la $empaquetada y package.json dice $esperada; hay que repetir pnpm build y electron-builder --win --dir"
+  }
+  Anota "version $empaquetada"
+
   # 1. Cerrar la aplicación si está abierta.
   $vivos = Get-Process -Name 'AI Command Center' -ErrorAction SilentlyContinue
   if ($vivos) {

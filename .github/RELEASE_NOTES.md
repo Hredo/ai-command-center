@@ -11,6 +11,19 @@ No necesitas Node, Python ni Visual Studio · *No Node, Python or Visual Studio 
 
 ---
 
+## ✨ Novedades en 0.6.0 · What's new in 0.6.0
+
+| Español | English |
+|---|---|
+| **OpenCode con el proveedor que elijas.** En la pestaña Agente y en la Consola eliges OpenCode Zen o tus modelos de Ollama, el modelo y el esfuerzo. Con Ollama, la app lo enciende si hace falta. Para darle la ventana entera crea en Ollama una variante de cada modelo (por ejemplo `qwen3:8b-ctx40k`), que comparte sus pesos y no ocupa disco. | **OpenCode with the provider you choose.** In the Agent tab and the Console, pick OpenCode Zen or your Ollama models, the model and the effort. With Ollama, the app starts it if needed. To give it the full window it creates an Ollama variant of each model (for example `qwen3:8b-ctx40k`) that shares its weights and takes no disk space. |
+| **Los agentes trabajan como agentes.** Un agente de la página Agentes ya no es un chat con instrucciones: siempre usa herramientas y da las vueltas que haga falta hasta acabar, con su esfuerzo y sus permisos. Con proyecto trabaja en sus archivos; sin proyecto, en su propia carpeta, que puedes abrir desde la Consola. | **Agents work as agents.** An agent from the Agents page is no longer a chat with instructions: it always uses tools and loops until the task is done, with its own effort and permissions. With a project it works on its files; without one, in its own folder, which you can open from the Console. |
+| **Modelos locales y agentes en la pestaña Agente.** La pestaña Agente de cada proyecto trabaja también con tus modelos de Ollama y con los agentes de la página Agentes, con las herramientas de la app y sus permisos. | **Local models and agents in the Agent tab.** Each project's Agent tab also works with your Ollama models and with the agents from the Agents page, using the app's own tools and permissions. |
+| **Contexto siempre al máximo con Ollama.** Chats, agente y OpenCode piden la ventana entera de cada modelo; antes Ollama se quedaba en 4.096 tokens y recortaba la conversación sin avisar. En GPUs pequeñas parte del modelo pasa a la CPU y va más lento. | **Always full context with Ollama.** Chats, agent and OpenCode request each model's full window; Ollama used to stop at 4,096 tokens and silently trim the conversation. On small GPUs part of the model moves to the CPU and runs slower. |
+| **La terminal integrada** le pasa a OpenCode tus modelos de Ollama, que aparecen en su `/models`. | **The built-in terminal** hands your Ollama models to OpenCode, so they show up in its `/models`. |
+| **Los agentes dicen por qué fallan.** Cuando OpenCode se rinde, la Consola enseña su mensaje en lugar de «Salió con código 1»; y si la causa es que tu red no resuelve el dominio de su API (hay redes que filtran dominios), lo dice. | **Agents say why they fail.** When OpenCode gives up, the Console shows its message instead of "exited with code 1"; and if the cause is that your network doesn't resolve its API's domain (some networks filter domains), it says so. |
+
+---
+
 ## ✨ Novedades en 0.5.0 · What's new in 0.5.0
 
 | Español | English |
@@ -46,7 +59,7 @@ las instalaciones limpias de Windows 11 y no ofrece ninguna opción. Entonces:
 ### Verificar lo que has descargado
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.6.0.exe' -Algorithm SHA256
 ```
 
 Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
@@ -94,7 +107,7 @@ clean Windows 11 installations and offers no choice. In that case:
 ### Verifying your download
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.6.0.exe' -Algorithm SHA256
 ```
 
 It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.

@@ -16,13 +16,19 @@ import {
   AttachButton, AttachmentList, BranchPicker, ContextGauge, EffortPicker,
   FileWork, UsageLimitView, useGit
 } from '../components/AgentPanel'
+import {
+  OpencodeModelPicker, isOpencodeCommand, opencodeEffortHint, useOpencodeModels
+} from '../components/OpencodeModelPicker'
 import { useStore } from '../lib/store'
 import { bytes, cost, ms, relTime, uid, colorFor } from '../lib/format'
 import {
   openTerm, sendTermCommand, useTerms, useSessions, useChat, newSession, openSession,
-  sendCli, stopSession, patchSessionConfig, useRunsVersion
+  sendCli, sendChat, approveStep, stopSession, patchSessionConfig, useRunsVersion
 } from '../lib/engine'
-import { PERMISSION_MODES, type Attachment, type Effort, type Project, type ProjectInfo, type RunRecord } from '@shared/types'
+import {
+  API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type Project, type ProjectInfo,
+  type RunRecord
+} from '@shared/types'
 import { Pane } from '../components/Resizable'
 
 import { useT } from '../lib/i18n'
@@ -37,6 +43,11 @@ const EFFORT_CLIS = new Set(['claude', 'codex', 'aider'])
 
 /** Los que admiten elegir modelo y modo de permisos desde aquí. */
 const CLAUDE_LIKE = new Set(['claude'])
+
+/** En el selector de agente, un modelo local de Ollama va con este prefijo delante. */
+const LOCAL_PREFIX = 'ollama:'
+/** Y un agente de la página Agentes, con éste. */
+const AGENT_PREFIX = 'agent:'
 
 function AgentOutput({ sessionId }: { sessionId: string | null }): React.JSX.Element {
   const t = useT()
@@ -71,7 +82,11 @@ function AgentOutput({ sessionId }: { sessionId: string | null }): React.JSX.Ele
             <div key={turn.id} className="mt-1.5">
               {/* Lo que va haciendo, igual que en la Consola. */}
               <div className="font-sans">
-                <AgentActivity steps={turn.steps} running={turn.streaming} />
+                <AgentActivity
+                  steps={turn.steps}
+                  running={turn.streaming}
+                  onApprove={turn.runId ? (stepId, allow) => approveStep(turn.runId!, stepId, allow) : undefined}
+                />
               </div>
               {turn.reasoning ? (
                 <details className="mb-1.5">
@@ -119,7 +134,7 @@ function AgentOutput({ sessionId }: { sessionId: string | null }): React.JSX.Ele
 
 export default function Projects({ onNav }: { onNav?: (page: string) => void }): React.JSX.Element {
   const t = useT()
-  const { config, reload, toast } = useStore()
+  const { config, reload, toast, models } = useStore()
   const [selected, setSelected] = useState<string | null>(null)
   const [info, setInfo] = useState<ProjectInfo | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
@@ -132,6 +147,9 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
   const [cliEffort, setCliEffort] = useState<Effort>('auto')
   const [cliModel, setCliModel] = useState('')
   const [cliPermission, setCliPermission] = useState('acceptEdits')
+  // Un modelo local trabaja con las herramientas de la app, que sí pueden
+  // pedirte permiso: sus modos son otros.
+  const [apiPermission, setApiPermission] = useState('acceptEdits')
   const [showClosed, setShowClosed] = useState(false)
   const [showGithub, setShowGithub] = useState(false)
   const [projectRuns, setProjectRuns] = useState<RunRecord[]>([])
@@ -160,7 +178,25 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
     () => sessions.find((s) => s.kind === 'cli' && s.projectId === project?.id && !s.archived) ?? null,
     [sessions, project?.id]
   )
-  const cliChat = useChat(cliSession?.id ?? null)
+  // La de un modelo local es una conversación por API en modo agente, marcada
+  // como de esta pestaña para no confundirla con las de la Consola.
+  const localSession = useMemo(
+    () => sessions.find((s) => s.kind === 'chat' && s.projectTab && s.projectId === project?.id && !s.archived) ?? null,
+    [sessions, project?.id]
+  )
+  const localModel = cliAgentId.startsWith(LOCAL_PREFIX) ? cliAgentId.slice(LOCAL_PREFIX.length) : null
+  const presetAgent = cliAgentId.startsWith(AGENT_PREFIX)
+    ? ((config?.agents ?? []).find((a) => a.id === cliAgentId.slice(AGENT_PREFIX.length)) ?? null)
+    : null
+  // Un modelo local o un agente de la página Agentes: los dos trabajan con las
+  // herramientas de la app, en bucle, en una conversación por API en modo agente.
+  const apiRun = presetAgent
+    ? { providerId: presetAgent.providerId, model: presetAgent.model }
+    : localModel
+      ? { providerId: 'ollama', model: localModel }
+      : null
+  const agentSession = apiRun ? localSession : cliSession
+  const cliChat = useChat(agentSession?.id ?? null)
   const cliRunning = Boolean(cliChat?.runningRunId)
 
   // Rama y estado del repositorio, para el selector y para saber si el agente
@@ -194,12 +230,22 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
     void openProjectTerm()
   }, [tab, project, projectTermId, termError, openProjectTerm])
 
-  // Al entrar en la pestaña de agente se carga su conversación guardada.
+  // Al entrar en la pestaña de agente se retoma la última conversación, sea de
+  // un agente de línea de comandos o de un modelo local.
   useEffect(() => {
-    if (tab !== 'agent' || !cliSession) return
-    void openSession(cliSession.id)
-    if (cliSession.cliAgentId) setCliAgentId(cliSession.cliAgentId)
-  }, [tab, cliSession])
+    if (tab !== 'agent') return
+    const last = [cliSession, localSession]
+      .filter((s): s is NonNullable<typeof s> => Boolean(s))
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    if (last?.kind === 'cli' && last.cliAgentId) setCliAgentId(last.cliAgentId)
+    else if (last?.kind === 'chat' && last.agentId) setCliAgentId(AGENT_PREFIX + last.agentId)
+    else if (last?.kind === 'chat' && last.model) setCliAgentId(LOCAL_PREFIX + last.model)
+  }, [tab, cliSession?.id, localSession?.id])
+
+  // La conversación que se ve es la del agente elegido.
+  useEffect(() => {
+    if (tab === 'agent' && agentSession) void openSession(agentSession.id)
+  }, [tab, agentSession?.id])
 
   useEffect(() => {
     if (!selected && projects.length) setSelected(projects[0].id)
@@ -320,33 +366,70 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
   const runCli = async (): Promise<void> => {
     if (!project || !cliAgentId || !cliPrompt.trim() || cliRunning) return
 
-    let sessionId = cliSession?.id
-    if (!sessionId) {
-      sessionId = await newSession('cli', {
-        projectId: project.id,
-        cliAgentId,
-        title: `Agente · ${project.name}`
-      })
-    } else if (cliSession?.cliAgentId !== cliAgentId) {
-      patchSessionConfig(sessionId, { cliAgentId })
-    }
-
     const prompt = cliPrompt.trim()
+    const attachments = cliAttach.length ? cliAttach : undefined
     setCliPrompt('')
     setCliAttach([])
-    const agent = cliAgents.find((a) => a.id === cliAgentId)
-    const run = await sendCli(sessionId, {
-      prompt,
-      agentId: cliAgentId,
-      agentName: agent?.name,
-      projectPath: project.path,
-      projectId: project.id,
-      projectName: project.name,
-      effort: cliEffort,
-      model: cliModel || undefined,
-      permissionMode: cliPermission,
-      attachments: cliAttach.length ? cliAttach : undefined
-    })
+
+    let run: RunRecord | undefined
+    if (apiRun) {
+      // Un modelo local o un agente por API trabaja con las herramientas de la
+      // app, en bucle, en una conversación por API en modo agente.
+      const choice = { ...apiRun, agentId: presetAgent?.id }
+      let sessionId = localSession?.id
+      if (!sessionId) {
+        sessionId = await newSession('chat', {
+          projectId: project.id,
+          projectTab: true,
+          ...choice,
+          agentMode: true,
+          title: `Agente · ${project.name}`
+        })
+      } else if (localSession?.model !== choice.model || localSession?.agentId !== choice.agentId) {
+        patchSessionConfig(sessionId, choice)
+      }
+      run = await sendChat(sessionId, {
+        prompt,
+        providerId: apiRun.providerId,
+        model: apiRun.model,
+        systemPrompt: [project.systemPrompt, presetAgent?.systemPrompt].filter(Boolean).join('\n\n') || undefined,
+        temperature: presetAgent?.temperature,
+        maxTokens: presetAgent?.maxTokens,
+        agentId: presetAgent?.id,
+        agentName: presetAgent?.name,
+        projectId: project.id,
+        projectName: project.name,
+        projectPath: project.path,
+        effort: cliEffort,
+        attachments,
+        agentMode: true,
+        permissionMode: apiPermission
+      })
+    } else {
+      let sessionId = cliSession?.id
+      if (!sessionId) {
+        sessionId = await newSession('cli', {
+          projectId: project.id,
+          cliAgentId,
+          title: `Agente · ${project.name}`
+        })
+      } else if (cliSession?.cliAgentId !== cliAgentId) {
+        patchSessionConfig(sessionId, { cliAgentId })
+      }
+      const agent = cliAgents.find((a) => a.id === cliAgentId)
+      run = await sendCli(sessionId, {
+        prompt,
+        agentId: cliAgentId,
+        agentName: agent?.name,
+        projectPath: project.path,
+        projectId: project.id,
+        projectName: project.name,
+        effort: cliEffort,
+        model: cliModel || undefined,
+        permissionMode: cliPermission,
+        attachments
+      })
+    }
     reloadGit()
 
     if (run) {
@@ -360,6 +443,27 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
 
   const cliAgents = config?.cliAgents ?? []
   const selectedCli = cliAgents.find((a) => a.id === cliAgentId)
+  const localModels = models.filter((m) => m.providerId === 'ollama')
+  const isOc = Boolean(selectedCli && isOpencodeCommand(selectedCli.command))
+  const oc = useOpencodeModels(isOc)
+  const ocVariants = oc.models.find((m) => m.id === cliModel)?.variants ?? []
+  const cliEffortOk = EFFORT_CLIS.has((selectedCli?.command ?? '').toLowerCase())
+  const effortSupported = apiRun ? true : isOc ? ocVariants.length > 0 : cliEffortOk
+  const effortHint = presetAgent
+    ? t('Automático deja la petición como la manda el proveedor por omisión')
+    : localModel
+      ? t('En los modelos que razonan decide cuánto piensan; en los demás no cambia nada')
+      : isOc
+      ? opencodeEffortHint(cliModel || undefined, ocVariants, t)
+      : cliEffortOk
+        ? t('Automático deja el agente con su ajuste por omisión')
+        : `${selectedCli?.command ?? t('este agente')} no tiene opción de esfuerzo`
+  // Con modelos locales se usa siempre la ventana entera: se dice cuánta es.
+  const contextMax = apiRun
+    ? models.find((m) => m.providerId === apiRun.providerId && m.id === apiRun.model)?.contextLength
+    : isOc && cliModel.startsWith('ollama/')
+      ? oc.models.find((m) => m.id === cliModel)?.context
+      : undefined
   const spend = projectRuns.reduce((s, r) => s + r.costTotal, 0)
 
   return (
@@ -727,12 +831,12 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
             {/* ---------------------------------------- Agente */}
             {tab === 'agent' ? (
               <div className="p-5 flex-1 min-h-0 flex flex-col gap-3 max-w-[1100px]">
-                {cliAgents.length === 0 ? (
+                {cliAgents.length === 0 && localModels.length === 0 && (config?.agents ?? []).length === 0 && !apiRun ? (
                   <Panel>
                     <Empty
                       icon={<Bot size={28} />}
-                      title={t('No hay agentes de línea de comandos dados de alta')}
-                      hint={t('Ve a Agentes y pulsa «Importar los detectados»: la app busca claude, codex, aider y compañía en tu PATH.')}
+                      title={t('No hay agentes de línea de comandos ni modelos locales')}
+                      hint={t('Ve a Agentes y pulsa «Importar los detectados», o arranca Ollama para trabajar con modelos locales.')}
                     />
                   </Panel>
                 ) : (
@@ -740,13 +844,58 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                     <div className="flex items-end gap-2">
                       <div className="w-[240px]">
                         <Field label={t('Agente')}>
-                          <Select value={cliAgentId} onChange={(e) => setCliAgentId(e.target.value)}>
+                          <Select
+                            value={cliAgentId}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setCliAgentId(v)
+                              // El modelo de un agente no vale para otro.
+                              setCliModel('')
+                              // Un agente de la página Agentes trae su esfuerzo y sus permisos.
+                              const preset = v.startsWith(AGENT_PREFIX)
+                                ? (config?.agents ?? []).find((a) => a.id === v.slice(AGENT_PREFIX.length))
+                                : undefined
+                              if (preset) {
+                                setCliEffort(preset.effort ?? 'auto')
+                                setApiPermission(preset.permissionMode ?? 'acceptEdits')
+                              }
+                            }}
+                          >
                             <option value="">{t('Elegir…')}</option>
-                            {cliAgents.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.name}
-                              </option>
-                            ))}
+                            {cliAgents.length ? (
+                              <optgroup label={t('Línea de comandos')}>
+                                {cliAgents.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ) : null}
+                            {(config?.agents ?? []).length ? (
+                              <optgroup label={t('Agentes')}>
+                                {(config?.agents ?? []).map((a) => (
+                                  <option key={a.id} value={AGENT_PREFIX + a.id}>
+                                    {a.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ) : null}
+                            <optgroup label={t('Modelos locales · Ollama')}>
+                              {localModel && !localModels.some((m) => m.id === localModel) ? (
+                                <option value={cliAgentId}>{localModel}</option>
+                              ) : null}
+                              {localModels.length ? (
+                                localModels.map((m) => (
+                                  <option key={m.id} value={LOCAL_PREFIX + m.id}>
+                                    {m.name}
+                                  </option>
+                                ))
+                              ) : (
+                                <option value="" disabled>
+                                  {t('Ollama apagado o sin modelos')}
+                                </option>
+                              )}
+                            </optgroup>
                           </Select>
                         </Field>
                       </div>
@@ -763,7 +912,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                         </Field>
                       </div>
                       {cliRunning ? (
-                        <Button variant="danger" onClick={() => cliSession && stopSession(cliSession.id)}>
+                        <Button variant="danger" onClick={() => agentSession && stopSession(agentSession.id)}>
                           <Square size={13} /> {t('Parar')}
                         </Button>
                       ) : (
@@ -786,6 +935,36 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                           })
                         }
                       />
+                      {isOc ? (
+                        <>
+                          <span className="text-[11px] text-dim">{t('Modelo')}</span>
+                          <OpencodeModelPicker
+                            compact
+                            value={cliModel || undefined}
+                            onChange={(id) => setCliModel(id ?? '')}
+                            models={oc.models}
+                            loading={oc.loading}
+                            onRefresh={oc.refresh}
+                          />
+                        </>
+                      ) : null}
+                      {apiRun ? (
+                        <>
+                          <span className="text-[11px] text-dim">{t('Permisos')}</span>
+                          <select
+                            value={apiPermission}
+                            onChange={(e) => setApiPermission(e.target.value)}
+                            title={API_PERMISSION_MODES.find((m) => m.id === apiPermission)?.hint}
+                            className="bg-raised border border-line rounded-md px-1.5 py-1 text-[11px] outline-none"
+                          >
+                            {API_PERMISSION_MODES.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {t(m.label)}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      ) : null}
                       {selectedCli && CLAUDE_LIKE.has((selectedCli.command ?? '').toLowerCase()) ? (
                         <>
                           <span className="text-[11px] text-dim">{t('Modelo')}</span>
@@ -818,12 +997,8 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                       <span className="text-[11px] text-dim">{t('Esfuerzo')}</span>
                       <EffortPicker
                         value={cliEffort}
-                        supported={EFFORT_CLIS.has((selectedCli?.command ?? '').toLowerCase())}
-                        hint={
-                          EFFORT_CLIS.has((selectedCli?.command ?? '').toLowerCase())
-                            ? t('Automático deja el agente con su ajuste por omisión')
-                            : `${selectedCli?.command ?? t('este agente')} no tiene opción de esfuerzo`
-                        }
+                        supported={effortSupported}
+                        hint={effortHint}
                         onChange={setCliEffort}
                       />
                       <AttachmentList
@@ -835,7 +1010,13 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                     <div className="text-[11.5px] text-dim flex items-center gap-1.5 flex-wrap">
                       <ChevronRight size={12} />
                       {t('Trabaja en')} <span className="font-mono text-muted">{project.path}</span>
-                      {cliSession ? (
+                      {contextMax ? (
+                        <>
+                          <span className="text-[#3a4255]">·</span>
+                          {t('contexto de {n} tokens, el máximo del modelo', { n: contextMax.toLocaleString() })}
+                        </>
+                      ) : null}
+                      {agentSession ? (
                         <>
                           <span className="text-[#3a4255]">·</span>
                           <MessagesSquare size={11} />
@@ -850,7 +1031,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                       ) : null}
                     </div>
 
-                    <AgentOutput sessionId={cliSession?.id ?? null} />
+                    <AgentOutput sessionId={agentSession?.id ?? null} />
                   </>
                 )}
               </div>

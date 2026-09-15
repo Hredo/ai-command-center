@@ -17,6 +17,7 @@ import { describeCall, executeTool, needsApproval, toolsFor, type AgentTool, typ
 import { lines, readError } from '../providers/http'
 import { readUsageLimit } from '../providers/limits'
 import { applyAnthropicEffort, applyGoogleEffort, applyOllamaEffort, applyOpenAiEffort, stripEffort } from '../effort'
+import { modelContextMax } from '../ollama'
 import type { AgentStep, ChatMessage, FileTouch, ProviderDef, RunOptions, UsageLimit } from '@shared/types'
 
 /** Rondas de herramientas por petición: un modelo que entra en bucle no gira para siempre. */
@@ -24,6 +25,9 @@ const MAX_ROUNDS = 40
 /** Para el modelo que acaba una vuelta sin decir nada después de usar herramientas. */
 const NUDGE =
   'No has escrito ninguna respuesta. Si la última herramienta dio error, corrígelo y sigue (por ejemplo, repite la edición con un fragmento que sea único). Si ya has terminado, resume en una o dos frases qué has hecho.'
+/** Para el que se calla sin haber hecho nada: ni herramientas ni una palabra. */
+const NUDGE_IDLE =
+  'No has hecho nada todavía: ni has usado herramientas ni has respondido. Haz lo que te piden con tus herramientas (mira los archivos antes de cambiarlos) y, al terminar, resume en una o dos frases qué has hecho.'
 /**
  * Fallos seguidos de la misma herramienta sobre lo mismo: al tercero se le
  * avisa y al sexto se le para. Un modelo pequeño puede quedarse repitiendo una
@@ -33,22 +37,24 @@ const STUCK_WARN = 3
 const STUCK_STOP = 6
 
 /**
- * Ventana de contexto que se le pide a Ollama en modo agente.
+ * Ventana que se le pide a Ollama si la ficha del modelo no dice la suya.
  *
- * Por omisión Ollama reserva unos pocos miles de tokens y, cuando se llenan,
- * recorta el principio de la conversación sin avisar: tras leer dos archivos
- * el modelo habría olvidado qué se le pidió. 16k entran en una GPU de 8 GB con
- * un modelo de 8B, apurando.
+ * Lo normal es pedir la ventana entera del modelo (modelContextMax): por
+ * omisión Ollama reserva unos pocos miles de tokens y, cuando se llenan,
+ * recorta el principio de la conversación sin avisar, así que tras leer dos
+ * archivos el modelo habría olvidado qué se le pidió.
  */
-export const OLLAMA_AGENT_CTX = 16_384
+const OLLAMA_FALLBACK_CTX = 16_384
 
 export interface AgentCtx {
   def: ProviderDef
   base: string
   key: string
   opts: RunOptions
-  /** Raíz del proyecto: todas las herramientas trabajan dentro. */
+  /** Raíz del proyecto, o la carpeta propia del agente: todas las herramientas trabajan dentro. */
   root: string
+  /** La raíz es un proyecto del usuario y no la carpeta del agente. */
+  inProject?: boolean
   signal: AbortSignal
   onText: (t: string) => void
   onReasoning: (t: string) => void
@@ -163,12 +169,14 @@ function providerError(def: ProviderDef, model: string, msg: string): Error {
 }
 
 /** Las instrucciones de trabajo, delante del prompt de sistema del usuario. */
-function agentInstructions(root: string, tools: AgentTool[]): string {
+function agentInstructions(root: string, tools: AgentTool[], inProject: boolean): string {
   const canEdit = tools.some((t) => t.kind === 'edit' || t.kind === 'write')
   const canRun = tools.some((t) => t.kind === 'run')
   return [
-    'Eres un agente de programación que trabaja dentro del proyecto del usuario, en su equipo con Windows.',
-    `La raíz del proyecto es ${root}. Las rutas que pases a las herramientas son relativas a esa raíz.`,
+    inProject
+      ? 'Eres un agente de programación que trabaja dentro del proyecto del usuario, en su equipo con Windows.'
+      : 'Eres un agente que trabaja en su propia carpeta de trabajo, en el equipo con Windows del usuario: ahí creas, lees y editas archivos y ejecutas comandos para hacer lo que te pidan.',
+    `La raíz ${inProject ? 'del proyecto' : 'de tu carpeta'} es ${root}. Las rutas que pases a las herramientas son relativas a esa raíz.`,
     'Tienes herramientas para mirar el proyecto' +
       (canEdit ? ', modificar archivos' : '') +
       (canRun ? ' y ejecutar comandos' : '') +
@@ -329,8 +337,9 @@ function ollamaDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Diale
     function: { name: t.name, description: t.description, parameters: t.parameters }
   }))
   let think = true
+  const numCtx = modelContextMax(opts.model)
 
-  const post = (): Promise<Response> => {
+  const post = async (): Promise<Response> => {
     const body: any = {
       model: opts.model,
       messages,
@@ -339,7 +348,7 @@ function ollamaDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Diale
       options: {
         temperature: opts.temperature ?? 0.6,
         num_predict: opts.maxTokens ?? 8192,
-        num_ctx: OLLAMA_AGENT_CTX
+        num_ctx: (await numCtx) ?? OLLAMA_FALLBACK_CTX
       }
     }
     if (think) applyOllamaEffort(body, opts.effort)
@@ -759,7 +768,9 @@ async function runCall(ctx: AgentCtx, tools: AgentTool[], call: ToolCall): Promi
 
 export async function runAgentLoop(ctx: AgentCtx): Promise<AgentTotals> {
   const tools = toolsFor(ctx.opts.permissionMode)
-  const system = [agentInstructions(ctx.root, tools), ctx.opts.systemPrompt].filter(Boolean).join('\n\n')
+  const system = [agentInstructions(ctx.root, tools, ctx.inProject !== false), ctx.opts.systemPrompt]
+    .filter(Boolean)
+    .join('\n\n')
   const dialect =
     ctx.def.kind === 'anthropic'
       ? anthropicDialect(ctx, tools, system)
@@ -810,10 +821,12 @@ export async function runAgentLoop(ctx: AgentCtx): Promise<AgentTotals> {
     if (!turn.calls.length) {
       // Los modelos pequeños a veces se callan justo después de un error de
       // herramienta y la respuesta llega vacía. Se les empuja una vez para que
-      // lo corrijan o, al menos, cuenten qué han hecho.
-      if (fresh && totals.toolCalls > 0 && !nudged) {
+      // lo corrijan o, al menos, cuenten qué han hecho. Pasa también sin haber
+      // tocado nada: qwen3:8b contestó una vez en blanco y la tarea se dio por
+      // acabada sin hacerse.
+      if (fresh && !nudged && (totals.toolCalls > 0 || !wrote)) {
         nudged = true
-        dialect.nudge(NUDGE)
+        dialect.nudge(totals.toolCalls > 0 ? NUDGE : NUDGE_IDLE)
         continue
       }
       break

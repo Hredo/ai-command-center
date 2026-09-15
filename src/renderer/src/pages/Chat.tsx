@@ -11,12 +11,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
-  ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch
+  ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
 import { Markdown } from '../components/Markdown'
 import { AgentActivity } from '../components/AgentActivity'
+import {
+  OpencodeModelPicker, isOpencodeCommand, opencodeEffortHint, useOpencodeModels
+} from '../components/OpencodeModelPicker'
 import { Metrics, LiveMetrics } from '../components/Stats'
 import {
   AttachButton, AttachmentList, BranchPicker, ContextGauge, EffortPicker,
@@ -369,10 +372,21 @@ export default function Chat(): React.JSX.Element {
 
   // El esfuerzo se guarda en la sesión: al reabrirla sigue como lo dejaste.
   const effort: Effort = session?.effort ?? 'auto'
-  // Un chat por API con proyecto trabaja como agente salvo que lo apagues: sin
-  // proyecto no tiene dónde trabajar y se queda en conversación.
-  const agentOn = !isCli && Boolean(project) && session?.agentMode !== false
-  const effortSupported = !isCli || (cliAgent ? EFFORT_CLIS.has(cliAgent.command.toLowerCase()) : false)
+  // Un agente trabaja siempre como agente: en el proyecto o, sin él, en su
+  // propia carpeta. Un modelo suelto lo hace si hay proyecto, salvo que lo apagues.
+  const agentOn = !isCli && (Boolean(apiAgent) || (Boolean(project) && session?.agentMode !== false))
+  // Sin proyecto, la carpeta donde trabaja: se enseña para poder abrirla.
+  const [workspace, setWorkspace] = useState<string>()
+  useEffect(() => {
+    if (!agentOn || project) return
+    void window.api.agents.workspace(apiAgent?.id).then((r) => setWorkspace(r.ok ? r.data : undefined))
+  }, [agentOn, project, apiAgent?.id])
+  // OpenCode deja elegir proveedor y modelo, y el esfuerzo depende del modelo.
+  const isOc = Boolean(isCli && cliAgent && isOpencodeCommand(cliAgent.command))
+  const oc = useOpencodeModels(isOc)
+  const ocVariants = oc.models.find((m) => m.id === session?.cliModel)?.variants ?? []
+  const effortSupported =
+    !isCli || (cliAgent ? (isOc ? ocVariants.length > 0 : EFFORT_CLIS.has(cliAgent.command.toLowerCase())) : false)
 
   // Al cambiar de conversación los adjuntos no se arrastran.
   useEffect(() => {
@@ -466,7 +480,9 @@ export default function Chat(): React.JSX.Element {
       model: a.model,
       systemPrompt: a.systemPrompt,
       temperature: a.temperature,
-      maxTokens: a.maxTokens
+      maxTokens: a.maxTokens,
+      effort: a.effort ?? session.effort,
+      permissionMode: a.permissionMode ?? session.permissionMode
     })
   }
 
@@ -705,9 +721,11 @@ export default function Chat(): React.JSX.Element {
                   value={effort}
                   supported={effortSupported}
                   hint={
-                    effortSupported
-                      ? t('Automático deja la petición como la manda el proveedor por omisión')
-                      : `${cliAgent?.command ?? t('este agente')} no tiene opción de esfuerzo`
+                    isOc
+                      ? opencodeEffortHint(session?.cliModel, ocVariants, t)
+                      : effortSupported
+                        ? t('Automático deja la petición como la manda el proveedor por omisión')
+                        : `${cliAgent?.command ?? t('este agente')} no tiene opción de esfuerzo`
                   }
                   onChange={(e) => session && patchSessionConfig(session.id, { effort: e })}
                 />
@@ -732,7 +750,10 @@ export default function Chat(): React.JSX.Element {
               <Field label={t('Agente de línea de comandos')} hint={t('Se ejecuta dentro del proyecto elegido')}>
                 <Select
                   value={session.cliAgentId ?? ''}
-                  onChange={(e) => patchSessionConfig(session.id, { cliAgentId: e.target.value || undefined })}
+                  onChange={(e) =>
+                    // El modelo de un agente no vale para otro.
+                    patchSessionConfig(session.id, { cliAgentId: e.target.value || undefined, cliModel: undefined })
+                  }
                 >
                   <option value="">{t('Elige un agente…')}</option>
                   {(config?.cliAgents ?? []).map((a) => (
@@ -750,7 +771,20 @@ export default function Chat(): React.JSX.Element {
 
               {/* --------------------------- Modelo del agente de CLI */}
               {cliAgent ? (
-                MODEL_CLIS.has(cliAgent.command.toLowerCase()) ? (
+                isOc ? (
+                  <Field
+                    label={t('Modelo')}
+                    hint={t('De OpenCode Zen o de tu Ollama; los locales van siempre con su contexto máximo')}
+                  >
+                    <OpencodeModelPicker
+                      value={session.cliModel}
+                      onChange={(id) => patchSessionConfig(session.id, { cliModel: id })}
+                      models={oc.models}
+                      loading={oc.loading}
+                      onRefresh={oc.refresh}
+                    />
+                  </Field>
+                ) : MODEL_CLIS.has(cliAgent.command.toLowerCase()) ? (
                   <Field label={t('Modelo')} hint={`Se le pasa a ${cliAgent.command} al lanzarlo`}>
                     {CLI_MODELS[cliAgent.command.toLowerCase()] ? (
                       <Select
@@ -815,7 +849,7 @@ export default function Chat(): React.JSX.Element {
                   />
                 </Field>
 
-                <Field label={t('Agente')} hint={t('Aplica su prompt de sistema y sus parámetros')}>
+                <Field label={t('Agente')} hint={t('Trabaja siempre como agente: con herramientas y hasta acabar la tarea')}>
                   <Select value={session.agentId ?? ''} onChange={(e) => applyAgent(e.target.value)}>
                     <option value="">{t('Sin agente')}</option>
                     {(config?.agents ?? []).map((a) => (
@@ -850,11 +884,17 @@ export default function Chat(): React.JSX.Element {
             {!isCli ? (
               project ? (
                 <div className="border border-line rounded-lg p-3 space-y-2.5">
-                  <Toggle
-                    checked={agentOn}
-                    onChange={(v) => patchSessionConfig(session.id, { agentMode: v })}
-                    label={t('Modo agente')}
-                  />
+                  {apiAgent ? (
+                    <div className="text-[12px] font-medium flex items-center gap-1.5">
+                      <Bot size={12} className="text-accent" /> {t('Trabaja como agente')}
+                    </div>
+                  ) : (
+                    <Toggle
+                      checked={agentOn}
+                      onChange={(v) => patchSessionConfig(session.id, { agentMode: v })}
+                      label={t('Modo agente')}
+                    />
+                  )}
                   <p className="text-[11px] text-dim leading-relaxed">
                     {agentOn
                       ? t('Lee, busca y edita los archivos del proyecto con herramientas, y ejecuta comandos si le dejas.') +
@@ -892,9 +932,47 @@ export default function Chat(): React.JSX.Element {
                     {t('Adjuntar contexto del proyecto')}
                   </label>
                 </div>
+              ) : agentOn ? (
+                <div className="border border-line rounded-lg p-3 space-y-2.5">
+                  <div className="text-[12px] font-medium flex items-center gap-1.5">
+                    <Bot size={12} className="text-accent" /> {t('Trabaja como agente')}
+                  </div>
+                  <p className="text-[11px] text-dim leading-relaxed">
+                    {t('Sin proyecto trabaja en su propia carpeta: ahí crea, lee y edita archivos y ejecuta comandos.')}
+                  </p>
+                  {workspace ? (
+                    <button
+                      type="button"
+                      onClick={() => void window.api.projects.openFolder(workspace)}
+                      title={t('Abrir la carpeta')}
+                      className="w-full flex items-center gap-1.5 text-[11px] font-mono text-muted hover:text-ink text-left"
+                    >
+                      <FolderOpen size={11} className="shrink-0" />
+                      <span className="truncate">{workspace}</span>
+                    </button>
+                  ) : null}
+                  <Field label={t('Permisos')}>
+                    <Select
+                      value={API_PERMISSION_MODES.find((m) => m.id === session.permissionMode)?.id ?? 'acceptEdits'}
+                      onChange={(e) => patchSessionConfig(session.id, { permissionMode: e.target.value })}
+                    >
+                      {API_PERMISSION_MODES.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {t(m.label)}
+                        </option>
+                      ))}
+                    </Select>
+                    <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
+                      {t(
+                        (API_PERMISSION_MODES.find((m) => m.id === session.permissionMode) ?? API_PERMISSION_MODES[0])
+                          .hint
+                      )}
+                    </p>
+                  </Field>
+                </div>
               ) : (
                 <p className="text-[11px] text-dim leading-relaxed">
-                  {t('Elige un proyecto para que el modelo pueda trabajar como agente sobre sus archivos.')}
+                  {t('Elige un proyecto, o un agente, para que el modelo trabaje con herramientas.')}
                 </p>
               )
             ) : null}

@@ -934,4 +934,38 @@ export const en: Record<string, string> = {
   'etiqueta': 'tag',
   'rama local': 'local branch',
   'rama remota': 'remote branch',
+  'Modelos locales · Ollama': 'Local models · Ollama',
+  'Ollama apagado o sin modelos': 'Ollama off or no models',
+  'No hay agentes de línea de comandos ni modelos locales': 'No command-line agents or local models',
+  'Ve a Agentes y pulsa «Importar los detectados», o arranca Ollama para trabajar con modelos locales.':
+    'Go to Agents and click "Import detected", or start Ollama to work with local models.',
+  'En los modelos que razonan decide cuánto piensan; en los demás no cambia nada':
+    'On reasoning models it sets how much they think; on the rest it changes nothing',
+  'contexto de {n} tokens, el máximo del modelo': 'context of {n} tokens, the model maximum',
+  'De OpenCode Zen o de tu Ollama; los locales van siempre con su contexto máximo':
+    'From OpenCode Zen or your Ollama; local models always run with their maximum context',
+  'Ollama (local)': 'Ollama (local)',
+  'Elegir modelo…': 'Choose a model…',
+  'gratis': 'free',
+  'Volver a leer la lista de modelos': 'Reload the model list',
+  'Ollama está apagado o no tiene modelos que sepan usar herramientas.': 'Ollama is off or has no models that can use tools.',
+  'encendiendo…': 'starting…',
+  'Encender Ollama': 'Start Ollama',
+  'Elige un modelo para ver sus niveles de esfuerzo': 'Pick a model to see its effort levels',
+  'Este modelo no tiene niveles de esfuerzo': 'This model has no effort levels',
+  'Niveles de este modelo: {list}': "This model's levels: {list}",
+  'En un modelo local, «Mínimo» no razona: va más rápido pero se equivoca más con las herramientas.':
+    'On a local model, "Minimal" turns reasoning off: faster, but it gets tools wrong more often.',
+  'Trabaja como agente': 'Works as an agent',
+  'Trabaja siempre como agente: con herramientas y hasta acabar la tarea': 'Always works as an agent: with tools, until the task is done',
+  'Sin proyecto trabaja en su propia carpeta: ahí crea, lee y edita archivos y ejecuta comandos.':
+    'Without a project it works in its own folder: there it creates, reads and edits files and runs commands.',
+  'Abrir la carpeta': 'Open the folder',
+  'Elige un proyecto, o un agente, para que el modelo trabaje con herramientas.':
+    'Pick a project, or an agent, so the model works with tools.',
+  'Trabaja siempre como agente: lee, busca, edita y ejecuta comandos con herramientas hasta acabar la tarea. En un proyecto trabaja sobre sus archivos; sin proyecto, en su propia carpeta.':
+    "Always works as an agent: it reads, searches, edits and runs commands with tools until the task is done. In a project it works on its files; without one, in its own folder.",
+  'Agentes que trabajan con herramientas, y los CLIs que ya tienes instalados': 'Agents that work with tools, and the CLIs you already have installed',
+  'Un agente es un modelo con sus instrucciones, su esfuerzo y sus permisos que trabaja con herramientas hasta acabar la tarea: en un proyecto, sobre sus archivos; sin proyecto, en su propia carpeta. Lo eliges en la Consola o en la pestaña Agente de un proyecto.':
+    "An agent is a model with its instructions, effort and permissions that works with tools until the task is done: in a project, on its files; without one, in its own folder. Pick it in the Console or in a project's Agent tab.",
 }

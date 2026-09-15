@@ -33,6 +33,7 @@ import { join } from 'node:path'
 import { paths } from './paths'
 import { StringDecoder } from 'node:string_decoder'
 import { bridgeStatus, markBridgeBroken, probeBridge, spawnBridge, type Bridge } from './conpty'
+import { opencodeTerminalEnv } from './opencode'
 import type { TermBackend, TermEvent, TermInfo } from '@shared/types'
 
 export type TermEventFn = (e: Omit<TermEvent, 'termId'>) => void
@@ -187,6 +188,8 @@ interface Term {
   cols: number
   rows: number
   emit: TermEventFn
+  /** Variables que se suman al entorno de la shell: OpenCode con los modelos de Ollama. */
+  extraEnv?: Record<string, string>
 }
 
 const terms = new Map<string, Term>()
@@ -323,8 +326,8 @@ function posixEnvIntegration(env: Record<string, string>): void {
 }
 
 /** Entorno completo de la shell de una consola real, con su integración. */
-function consoleEnv(kind: ShellKind): Record<string, string> {
-  const env = ptyEnv()
+function consoleEnv(kind: ShellKind, extra: Record<string, string> = {}): Record<string, string> {
+  const env = { ...ptyEnv(), ...extra }
   if (kind === 'posix') posixEnvIntegration(env)
   return env
 }
@@ -417,6 +420,10 @@ export async function createTerm(
   }
 
   let started = false
+
+  // Con Ollama encendido, el OpenCode que se abra aquí ve también sus modelos,
+  // con la ventana entera.
+  if (!opts.forcePipe) term.extraEnv = await opencodeTerminalEnv().catch(() => ({}))
 
   const lib = opts.forcePipe ? null : loadPty()
   if (lib) {
@@ -528,7 +535,7 @@ function startPty(t: Term, lib: PtyModule): void {
     cols: t.cols,
     rows: t.rows,
     cwd: t.cwd,
-    env: consoleEnv(t.kind)
+    env: consoleEnv(t.kind, t.extraEnv)
   })
   t.pty = p
   p.onData(consoleOutput(t))
@@ -546,7 +553,7 @@ function startBridge(t: Term): void {
     cwd: t.cwd,
     cols: t.cols,
     rows: t.rows,
-    env: consoleEnv(t.kind),
+    env: consoleEnv(t.kind, t.extraEnv),
     onData: consoleOutput(t),
     onExit: (code, started) => {
       // Si ni siquiera llegó a arrancar la shell, el puente no sirve en este

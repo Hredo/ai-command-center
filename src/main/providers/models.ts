@@ -3,6 +3,7 @@ import { paths } from '../paths'
 import { PROVIDERS, providerById, effectiveBaseUrl } from './catalog'
 import { resolveKey } from '../secrets'
 import { getConfig } from '../config'
+import { isContextVariant } from '../ollama'
 import type { ModelInfo, ProviderDef } from '@shared/types'
 
 /** fetch con timeout, porque un endpoint local caído cuelga el arranque. */
@@ -53,14 +54,14 @@ export async function fetchProviderModels(providerId: string): Promise<ModelInfo
 
   // Ollama nativo
   if (def.kind === 'ollama') {
-    return (json.models ?? []).map((m: any) => ({
+    return (json.models ?? []).filter((m: any) => !isContextVariant(m.name ?? '')).map((m: any) => ({
       id: m.name,
       providerId,
       name: m.name,
       source: 'local' as const,
       local: true,
       sizeBytes: m.size,
-      contextLength: m.details?.parameter_size ? undefined : undefined,
+      contextLength: m.details?.context_length,
       priceIn: 0,
       priceOut: 0,
       updatedAt: m.modified_at ? Date.parse(m.modified_at) : Date.now(),
