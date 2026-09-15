@@ -11,6 +11,14 @@ No necesitas Node, Python ni Visual Studio · *No Node, Python or Visual Studio 
 
 ---
 
+## ✨ Novedades en 0.5.1 · What's new in 0.5.1
+
+| Español | English |
+|---|---|
+| **Los agentes dicen por qué fallan.** Cuando OpenCode se rinde, la Consola enseña su mensaje en lugar de «Salió con código 1»; y si la causa es que tu red no resuelve el dominio de su API (hay redes que filtran dominios), lo dice. | **Agents say why they fail.** When OpenCode gives up, the Console shows its message instead of "exited with code 1"; and if the cause is that your network doesn't resolve its API's domain (some networks filter domains), it says so. |
+
+---
+
 ## ✨ Novedades en 0.5.0 · What's new in 0.5.0
 
 | Español | English |
@@ -46,7 +54,7 @@ las instalaciones limpias de Windows 11 y no ofrece ninguna opción. Entonces:
 ### Verificar lo que has descargado
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.5.1.exe' -Algorithm SHA256
 ```
 
 Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
@@ -94,7 +102,7 @@ clean Windows 11 installations and offers no choice. In that case:
 ### Verifying your download
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.5.1.exe' -Algorithm SHA256
 ```
 
 It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.

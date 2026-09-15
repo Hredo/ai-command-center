@@ -90,7 +90,7 @@ application works exactly the same. Nothing breaks because something is missing.
 2. Under **Assets**, download the file ending in `.exe`:
 
    ```
-   AI-Command-Center-Setup-0.5.0.exe
+   AI-Command-Center-Setup-0.5.1.exe
    ```
 
 3. Double-click it. **Windows will show you a blue warning**; that is expected and is
@@ -111,7 +111,7 @@ or if the installer is being blocked for you.
 1. Download the file ending in `.zip`:
 
    ```
-   AI-Command-Center-0.5.0-x64.zip
+   AI-Command-Center-0.5.1-x64.zip
    ```
 
 2. **Before extracting**, right-click the `.zip`, open **Properties**, tick **Unblock** at
@@ -215,7 +215,7 @@ check that what you downloaded is exactly that, open PowerShell in your download
 and run:
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.5.1.exe' -Algorithm SHA256
 ```
 
 The value it prints must match, character for character, the matching line in
@@ -582,7 +582,7 @@ every time.
 Releasing is pushing a tag:
 
 ```bash
-git tag v0.5.0 && git push origin v0.5.0
+git tag v0.5.1 && git push origin v0.5.1
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) typechecks, verifies the

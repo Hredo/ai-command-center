@@ -91,7 +91,7 @@ aplicación funciona igual. No hay nada que se rompa por faltar.
 2. En la sección **Assets**, descarga el archivo que acaba en `.exe`:
 
    ```
-   AI-Command-Center-Setup-0.5.0.exe
+   AI-Command-Center-Setup-0.5.1.exe
    ```
 
 3. Ejecútalo haciendo doble clic. **Windows va a mostrarte un aviso azul**; es normal y
@@ -112,7 +112,7 @@ queda bloqueado.
 1. Descarga el archivo que acaba en `.zip`:
 
    ```
-   AI-Command-Center-0.5.0-x64.zip
+   AI-Command-Center-0.5.1-x64.zip
    ```
 
 2. **Antes de descomprimir**, haz clic derecho sobre el `.zip`, entra en **Propiedades**,
@@ -216,7 +216,7 @@ comprobar que lo que has descargado es exactamente eso, abre PowerShell en la ca
 descargas y ejecuta:
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.5.0.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.5.1.exe' -Algorithm SHA256
 ```
 
 El valor que salga tiene que coincidir, letra por letra, con la línea correspondiente de
@@ -582,7 +582,7 @@ GitHub es un Windows limpio sin esa restricción: allí sale siempre, y sale igu
 Publicar es empujar una etiqueta:
 
 ```bash
-git tag v0.5.0 && git push origin v0.5.0
+git tag v0.5.1 && git push origin v0.5.1
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) comprueba tipos, verifica

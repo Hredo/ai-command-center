@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+import { lookup } from 'node:dns/promises'
 import { getConfig } from '../config'
 import { addRun } from '../runs'
 import { recordUsage, recordCliLimit } from '../usage'
@@ -106,6 +107,10 @@ interface AgentMeta {
   /** Ventana del modelo según el propio agente, que es mejor que el catálogo. */
   contextLimit?: number
   finishReason?: string
+  /** Por qué se rindió el agente, cuando lo dice él mismo. */
+  error?: string
+  /** La dirección a la que no pudo llegar, si la da. */
+  errorUrl?: string
   ttftMs?: number
   /** Con qué permisos dice el agente que ha arrancado. */
   permissionMode?: string
@@ -478,6 +483,16 @@ function parseOpencodeLine(line: string, meta: AgentMeta, sink: ParseSink): void
   const part = evt.part ?? evt
   const kind = String(part.type ?? evt.type ?? '')
 
+  // Cuando OpenCode se rinde (sin red, sin saldo, una clave mala…) lo cuenta
+  // en un evento de error y sale. Sin leerlo sólo quedaba el código de salida.
+  if (kind === 'error') {
+    const err = evt.error ?? {}
+    const message = String(err.data?.message ?? err.message ?? err.name ?? 'error sin detalle')
+    meta.error = message
+    if (typeof err.data?.metadata?.url === 'string') meta.errorUrl = err.data.metadata.url
+    sink.onStep({ id: 'error', at: Date.now(), kind: 'note', status: 'error', detail: message })
+    return
+  }
   if (kind === 'text' && typeof part.text === 'string') {
     sink.onText(part.text)
     return
@@ -526,6 +541,45 @@ function parseOpencodeLine(line: string, meta: AgentMeta, sink: ParseSink): void
     meta.numTurns = (meta.numTurns ?? 0) + 1
     sink.onUsage()
   }
+}
+
+/** Lo que puede tardar la comprobación de DNS antes de darla por perdida. */
+const DNS_CHECK_MS = 4000
+
+/**
+ * El agente no llegó a su API y su mensaje —«¿hay una errata en la URL o el
+ * puerto?»— manda a buscar donde no es. Se mira si el nombre se resuelve: en
+ * las redes que filtran dominios (eduroam no resuelve opencode.ai) el fallo
+ * está ahí, y decirlo ahorra la búsqueda.
+ */
+async function explainUnreachable(message: string, url?: string): Promise<string> {
+  if (!url || !/cannot connect|unable to connect|typo in the url|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(message)) {
+    return message
+  }
+  let host: string
+  try {
+    host = new URL(url).hostname
+  } catch {
+    return message
+  }
+  let timer: NodeJS.Timeout | undefined
+  const resolved = await Promise.race([
+    lookup(host).then(
+      () => 'ok',
+      (err: NodeJS.ErrnoException) => err.code ?? 'error'
+    ),
+    new Promise<string>((r) => {
+      timer = setTimeout(() => r('timeout'), DNS_CHECK_MS)
+    })
+  ]).finally(() => clearTimeout(timer))
+
+  if (resolved === 'ok') {
+    return `${message} · ${host} sí se resuelve: lo que falla es la conexión (cortafuegos, proxy o el servicio caído).`
+  }
+  return (
+    `${message} · ${host} no se resuelve desde esta red (${resolved}): el DNS no da ninguna dirección. ` +
+    'O no hay conexión o la red bloquea ese dominio; con otra red, o con un proveedor al que sí llegue, el agente funcionará.'
+  )
 }
 
 /**
@@ -843,6 +897,9 @@ function startCliAgent(
       stopWatch()
       const totalMs = Date.now() - startedAt
       const finalText = meta.result ?? text ?? rawOut
+      // Si el agente avisó de un error y no dio respuesta, es un fallo aunque
+      // salga con 0.
+      const failed = code !== 0 || (meta.error != null && !finalText.trim())
       const inTok = meta.inputTokens ?? estimateTokens(opts.prompt)
       const outTok = meta.outputTokens ?? estimateTokens(finalText)
       if (meta.ttftMs != null) ttftMs = meta.ttftMs
@@ -852,8 +909,9 @@ function startCliAgent(
         ...baseRun(),
         model: meta.model ?? agent.name,
         response: finalText,
-        status: code === 0 ? 'ok' : 'error',
-        error: code === 0 ? undefined : (errOut.slice(-1500) || `Salió con código ${code}`),
+        status: failed ? 'error' : 'ok',
+        // Lo que dice el agente vale más que el final de stderr, que suele ir vacío.
+        error: failed ? meta.error ?? (errOut.slice(-1500) || `Salió con código ${code}`) : undefined,
         finishReason: meta.finishReason,
         promptTokens: inTok,
         completionTokens: outTok,
@@ -882,18 +940,21 @@ function startCliAgent(
         source: 'app'
       }
 
+      const pending: Promise<unknown>[] = []
+      if (failed && meta.error) {
+        pending.push(explainUnreachable(meta.error, meta.errorUrl).then((why) => (run.error = why)))
+      }
       // El recuento final se hace después de que el agente haya cerrado, que
       // es cuando el disco ya está quieto.
       if (gitSnap) {
-        void changesSince(gitSnap)
-          .then((files) => {
+        pending.push(
+          changesSince(gitSnap).then((files) => {
             if (files.length) run.filesChanged = files
           })
-          .catch(() => undefined)
-          .finally(() => finish(run))
-        return
+        )
       }
-      finish(run)
+      if (pending.length) void Promise.allSettled(pending).then(() => finish(run))
+      else finish(run)
     })
   })
 }
