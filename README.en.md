@@ -90,7 +90,7 @@ application works exactly the same. Nothing breaks because something is missing.
 2. Under **Assets**, download the file ending in `.exe`:
 
    ```
-   AI-Command-Center-Setup-0.5.1.exe
+   AI-Command-Center-Setup-0.6.0.exe
    ```
 
 3. Double-click it. **Windows will show you a blue warning**; that is expected and is
@@ -111,7 +111,7 @@ or if the installer is being blocked for you.
 1. Download the file ending in `.zip`:
 
    ```
-   AI-Command-Center-0.5.1-x64.zip
+   AI-Command-Center-0.6.0-x64.zip
    ```
 
 2. **Before extracting**, right-click the `.zip`, open **Properties**, tick **Unblock** at
@@ -215,7 +215,7 @@ check that what you downloaded is exactly that, open PowerShell in your download
 and run:
 
 ```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.5.1.exe' -Algorithm SHA256
+Get-FileHash '.\AI-Command-Center-Setup-0.6.0.exe' -Algorithm SHA256
 ```
 
 The value it prints must match, character for character, the matching line in
@@ -412,10 +412,14 @@ Each project also has:
   search your repositories, and clone any of them into a folder you pick — registered as a
   project in the same gesture.
 
-**Agents** — two kinds. API agents are a preset of model, system prompt and parameters.
-Command-line agents are the CLIs you already have installed (Claude Code, Codex, opencode,
-Aider, Gemini CLI…): the app finds them on your PATH and runs them inside the project.
-From Claude Code it extracts real tokens and cost.
+**Agents** — two kinds, and both work as agents: they use tools and loop as many times as
+needed to finish the task. API agents are a model with its instructions, effort and
+permissions: they read, search, edit and run commands with the app's tools, in the project
+or, without one, in their own folder. Command-line agents are the CLIs you already have
+installed (Claude Code, Codex, opencode, Aider, Gemini CLI…): the app finds them on your
+PATH and runs them inside the project. From Claude Code and OpenCode it extracts real
+tokens and cost. For OpenCode you pick the provider —Zen or your Ollama models—, the model
+and the effort; with Ollama, every model always runs with its full context window.
 
 And also the sessions you did **not** start here: if you open `claude` in any terminal,
 that conversation still lands in the history and the statistics, with its project, its
@@ -582,7 +586,7 @@ every time.
 Releasing is pushing a tag:
 
 ```bash
-git tag v0.5.1 && git push origin v0.5.1
+git tag v0.6.0 && git push origin v0.6.0
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) typechecks, verifies the

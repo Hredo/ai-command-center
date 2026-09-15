@@ -78,7 +78,7 @@ export async function ollamaStatus(): Promise<OllamaStatus> {
     }
     const json: any = await res.json()
     out.up = true
-    out.models = (json.models ?? []).map(
+    out.models = (json.models ?? []).filter((m: any) => !isContextVariant(m.name ?? m.model ?? '')).map(
       (m: any): OllamaModel => ({
         name: m.name ?? m.model,
         sizeBytes: m.size ?? 0,
@@ -137,6 +137,98 @@ export async function startOllama(): Promise<{ started: boolean; detail: string 
 }
 
 /* ------------------------------------------------------------------ *
+ * Contexto                                                           *
+ * ------------------------------------------------------------------ */
+
+interface ModelFacts {
+  context?: number
+  capabilities: string[]
+}
+
+const facts = new Map<string, ModelFacts>()
+
+/** La ficha del modelo (`/api/show`), leída una vez. */
+async function modelFacts(name: string): Promise<ModelFacts | undefined> {
+  const hit = facts.get(name)
+  if (hit) return hit
+  try {
+    const res = await api('/api/show', { method: 'POST', body: JSON.stringify({ model: name }) }, 5000)
+    if (!res.ok) return undefined
+    const json = (await res.json()) as { model_info?: Record<string, unknown>; capabilities?: string[] }
+    const info = json.model_info ?? {}
+    const key = Object.keys(info).find((k) => k.endsWith('.context_length'))
+    const n = key ? Number(info[key]) : NaN
+    const f: ModelFacts = { context: Number.isFinite(n) && n > 0 ? n : undefined, capabilities: json.capabilities ?? [] }
+    facts.set(name, f)
+    return f
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * La ventana más grande que admite un modelo, según su propia ficha.
+ *
+ * Ollama no la usa por su cuenta: reserva unos pocos miles de tokens y, al
+ * llenarse, recorta el principio de la conversación sin avisar. Por eso cada
+ * petición pide la ventana entera. Ocupa más memoria —en una GPU de 8 GB parte
+ * del modelo pasa a la CPU y va más lento—, pero el modelo no olvida nada.
+ */
+export async function modelContextMax(name: string): Promise<number | undefined> {
+  return (await modelFacts(name))?.context
+}
+
+/** Lo que sabe hacer el modelo: tools, thinking, vision… */
+export async function modelCapabilities(name: string): Promise<string[]> {
+  return (await modelFacts(name))?.capabilities ?? []
+}
+
+/**
+ * Nombre de la variante de un modelo con su ventana entera fijada.
+ *
+ * Quien habla con Ollama por su API compatible con OpenAI —OpenCode entre
+ * otros— no puede pedir num_ctx: esa API lo ignora y el modelo se carga con
+ * 4096 tokens. Las instrucciones de OpenCode ya ocupan unos 15.000, así que se
+ * recortan y el modelo contesta a otra cosa. Una variante con `num_ctx` en sus
+ * parámetros comparte los pesos del original, no ocupa disco y se carga siempre
+ * con la ventana entera.
+ */
+export function contextVariantName(name: string, ctx: number): string {
+  const full = name.includes(':') ? name : `${name}:latest`
+  return `${full}-ctx${Math.round(ctx / 1024)}k`
+}
+
+/** Las variantes son un detalle interno: no se enseñan como modelos aparte. */
+export function isContextVariant(name: string): boolean {
+  return /-ctx\d+k$/.test(name)
+}
+
+const variants = new Set<string>()
+
+/** Crea la variante si hace falta. null si el modelo no dice su ventana u Ollama no la admite. */
+export async function ensureContextVariant(name: string): Promise<{ name: string; context: number } | null> {
+  const context = await modelContextMax(name)
+  if (!context) return null
+  const variant = contextVariantName(name, context)
+  if (variants.has(variant)) return { name: variant, context }
+  try {
+    const res = await api(
+      '/api/create',
+      {
+        method: 'POST',
+        body: JSON.stringify({ model: variant, from: name, parameters: { num_ctx: context }, stream: false })
+      },
+      60_000
+    )
+    if (!res.ok) return null
+    variants.add(variant)
+    return { name: variant, context }
+  } catch {
+    return null
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Modelos                                                            *
  * ------------------------------------------------------------------ */
 
@@ -148,6 +240,15 @@ export async function deleteModel(name: string): Promise<void> {
     body: JSON.stringify({ model: name, name })
   }, 20_000)
   if (!res.ok) throw new Error(`No se pudo borrar ${name}: ${res.status} ${await res.text()}`)
+  facts.delete(name)
+  // Sus variantes de ventana entera no sirven sin él.
+  const full = name.includes(':') ? name : `${name}:latest`
+  for (const v of [...variants].filter((v) => v.startsWith(`${full}-ctx`))) {
+    variants.delete(v)
+    await api('/api/delete', { method: 'DELETE', body: JSON.stringify({ model: v, name: v }) }, 20_000).catch(
+      () => undefined
+    )
+  }
 }
 
 /** Descargas en curso, para poder cancelarlas desde la UI. */

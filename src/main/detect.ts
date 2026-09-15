@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PROVIDERS, effectiveBaseUrl } from './providers/catalog'
 import { resolveKey, mask } from './secrets'
 import { getConfig, saveConfig } from './config'
+import { isContextVariant } from './ollama'
 import type { DetectionResult, DetectedCli, DetectedServer, ProviderStatus } from '@shared/types'
 
 /** CLIs de agentes conocidos, con la forma de invocarlos sin interacción. */
@@ -119,7 +120,7 @@ export async function probeLocalServers(timeoutMs = 1500): Promise<DetectedServe
           const json: any = await res.json()
           const models: string[] =
             def.kind === 'ollama'
-              ? (json.models ?? []).map((m: any) => m.name)
+              ? (json.models ?? []).map((m: any) => m.name).filter((n: string) => !isContextVariant(n ?? ''))
               : (json.data ?? []).map((m: any) => m.id)
 
           // Si ha respondido por la base alternativa, se fija como la buena:

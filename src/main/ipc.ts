@@ -6,10 +6,11 @@ import { PROVIDERS } from './providers/catalog'
 import { fetchProviderModels, refreshCatalog, getCatalog, searchCatalog, priceFor, enrich } from './providers/models'
 import { runPrompt, abortRun, testProvider, answerApproval } from './providers/run'
 import { runCliAgent, killCli } from './agents/cli'
+import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
 import { scanProject, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
 import { queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy } from './runs'
-import { paths } from './paths'
+import { paths, agentWorkspace } from './paths'
 import { registerExtraIpc } from './ipcExtra'
 import { checkArgs, isTrustedSender, openExternal, RENDERER_PREFS, type SecurityReport } from './security'
 import { notifyRun } from './notify'
@@ -168,12 +169,14 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     return { ok: run.status !== 'error', data: run, error: run.error }
   })
   handle('cli:kill', (runId: string) => killCli(runId))
+  handle('cli:opencodeModels', (force?: boolean) => opencodeModels(force === true))
 
   // ---------------- Agentes ----------------
   handle('agents:save', (agent: Agent) => saveAgent(agent))
   handle('agents:saveCli', (agent: CliAgent) => saveCliAgent(agent))
   handle('agents:remove', (id: string) => removeFrom('agents', id))
   handle('agents:removeCli', (id: string) => removeFrom('cliAgents', id))
+  handle('agents:workspace', (id?: string) => agentWorkspace(typeof id === 'string' ? id : undefined))
 
   // ---------------- Proyectos ----------------
   handle('projects:pick', async () => {

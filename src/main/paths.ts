@@ -13,6 +13,17 @@ export function dataDir(): string {
   return root
 }
 
+/**
+ * Carpeta donde trabaja un agente cuando no hay proyecto elegido. Un agente
+ * siempre trabaja con herramientas, y éstas necesitan una raíz de la que no
+ * salir: ésta es la suya. Se crea al vuelo.
+ */
+export function agentWorkspace(id?: string): string {
+  const dir = join(dataDir(), 'espacios', (id || 'consola').replace(/[^\w.-]/g, '_'))
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
 export const paths = {
   get config() { return join(dataDir(), 'config.json') },
   get secrets() { return join(dataDir(), 'secrets.json') },

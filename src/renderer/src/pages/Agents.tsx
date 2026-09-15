@@ -4,9 +4,10 @@ import {
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Badge, Empty, Field, Input, Textarea, Select, Modal, cx, Dot, Tabs } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
+import { EFFORT_LABEL, EffortPicker } from '../components/AgentPanel'
 import { useStore } from '../lib/store'
 import { uid, shortModel } from '../lib/format'
-import type { Agent, CliAgent, DetectedCli } from '@shared/types'
+import { API_PERMISSION_MODES, type Agent, type CliAgent, type DetectedCli, type Effort } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 const PALETTE = ['#22d3ee', '#a78bfa', '#34d399', '#f59e0b', '#fb7185', '#60a5fa', '#f472b6', '#4ade80']
@@ -59,9 +60,13 @@ function AgentEditor({
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(4096)
   const [color, setColor] = useState(PALETTE[0])
+  const [effort, setEffort] = useState<Effort>('auto')
+  const [permission, setPermission] = useState('acceptEdits')
 
   useEffect(() => {
     if (!open) return
+    setEffort(initial?.effort ?? 'auto')
+    setPermission(initial?.permissionMode ?? 'acceptEdits')
     if (initial) {
       setName(initial.name)
       setPick({ providerId: initial.providerId, model: initial.model })
@@ -91,6 +96,8 @@ function AgentEditor({
       temperature,
       maxTokens,
       color,
+      effort,
+      permissionMode: permission,
       createdAt: initial?.createdAt ?? Date.now()
     })
   }
@@ -138,6 +145,33 @@ function AgentEditor({
 
         <Field label={t('Modelo')}>
           <ModelPicker value={pick} onChange={setPick} />
+        </Field>
+
+        {/* Un agente trabaja siempre con herramientas: aquí se fija cuánto
+            piensa y qué puede hacer sin preguntar. */}
+        <p className="text-[11.5px] text-dim leading-relaxed">
+          {t('Trabaja siempre como agente: lee, busca, edita y ejecuta comandos con herramientas hasta acabar la tarea. En un proyecto trabaja sobre sus archivos; sin proyecto, en su propia carpeta.')}
+        </p>
+        <div>
+          <div className="text-[11.5px] uppercase tracking-wide text-dim mb-1.5 font-medium">{t('Esfuerzo')}</div>
+          <EffortPicker
+            value={effort}
+            supported
+            hint={t('Automático deja la petición como la manda el proveedor por omisión')}
+            onChange={setEffort}
+          />
+        </div>
+        <Field label={t('Permisos')}>
+          <Select value={permission} onChange={(e) => setPermission(e.target.value)}>
+            {API_PERMISSION_MODES.map((m) => (
+              <option key={m.id} value={m.id}>
+                {t(m.label)}
+              </option>
+            ))}
+          </Select>
+          <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
+            {t((API_PERMISSION_MODES.find((m) => m.id === permission) ?? API_PERMISSION_MODES[0]).hint)}
+          </p>
         </Field>
 
         {!initial ? (
@@ -345,7 +379,7 @@ export default function Agents(): React.JSX.Element {
           <div>
             <h1 className="text-[19px] font-semibold tracking-tight">{t('Agentes')}</h1>
             <p className="text-[12.5px] text-dim mt-0.5">
-              {t('Presets de modelo con personalidad propia, y los CLIs que ya tienes instalados')}
+              {t('Agentes que trabajan con herramientas, y los CLIs que ya tienes instalados')}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -393,7 +427,7 @@ export default function Agents(): React.JSX.Element {
               <Empty
                 icon={<Bot size={30} />}
                 title={t('Sin agentes todavía')}
-                hint={t('Un agente es un modelo con su prompt de sistema y sus parámetros ya fijados. Lo eliges en la Consola y trabajas sin volver a configurarlo.')}
+                hint={t('Un agente es un modelo con sus instrucciones, su esfuerzo y sus permisos que trabaja con herramientas hasta acabar la tarea: en un proyecto, sobre sus archivos; sin proyecto, en su propia carpeta. Lo eliges en la Consola o en la pestaña Agente de un proyecto.')}
                 action={
                   <Button
                     variant="primary"
@@ -452,9 +486,17 @@ export default function Agents(): React.JSX.Element {
                   <p className="text-[12px] text-muted line-clamp-3 leading-relaxed min-h-[3.2em]">
                     {a.systemPrompt || <span className="text-dim">{t('Sin prompt de sistema')}</span>}
                   </p>
-                  <div className="flex items-center gap-1.5 mt-3">
+                  <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                    <Badge tone="accent">
+                      <Bot size={10} /> {t('agente')}
+                    </Badge>
+                    <Badge>{t((API_PERMISSION_MODES.find((m) => m.id === a.permissionMode) ?? API_PERMISSION_MODES[0]).label)}</Badge>
+                    {a.effort && a.effort !== 'auto' ? (
+                      <Badge>
+                        {t('Esfuerzo')}: {t(EFFORT_LABEL[a.effort])}
+                      </Badge>
+                    ) : null}
                     <Badge>temp {a.temperature}</Badge>
-                    <Badge>{a.maxTokens} tok</Badge>
                   </div>
                 </Panel>
               ))}

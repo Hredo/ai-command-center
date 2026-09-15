@@ -10,6 +10,7 @@ import { composePrompt } from '../attach'
 import { cliEffortArgs, cliModelArgs, cliPermissionArgs } from '../effort'
 import { contextLimitFor } from '../providers/models'
 import { snapshot, changesSince, type GitSnapshot } from '../git'
+import { opencodeLaunch, type OpencodeLaunch } from '../opencode'
 import type {
   AgentStep, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
@@ -616,14 +617,28 @@ export async function runCliAgent(
       gitSnap = null
     }
   }
-  return startCliAgent(opts, onEvent, runId, gitSnap)
+  // OpenCode tiene que saber antes de arrancar con qué modelo va: si es de
+  // Ollama hay que encenderlo y pasarle su configuración (ver opencode.ts).
+  const agent = getConfig().cliAgents.find((a) => a.id === opts.agentId)
+  let prep: OpencodeLaunch | Error | undefined
+  if (agent && isOpencode(agent.command)) {
+    prep = await opencodeLaunch(opts.model ?? agent.model, opts.effort).catch((e: unknown) =>
+      e instanceof Error ? e : new Error(String(e))
+    )
+  }
+  return startCliAgent(opts, onEvent, runId, gitSnap, prep)
+}
+
+function isOpencode(command: string): boolean {
+  return /(^|[\\/])opencode(\.(cmd|exe))?$/i.test(command.trim())
 }
 
 function startCliAgent(
   opts: CliRunOptions,
   onEvent: CliEventFn,
   runId: string,
-  gitSnap: GitSnapshot | null
+  gitSnap: GitSnapshot | null,
+  prep?: OpencodeLaunch | Error
 ): Promise<RunRecord> {
   return new Promise((resolve) => {
     const cfg = getConfig()
@@ -671,14 +686,24 @@ function startCliAgent(
       return
     }
 
+    if (prep instanceof Error) {
+      const run = baseRun()
+      run.status = 'error'
+      run.error = prep.message
+      run.totalMs = Date.now() - startedAt
+      finish(run)
+      return
+    }
+
     // A un agente de línea de comandos se le pasan las rutas de los adjuntos:
     // tiene herramientas para abrirlos y así el prompt no se infla.
     const prompt = composePrompt(opts.prompt, opts.attachments, 'cli')
 
-    const effortArgs = cliEffortArgs(agent.command, opts.effort)
+    // OpenCode llega con modelo y esfuerzo ya resueltos; el resto, por su tabla.
+    const effortArgs = prep ? [] : cliEffortArgs(agent.command, opts.effort)
     // El modelo y el modo de permisos de esta ejecución mandan sobre los que
     // tenga guardados el agente.
-    const modelArgs = cliModelArgs(agent.command, opts.model ?? agent.model)
+    const modelArgs = prep ? prep.args : cliModelArgs(agent.command, opts.model ?? agent.model)
     const permissionArgs = cliPermissionArgs(agent.command, opts.permissionMode ?? agent.permissionMode)
     const extra = [...(effortArgs ?? []), ...(modelArgs ?? []), ...(permissionArgs ?? [])]
 
@@ -699,13 +724,13 @@ function startCliAgent(
         child = spawn(launch.file, launch.argv, {
           cwd,
           windowsHide: true,
-          env: { ...process.env, ...(agent.env ?? {}), ...launch.env },
+          env: { ...process.env, ...(agent.env ?? {}), ...(prep?.env ?? {}), ...launch.env },
           stdio: ['pipe', 'pipe', 'pipe']
         })
       } else {
         child = spawn(agent.command, args, {
           cwd,
-          env: { ...process.env, ...(agent.env ?? {}) },
+          env: { ...process.env, ...(agent.env ?? {}), ...(prep?.env ?? {}) },
           stdio: ['pipe', 'pipe', 'pipe']
         })
       }
@@ -735,7 +760,7 @@ function startCliAgent(
     let errOut = ''
     let ttftMs: number | undefined
     let stdoutBuf = ''
-    let contextLimit: number | undefined
+    let contextLimit: number | undefined = prep?.context
 
     // La línea de tiempo de lo que va haciendo. Los pasos se identifican por
     // id: cuando una herramienta devuelve, se actualiza el suyo en su sitio
@@ -778,6 +803,9 @@ function startCliAgent(
       status: 'ok',
       detail: `$ ${agent.command} ${args.join(' ')}`
     })
+    prep?.notes.forEach((detail, i) =>
+      onStep({ id: `opencode-${i}`, at: Date.now(), kind: 'note', status: 'ok', detail })
+    )
     if (effortArgs === null && opts.effort && opts.effort !== 'auto') {
       onStep({
         id: 'sin-esfuerzo',
