@@ -61,7 +61,7 @@ export default function DashboardCharts({ data }: { data: DayPoint[] }): React.J
         />
         <div className="p-3 h-[212px]">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: -18 }}>
+            <AreaChart data={data} margin={{ top: 6, right: 14, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="gCost" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={ui.accent} stopOpacity={0.45} />
@@ -95,7 +95,7 @@ export default function DashboardCharts({ data }: { data: DayPoint[] }): React.J
         <PanelHeader title={t('dash.tokensByDay')} subtitle={t('dash.tokensByDay.hint')} icon={<Coins size={14} />} />
         <div className="p-3 h-[212px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: -18 }}>
+            <BarChart data={data} margin={{ top: 6, right: 14, bottom: 0, left: 0 }}>
               <CartesianGrid stroke={ui.line} vertical={false} />
               <XAxis dataKey="label" {...axis} tickLine={false} axisLine={false} minTickGap={26} />
               <YAxis {...axis} tickLine={false} axisLine={false} width={44} tickFormatter={(v) => tokens(v)} />

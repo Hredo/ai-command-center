@@ -80,7 +80,7 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
           <Stat
             label={t('Ejecuciones')}
             value={ov?.totalRuns ?? '—'}
-            sub={ov ? `${ov.runsToday} hoy` : ''}
+            sub={ov ? t('dash.today', { n: ov.runsToday }) : ''}
             icon={<Activity size={14} />}
           />
           <Stat
@@ -88,8 +88,8 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
             value={ov ? cost(ov.totalCost + inflight.cost) : '—'}
             sub={
               ov
-                ? `${cost(ov.costMonth + inflight.cost)} este mes` +
-                  (inflight.count ? ` · ${inflight.count} en curso` : '')
+                ? t('dash.thisMonth', { cost: cost(ov.costMonth + inflight.cost) }) +
+                  (inflight.count ? ' · ' + t('dash.inFlight', { n: inflight.count }) : '')
                 : ''
             }
             tone="accent"
@@ -104,13 +104,13 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
           <Stat
             label={t('Latencia inicial')}
             value={ov ? ms(ov.avgTtft) : '—'}
-            sub="media hasta el primer token"
+            sub={t('media hasta el primer token')}
             icon={<Timer size={14} />}
           />
           <Stat
             label={t('Velocidad')}
             value={ov ? tps(ov.avgTps) : '—'}
-            sub={ov && ov.errorRate > 0 ? `${pct(ov.errorRate)} de errores` : t('sin errores')}
+            sub={ov && ov.errorRate > 0 ? t('dash.errorRate', { pct: pct(ov.errorRate) }) : t('sin errores')}
             tone={ov && ov.errorRate > 0.1 ? 'warn' : 'ok'}
             icon={<Zap size={14} />}
           />
@@ -186,7 +186,7 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
                   <thead>
                     <tr className="text-[10.5px] uppercase tracking-wider text-dim">
                       <th className="text-left font-medium py-1.5">{t('Modelo')}</th>
-                      <th className="text-right font-medium w-14">Ejec.</th>
+                      <th className="text-right font-medium w-14">{t('Ejec.')}</th>
                       <th className="text-left font-medium w-[128px] pl-3">{t('Coste')}</th>
                       <th className="text-left font-medium w-[112px] pl-3">{t('Velocidad')}</th>
                       <th className="text-right font-medium w-16">TTFT</th>
@@ -263,7 +263,11 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
           <Panel className="col-span-2">
             <PanelHeader
               title={t('Proveedores activos')}
-              subtitle={`${activeProviders.length} de ${status.length} listos · ${models.length} modelos disponibles`}
+              subtitle={t('dash.providersReady', {
+                ready: activeProviders.length,
+                total: status.length,
+                models: models.length
+              })}
               icon={<Cloud size={14} />}
               right={
                 <Button size="sm" variant="ghost" onClick={() => onNav('settings')}>
@@ -314,7 +318,9 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
                   <div key={s.id} className="flex items-center gap-2.5 px-1">
                     <Dot tone="ok" pulse />
                     <span className="text-[12.5px] flex-1 truncate">{s.name}</span>
-                    <span className="num text-[11px] text-dim">{s.modelCount} modelos</span>
+                    <span className="num text-[11px] text-dim">
+                      {s.modelCount} {t('modelos')}
+                    </span>
                   </div>
                 ))
               )}

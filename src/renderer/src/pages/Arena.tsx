@@ -138,7 +138,7 @@ export default function Arena(): React.JSX.Element {
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={() => setShowHistory((s) => !s)}>
-            <HistoryIcon size={13} /> Comparativas ({sessions.length})
+            <HistoryIcon size={13} /> {t('arena.history', { n: sessions.length })}
           </Button>
           {state.running ? (
             <Button size="sm" variant="danger" onClick={stopArena}>
@@ -204,7 +204,7 @@ export default function Arena(): React.JSX.Element {
             <ChevronDown size={12} className={cx('transition-transform', !showSystem && '-rotate-90')} />
             {t('Prompt de sistema común')}
           </button>
-          <span className="num text-[11px] text-dim">{state.prompt.length} caracteres</span>
+          <span className="num text-[11px] text-dim">{t('common.chars', { n: state.prompt.length })}</span>
         </div>
         {showSystem ? (
           <>
@@ -416,7 +416,7 @@ export default function Arena(): React.JSX.Element {
         <div className="border-t border-line shrink-0 bg-void max-h-[236px] overflow-y-auto">
           <div className="px-5 py-2.5 flex items-center justify-between">
             <span className="text-[11.5px] uppercase tracking-wider text-dim font-medium">
-              Comparativa · {state.contenders.filter((c) => c.run).length} resultados
+              {t('arena.results', { n: state.contenders.filter((c) => c.run).length })}
             </span>
             <Button
               size="sm"
@@ -510,8 +510,10 @@ export default function Arena(): React.JSX.Element {
             </tbody>
           </table>
           <p className="px-5 pb-2.5 pt-1 text-[10.5px] text-dim">
-            * coste estimado con los precios del catálogo. Los agentes de línea de comandos sólo
-            informan del coste real cuando su herramienta lo publica (Claude Code sí).
+            *{' '}
+            {t(
+              'coste estimado con los precios del catálogo. Los agentes de línea de comandos sólo informan del coste real cuando su herramienta lo publica (Claude Code sí).'
+            )}
           </p>
         </div>
       ) : null}

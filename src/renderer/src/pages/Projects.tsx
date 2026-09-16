@@ -504,7 +504,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
               showClosed ? 'bg-raised text-fg' : 'text-dim hover:text-muted'
             )}
           >
-            Cerrados
+            {t('Cerrados')}
             {closedCount ? <span className="num text-dim">{closedCount}</span> : null}
           </button>
         </div>
@@ -611,8 +611,8 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                 value={tab}
                 onChange={setTab}
                 items={[
-                  { id: 'overview', label: 'Resumen' },
-                  { id: 'files', label: 'Archivos' },
+                  { id: 'overview', label: t('Resumen') },
+                  { id: 'files', label: t('Archivos') },
                   {
                     id: 'git',
                     label: 'Git',
@@ -620,8 +620,8 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                   },
                   { id: 'graph', label: t('Árbol') },
                   { id: 'terminal', label: 'Terminal' },
-                  { id: 'agent', label: 'Agente', count: cliRunning ? 1 : undefined },
-                  { id: 'settings', label: 'Ajustes' }
+                  { id: 'agent', label: t('Agente'), count: cliRunning ? 1 : undefined },
+                  { id: 'settings', label: t('Ajustes') }
                 ]}
               />
             </div>

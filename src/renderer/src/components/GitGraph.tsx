@@ -738,7 +738,7 @@ export function GitGraph({
                     disabled={Boolean(busy)}
                     onClick={() => void run('push', { setUpstream: !info.upstream }, 'push')}
                   >
-                    Subir tus {info.ahead} commits
+                    {t('graph.pushAhead', { n: info.ahead })}
                   </Button>
                 ) : null}
               </div>

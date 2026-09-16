@@ -387,6 +387,20 @@ export function doingText(a: Activity, place: string): string {
   }
 }
 
+/**
+ * Lo que hace, en el idioma de la interfaz.
+ *
+ * La simulación guarda la frase en español, que es también la clave del
+ * diccionario; sólo dos frases llevan el sitio dentro y se traducen por partes.
+ */
+export function doingLabel(doing: string, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  const via = /^de camino a (.+)$/.exec(doing)
+  if (via) return t('house.onTheWay', { place: t(via[1]) })
+  const sweep = /^barriendo (.+)$/.exec(doing)
+  if (sweep) return t('house.sweeping', { place: t(sweep[1]) })
+  return t(doing)
+}
+
 /** Reparto estable: a cada vecino su sitio, sin que dos se peguen por uno. */
 function assignSpots(dwellers: Dweller[], working: Set<string>): Map<string, { spot: Spot; shift: number }> {
   const out = new Map<string, { spot: Spot; shift: number }>()

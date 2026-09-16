@@ -20,7 +20,7 @@ import { useStore } from '../lib/store'
 import { useArena, useOpenChats, useSessions } from '../lib/engine'
 import { DollChip, HouseCanvas } from '../components/HouseCanvas'
 import { lookOf, type Look } from '../lib/pixelArt'
-import { emptyHouse, type HouseState, type Job, type Resident } from '../lib/house'
+import { doingLabel, emptyHouse, type HouseState, type Job, type Resident } from '../lib/house'
 import { cx, Empty, Panel } from '../components/ui'
 import { Pane } from '../components/Resizable'
 import { useIsPageActive } from '../lib/pageActive'
@@ -282,7 +282,7 @@ export default function House(): React.JSX.Element {
                     ) : null}
                   </span>
                   <span className={cx('block text-[10.5px] truncate', activo ? 'text-ok' : 'text-dim')}>
-                    {principal?.doing ?? r.detail}
+                    {principal?.doing ? doingLabel(principal.doing, t) : r.detail}
                   </span>
                 </span>
               </button>
@@ -290,9 +290,9 @@ export default function House(): React.JSX.Element {
           })}
 
           <Panel className="m-3 p-3 text-[10.5px] text-dim leading-relaxed">
-            Cada vecino es una IA de las que tienes. Si le mandas una tarea se pone a hacer faena; si le mandas
-            otra a la vez, entra por la puerta una copia suya que se marcha cuando esa tarea acaba. El dibujo se
-            para solo cuando te vas a otra pestaña.
+            {t(
+              'Cada vecino es una IA de las que tienes. Si le mandas una tarea se pone a hacer faena; si le mandas otra a la vez, entra por la puerta una copia suya que se marcha cuando esa tarea acaba. El dibujo se para solo cuando te vas a otra pestaña.'
+            )}
           </Panel>
         </Pane>
       </div>

@@ -13,9 +13,10 @@
  */
 import React, { useEffect, useRef, useState } from 'react'
 import {
-  ROOMS, WORLD, emptyHouse, stepHouse,
+  ROOMS, WORLD, doingLabel, emptyHouse, stepHouse,
   type Dweller, type HouseState, type Job, type Resident
 } from '../lib/house'
+import { useT } from '../lib/i18n'
 import { PROPS, drawAmbient, drawPerson, drawWorld, lookOf, type Look } from '../lib/pixelArt'
 
 /** Fotogramas por segundo: con esto se mueve suave y no calienta el portátil. */
@@ -53,12 +54,15 @@ export function HouseCanvas({
   const canvas = useRef<HTMLCanvasElement>(null)
   const fondo = useRef<HTMLCanvasElement | null>(null)
   const st = useRef<HouseState>(emptyHouse())
-  const datos = useRef({ residents, jobs, hovered, first: true })
+  const tr = useT()
+  const datos = useRef({ residents, jobs, hovered, tr, first: true })
   const [size, setSize] = useState({ w: WORLD.w, h: WORLD.h, s: 1 })
 
   datos.current.residents = residents
   datos.current.jobs = jobs
   datos.current.hovered = hovered
+  // El bucle de dibujo vive fuera de React: lee el traductor de aquí.
+  datos.current.tr = tr
 
   const looks = useRef(new Map<string, Look>())
   for (const r of residents) {
@@ -167,7 +171,7 @@ export function HouseCanvas({
       c2.fillStyle = 'rgba(255,255,255,0.30)'
       for (const room of ROOMS) {
         if (room.outside) continue
-        c2.fillText(room.name.toUpperCase(), (room.box.x + 7) * s, (room.box.y + 5) * s)
+        c2.fillText(datos.current.tr(room.name).toUpperCase(), (room.box.x + 7) * s, (room.box.y + 5) * s)
       }
 
       c2.font = `${fs}px "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif`
@@ -201,8 +205,9 @@ export function HouseCanvas({
         if (resaltado) {
           c2.font = `${Math.max(9, fs - 2)}px "Segoe UI", system-ui, sans-serif`
           c2.fillStyle = '#9fb0c8'
-          c2.strokeText(d.doing, px, py + fs + 2)
-          c2.fillText(d.doing, px, py + fs + 2)
+          const doing = doingLabel(d.doing, datos.current.tr)
+          c2.strokeText(doing, px, py + fs + 2)
+          c2.fillText(doing, px, py + fs + 2)
           c2.font = `${fs}px "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif`
         }
       }

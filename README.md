@@ -4,145 +4,186 @@
 
 # AI Command Center
 
-**Español** · [English](README.en.md)
+**English** · [Español](README.es.md)
 
-Centro de mando local para tus IAs, tus agentes y tus proyectos.
-Todo en tu equipo: sin cuenta, sin servidor y sin telemetría.
+A local command center for your AIs, your agents and your projects.
+Everything on your own machine: no account, no server, no telemetry.
 
 [![ci](https://github.com/Hredo/ai-command-center/actions/workflows/ci.yml/badge.svg)](https://github.com/Hredo/ai-command-center/actions/workflows/ci.yml)
-[![última versión](https://img.shields.io/github/v/release/Hredo/ai-command-center?label=descargar)](https://github.com/Hredo/ai-command-center/releases/latest)
-[![descargas](https://img.shields.io/github/downloads/Hredo/ai-command-center/total?label=descargas)](https://github.com/Hredo/ai-command-center/releases)
-[![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
-[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](#requisitos)
+[![latest release](https://img.shields.io/github/v/release/Hredo/ai-command-center?label=download)](https://github.com/Hredo/ai-command-center/releases/latest)
+[![downloads](https://img.shields.io/github/downloads/Hredo/ai-command-center/total?label=downloads)](https://github.com/Hredo/ai-command-center/releases)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](#requirements)
 
-**[⬇ Descargar la última versión](https://github.com/Hredo/ai-command-center/releases/latest)**
+**[⬇ Download the latest version](https://github.com/Hredo/ai-command-center/releases/latest)**
+
+<img src="docs/media/en/console.gif" alt="Claude Code working inside AI Command Center: every tool call as it happens, the lines it changes, the files it touched and the live context and cost" width="100%">
+
+<sub>A Claude Code agent working on a project, live. All screenshots use made-up demo data.</sub>
 
 </div>
 
 ---
 
-## Índice
+## Contents
 
-- [Qué es](#qué-es)
-- [**Instalación**](#instalación) — [requisitos](#requisitos) · [instalador](#opción-a--instalador-recomendado) · [portátil](#opción-b--versión-portátil-sin-instalar) · [compilar](#opción-c--compilarlo-tú-mismo)
-- [Windows te va a avisar: por qué, y qué hacer](#windows-te-va-a-avisar-por-qué-y-qué-hacer)
-- [Verificar la descarga](#verificar-la-descarga)
-- [Primeros pasos](#primeros-pasos)
-- [Actualizar y desinstalar](#actualizar-y-desinstalar)
-- [Problemas frecuentes](#problemas-frecuentes)
-- [Qué hace](#qué-hace)
-- [Proveedores](#proveedores)
-- [Desarrollo](#desarrollo)
-- [Publicar una versión](#publicar-una-versión)
-- [Estructura](#estructura)
-- [Dónde guarda los datos](#dónde-guarda-los-datos)
-- [Contribuir](#contribuir)
-- [Licencia](#licencia)
-
----
-
-## Qué es
-
-Una aplicación de escritorio para Windows que reúne en un solo sitio tres cosas que
-normalmente están repartidas entre media docena de pestañas y terminales:
-
-- **El acceso a tus IAs** — más de 8.000 modelos de 32 proveedores por API, los agentes
-  de línea de comandos que ya tengas instalados (Claude Code, Codex, Aider, OpenCode…) y
-  los modelos locales que corras con Ollama, todos desde la misma consola.
-- **La analítica de lo que gastas** — coste por día, tokens, latencia hasta el primer
-  token, velocidad de generación, tasa de error y ranking de modelos. Incluidas las
-  sesiones que lanzaste fuera de la aplicación.
-- **Tus proyectos** — ficheros, editor con coloreado, git completo con árbol de commits,
-  GitHub, terminales reales y agentes ejecutándose dentro de cada carpeta.
-
-Todo corre en local. Las claves se guardan cifradas con DPAPI en tu perfil de Windows y
-el histórico vive en ficheros tuyos. No hay servidor, ni cuenta que crear, ni telemetría.
+- [What it is](#what-it-is)
+- [A quick look](#a-quick-look)
+- [**Installation**](#installation) — [requirements](#requirements) · [installer](#option-a--installer-recommended) · [portable](#option-b--portable-no-installation) · [build it](#option-c--build-it-yourself)
+- [Windows will warn you: why, and what to do](#windows-will-warn-you-why-and-what-to-do)
+- [Verifying your download](#verifying-your-download)
+- [First steps](#first-steps)
+- [Updating and uninstalling](#updating-and-uninstalling)
+- [Troubleshooting](#troubleshooting)
+- [What it does](#what-it-does)
+- [Providers](#providers)
+- [Development](#development)
+- [Cutting a release](#cutting-a-release)
+- [Layout](#layout)
+- [Where your data lives](#where-your-data-lives)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## Instalación
+## What it is
 
-### Requisitos
+A Windows desktop application that pulls together, in one place, three things normally
+scattered across half a dozen tabs and terminals:
+
+- **Access to your AIs** — 8,000+ models from 32 API providers, whichever command-line
+  agents you already have installed (Claude Code, Codex, Aider, OpenCode…) and the local
+  models you run through Ollama, all from the same console.
+- **Analytics on what you spend** — cost per day, tokens, time to first token, generation
+  speed, error rate and a model ranking. Including sessions you started outside the app.
+- **Your projects** — files, a syntax-highlighting editor, full git with a commit graph,
+  GitHub, real terminals and agents running inside each folder.
+
+Everything runs locally. Keys are encrypted with DPAPI in your Windows profile and the
+history lives in your own files. There is no server, no account to create, no telemetry.
+
+---
+
+## A quick look
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/media/en/dashboard.png"><img src="docs/media/en/dashboard.png" alt="Dashboard with spend, tokens, latency, speed, provider limits and the Claude Code plan windows"></a>
+      <p><b>Dashboard</b> — spend, tokens, latency and speed per model, what each provider says you have left, and your Claude Code usage including sessions started in other terminals.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/media/en/arena.gif"><img src="docs/media/en/arena.gif" alt="Arena streaming the same prompt to Claude Sonnet 5, GPT-5.4 and a local Qwen model, then comparing them"></a>
+      <p><b>Arena</b> — one prompt, several models or agents answering side by side, and a table that marks the best in each metric.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/media/en/terminal.png"><img src="docs/media/en/terminal.png" alt="Built-in terminal running git status, the test suite and ollama ps with full colour"></a>
+      <p><b>Terminal</b> — real consoles in tabs (ConPTY), so full-screen tools and interactive agents work with their colours.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/media/en/graph.png"><img src="docs/media/en/graph.png" alt="Commit graph with branches, merges, tags and remote branches"></a>
+      <p><b>Git graph</b> — branches, merges and tags drawn per project; merge, rebase, cherry-pick or reset from any commit.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/media/en/files.png"><img src="docs/media/en/files.png" alt="Project file tree and the built-in editor with syntax highlighting and indentation guides"></a>
+      <p><b>Files</b> — the project tree and an editor with syntax highlighting, indentation guides and a warning when an agent changed the file under you.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/media/en/house.gif"><img src="docs/media/en/house.gif" alt="The House: a pixel-art home where every detected AI rests or gets up to do chores while it works"></a>
+      <p><b>The House</b> — every AI you have lives here; the ones with work in progress get up and do chores.</p>
+    </td>
+  </tr>
+</table>
+
+---
+
+## Installation
+
+### Requirements
 
 | | |
 |---|---|
-| **Sistema** | Windows 10 (22H2 o superior) o Windows 11, **64 bits** |
-| **Disco** | Unos 400 MB |
-| **Permisos** | **No hace falta ser administrador.** Se instala en tu perfil de usuario |
-| **Y nada más** | No necesitas Node, ni Python, ni Visual Studio: va todo dentro |
+| **System** | Windows 10 (22H2 or later) or Windows 11, **64-bit** |
+| **Disk** | Around 400 MB |
+| **Privileges** | **No administrator rights needed.** It installs into your user profile |
+| **Nothing else** | No Node, no Python, no Visual Studio — it is all bundled |
 
-Opcionales. Cada uno desbloquea una parte, y ninguno es obligatorio:
+Optional. Each one unlocks a part of the app, and none of them is required:
 
-| Programa | Para qué | Cómo instalarlo |
+| Program | What it enables | How to install |
 |---|---|---|
-| `git` | El panel de git y el árbol de commits | `winget install --id Git.Git` |
-| `gh` | El panel de GitHub | `winget install --id GitHub.cli` |
-| [Ollama](https://ollama.com) | Modelos locales | `winget install --id Ollama.Ollama` |
-| Cualquier agente CLI | Ejecutarlo desde la app | Claude Code, Codex, Aider, OpenCode, Gemini CLI… |
+| `git` | The git panel and the commit graph | `winget install --id Git.Git` |
+| `gh` | The GitHub panel | `winget install --id GitHub.cli` |
+| [Ollama](https://ollama.com) | Local models | `winget install --id Ollama.Ollama` |
+| Any agent CLI | Running it from the app | Claude Code, Codex, Aider, OpenCode, Gemini CLI… |
 
-Lo que no tengas instalado aparece como «no encontrado» en su pantalla y el resto de la
-aplicación funciona igual. No hay nada que se rompa por faltar.
+Anything you don't have shows up as "not found" on its own screen and the rest of the
+application works exactly the same. Nothing breaks because something is missing.
 
 ---
 
-### Opción A — Instalador (recomendado)
+### Option A — Installer (recommended)
 
-1. Abre la **[página de descargas](https://github.com/Hredo/ai-command-center/releases/latest)**.
-2. En la sección **Assets**, descarga el archivo que acaba en `.exe`:
+1. Open the **[downloads page](https://github.com/Hredo/ai-command-center/releases/latest)**.
+2. Under **Assets**, download the file ending in `.exe`:
 
    ```
    AI-Command-Center-Setup-0.6.0.exe
    ```
 
-3. Ejecútalo haciendo doble clic. **Windows va a mostrarte un aviso azul**; es normal y
-   está explicado [aquí abajo](#windows-te-va-a-avisar-por-qué-y-qué-hacer): pulsa
-   **Más información** y después **Ejecutar de todas formas**.
-4. Elige la carpeta de instalación o deja la que propone.
-5. Al terminar tendrás el acceso directo en el escritorio y en el menú de inicio.
+3. Double-click it. **Windows will show you a blue warning**; that is expected and is
+   explained [below](#windows-will-warn-you-why-and-what-to-do): click **More info**, then
+   **Run anyway**.
+4. Pick an install folder or keep the suggested one.
+5. When it finishes you will have shortcuts on the desktop and in the Start menu.
 
-No pide permisos de administrador y no toca nada fuera de tu perfil de usuario.
+It never asks for administrator rights and touches nothing outside your user profile.
 
 ---
 
-### Opción B — Versión portátil (sin instalar)
+### Option B — Portable (no installation)
 
-Útil si no quieres instalar nada, si vas a llevártela en un USB, o si el instalador se te
-queda bloqueado.
+Useful if you would rather not install anything, if you want to carry it on a USB stick,
+or if the installer is being blocked for you.
 
-1. Descarga el archivo que acaba en `.zip`:
+1. Download the file ending in `.zip`:
 
    ```
    AI-Command-Center-0.6.0-x64.zip
    ```
 
-2. **Antes de descomprimir**, haz clic derecho sobre el `.zip`, entra en **Propiedades**,
-   marca **Desbloquear** abajo del todo y pulsa **Aceptar**.
+2. **Before extracting**, right-click the `.zip`, open **Properties**, tick **Unblock** at
+   the bottom and click **OK**.
 
-   > Este paso importa. Windows marca todo lo que se descarga de internet, y esa marca se
-   > contagia a cada archivo que salga del zip. Desbloqueando el zip antes, te ahorras el
-   > aviso en todos los archivos de dentro.
+   > This step matters. Windows marks everything downloaded from the internet, and that
+   > mark spreads to every file extracted from the zip. Unblocking the zip first saves you
+   > the warning on every file inside it.
 
-3. Descomprime la carpeta donde quieras.
-4. Entra y ejecuta **`AI Command Center.exe`**.
+3. Extract the folder wherever you like.
+4. Go in and run **`AI Command Center.exe`**.
 
-No escribe en el registro ni deja rastro fuera de su carpeta y de la carpeta de datos.
-Para desinstalarla, se borra la carpeta.
+It writes nothing to the registry and leaves no trace outside its own folder and the data
+folder. To uninstall it, delete the folder.
 
 ---
 
-### Opción C — Compilarlo tú mismo
+### Option C — Build it yourself
 
-Es la vía más limpia: lo que compilas en tu propia máquina no pasa por ningún filtro de
-reputación, así que no hay avisos de ningún tipo.
+This is the cleanest route: what you compile on your own machine goes through no
+reputation filter at all, so there are no warnings of any kind.
 
-Necesitas [Node 22](https://nodejs.org) y **pnpm** (nunca npm: rompe el árbol de
-`node_modules`):
+You need [Node 22](https://nodejs.org) and **pnpm** (never npm — it breaks the
+`node_modules` tree):
 
 ```bash
 npm install -g pnpm
 ```
 
-Y después:
+Then:
 
 ```bash
 git clone https://github.com/Hredo/ai-command-center.git
@@ -156,451 +197,451 @@ cd ai-command-center && pnpm install
 pnpm dist
 ```
 
-El instalador aparece en `release/`. Si tu Windows tampoco deja generarlo, usa
-`pnpm dist:zip`, que produce la versión portátil y no necesita lanzar ningún ejecutable
-durante el empaquetado.
+The installer lands in `release/`. If your Windows won't let you generate that either, use
+`pnpm dist:zip`, which produces the portable build and never needs to launch an executable
+during packaging.
 
-Para trabajar sobre el código sin empaquetar nada: `pnpm dev`.
+To work on the code without packaging anything: `pnpm dev`.
 
 ---
 
-## Windows te va a avisar: por qué, y qué hacer
+## Windows will warn you: why, and what to do
 
-**La aplicación no está firmada digitalmente.** Firmar un programa para Windows exige
-comprar un certificado que cuesta entre 200 y 400 € al año, y este proyecto es gratuito y
-no tiene ninguno.
+**The application is not code-signed.** Signing a Windows program requires buying a
+certificate that costs €200–400 per year, and this project is free and doesn't have one.
 
-Conviene entender qué significa eso exactamente, porque el aviso de Windows suena peor de
-lo que es: **no dice que el programa sea peligroso**. Dice que nadie ha pagado por
-acreditar quién lo publica. Es una afirmación sobre el papeleo, no sobre el código.
+It is worth being precise about what that means, because the Windows warning sounds worse
+than it is: **it does not say the program is dangerous**. It says nobody has paid to
+certify who publishes it. That is a statement about paperwork, not about the code.
 
-Lo que puedes hacer en vez de fiarte de mi palabra:
+What you can do instead of taking my word for it:
 
-- El código está **entero en este repositorio**, hasta la última línea.
-- Los binarios los **compila GitHub Actions** en una máquina limpia y a la vista de todos:
-  cada Release enlaza el registro de la compilación que la produjo.
-- Puedes **compilarlo tú** con la [Opción C](#opción-c--compilarlo-tú-mismo) y no
-  descargar ningún binario.
-- Puedes **verificar** que lo que bajaste es exactamente lo que se compiló, con los
-  [SHA-256](#verificar-la-descarga).
+- The source is **entirely in this repository**, down to the last line.
+- The binaries are **built by GitHub Actions** on a clean machine, in the open: every
+  Release links to the build log that produced it.
+- You can **build it yourself** via [Option C](#option-c--build-it-yourself) and download
+  no binary at all.
+- You can **verify** that what you downloaded is exactly what was built, using the
+  [SHA-256 sums](#verifying-your-download).
 
-### El aviso normal
+### The normal warning
 
-> **Windows protegió su PC**
+> **Windows protected your PC**
 >
-> Windows Defender SmartScreen impidió el inicio de una aplicación no reconocida.
-> Ejecutar esta aplicación puede poner en riesgo su PC.
+> Microsoft Defender SmartScreen prevented an unrecognized app from starting.
+> Running this app might put your PC at risk.
 
-Pulsa **Más información** y aparecerá el botón **Ejecutar de todas formas**. Eso es todo,
-y sólo pasa la primera vez.
+Click **More info** and a **Run anyway** button appears. That's all, and it only happens
+the first time.
 
-### Si no aparece «Ejecutar de todas formas»
+### If there is no "Run anyway" button
 
-Entonces tienes activado **Smart App Control**, una protección que viene de fábrica en las
-instalaciones limpias de Windows 11 y que bloquea todo ejecutable sin firmar sin ofrecer
-ninguna opción. Tienes tres salidas, en este orden:
+Then you have **Smart App Control** enabled — a protection that ships on by default on
+clean Windows 11 installations and blocks every unsigned executable without offering any
+choice. You have three ways out, in this order:
 
-1. **Prueba la [versión portátil](#opción-b--versión-portátil-sin-instalar)**, acordándote
-   de desbloquear el zip antes de descomprimir. A veces pasa donde el instalador no.
-2. **[Compílalo tú mismo](#opción-c--compilarlo-tú-mismo).** Lo que sale de tu propia
-   máquina no pasa por ese filtro. Es la vía que siempre funciona.
-3. Desactivar Smart App Control es técnicamente posible, pero **es irreversible sin
-   reinstalar Windows entero**. No lo recomiendo por una aplicación: usa la opción 2.
+1. **Try the [portable build](#option-b--portable-no-installation)**, remembering to
+   unblock the zip before extracting. It sometimes gets through where the installer
+   doesn't.
+2. **[Build it yourself](#option-c--build-it-yourself).** Anything produced on your own
+   machine skips that filter. This is the route that always works.
+3. Turning Smart App Control off is technically possible, but **it cannot be turned back
+   on without reinstalling Windows**. Not worth it for one application — use option 2.
 
 ---
 
-## Verificar la descarga
+## Verifying your download
 
-Cada Release incluye un archivo `SHA256SUMS.txt` con la huella de todos los binarios. Para
-comprobar que lo que has descargado es exactamente eso, abre PowerShell en la carpeta de
-descargas y ejecuta:
+Every Release includes a `SHA256SUMS.txt` file with the fingerprint of each binary. To
+check that what you downloaded is exactly that, open PowerShell in your downloads folder
+and run:
 
 ```powershell
 Get-FileHash '.\AI-Command-Center-Setup-0.6.0.exe' -Algorithm SHA256
 ```
 
-El valor que salga tiene que coincidir, letra por letra, con la línea correspondiente de
-`SHA256SUMS.txt`. Si no coincide, **no lo ejecutes**: bórralo y vuelve a descargarlo.
+The value it prints must match, character for character, the matching line in
+`SHA256SUMS.txt`. If it doesn't, **don't run it**: delete it and download it again.
 
 ---
 
-## Primeros pasos
+## First steps
 
-La aplicación **arranca vacía a propósito**: no trae ninguna clave, no crea ninguna cuenta
-y no se conecta a nada por su cuenta. Para que haga algo necesitas al menos una de estas
-tres cosas.
+The application **starts empty on purpose**: it ships no keys, creates no account and
+connects to nothing on its own. To make it do something you need at least one of these
+three.
 
-### 1. Una clave de API
+### 1. An API key
 
-Sirve cualquiera de los [32 proveedores](#proveedores).
+Any of the [32 providers](#providers) will do.
 
-1. Abre **Ajustes** y entra en **Proveedores**.
-2. Busca el tuyo y pega la clave.
-3. Listo: ya aparece en la Consola, en la Arena y en el catálogo de Modelos.
+1. Open **Settings** and go to **Providers**.
+2. Find yours and paste the key.
+3. Done — it now shows up in the Console, in the Arena and in the model catalog.
 
-> **Dónde acaba tu clave.** Se guarda cifrada con DPAPI —el sistema de credenciales del
-> propio Windows, atado a tu cuenta de usuario— en
-> `%APPDATA%\AI Command Center\data\secrets.json`. No sale de tu equipo salvo hacia el
-> proveedor al que se la mandas, y nunca se escribe en el histórico ni en los registros.
-> Si prefieres no guardarla, la app también lee las variables de entorno habituales
-> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`…).
+> **Where your key ends up.** It is stored encrypted with DPAPI — Windows' own credential
+> system, tied to your user account — in
+> `%APPDATA%\AI Command Center\data\secrets.json`. It never leaves your machine except
+> toward the provider you are sending it to, and it is never written to the history or the
+> logs. If you would rather not store it at all, the app also reads the usual environment
+> variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`…).
 
-### 2. Un agente de línea de comandos
+### 2. A command-line agent
 
-Si ya usas Claude Code, Codex, Aider, OpenCode o Gemini CLI, no necesitas ninguna clave:
-la aplicación los busca en tu `PATH` y los ejecuta con tu sesión de siempre.
+If you already use Claude Code, Codex, Aider, OpenCode or Gemini CLI, you need no key at
+all: the app finds them on your `PATH` and runs them with your existing session.
 
-1. Abre **Agentes**. Los que tengas instalados salen detectados, con su versión.
-2. Selecciona uno en la Consola y escribe.
+1. Open **Agents**. Whatever you have installed shows up detected, with its version.
+2. Pick one in the Console and start typing.
 
-### 3. Modelos locales, sin pagar nada a nadie
+### 3. Local models, paying nobody
 
-1. Instala [Ollama](https://ollama.com) y arráncalo.
-2. Abre **Ajustes** y entra en **Local**. La app lo detecta solo en `localhost:11434`.
-3. Desde ahí ves tu hardware, los modelos que tienes y las recomendaciones calculadas con
-   la VRAM real de tu GPU. Se instalan y se borran con un botón.
-
----
-
-## Actualizar y desinstalar
-
-**Actualizar** — descarga el instalador de la versión nueva y ejecútalo encima. Conserva
-tu configuración, tus claves y todo el histórico. Para enterarte de cuándo hay versión
-nueva, pulsa *Watch → Custom → Releases* arriba en este repositorio.
-
-**Desinstalar** — desde *Configuración de Windows → Aplicaciones*, o con el desinstalador
-del menú de inicio. Si usaste la versión portátil, borra la carpeta.
-
-**Tus datos no se borran al desinstalar.** Siguen en `%APPDATA%\AI Command Center\` para
-que reinstalar no te deje a cero. Si quieres borrarlos de verdad, elimina esa carpeta a
-mano.
+1. Install [Ollama](https://ollama.com) and start it.
+2. Open **Settings** and go to **Local**. The app finds it by itself on `localhost:11434`.
+3. From there you get your hardware, the models you have, and recommendations computed
+   from your GPU's actual VRAM. Install and remove them with one button.
 
 ---
 
-## Problemas frecuentes
+## Updating and uninstalling
 
-| Síntoma | Qué pasa | Solución |
+**Updating** — download the new installer and run it over the old one. It keeps your
+settings, your keys and the whole history. To hear about new versions, use *Watch → Custom
+→ Releases* at the top of this repository.
+
+**Uninstalling** — from *Windows Settings → Apps*, or with the uninstaller in the Start
+menu. If you used the portable build, delete the folder.
+
+**Your data is not deleted when you uninstall.** It stays in
+`%APPDATA%\AI Command Center\` so reinstalling doesn't put you back at zero. To really
+remove it, delete that folder by hand.
+
+---
+
+## Troubleshooting
+
+| Symptom | What's happening | Fix |
 |---|---|---|
-| Windows dice «protegió su PC» | La app no está firmada | **Más información** → **Ejecutar de todas formas** |
-| No sale el botón «Ejecutar de todas formas» | Smart App Control activo | [Usa el zip o compílalo](#si-no-aparece-ejecutar-de-todas-formas) |
-| El antivirus lo pone en cuarentena | Falso positivo habitual con binarios de Electron sin firmar | Verifica el [SHA-256](#verificar-la-descarga) y añade una excepción, o compílalo tú |
-| La app abre pero está todo vacío | Es lo normal al principio | Añade una clave o un agente: ver [Primeros pasos](#primeros-pasos) |
-| La terminal se abre y se queda colgada | Faltan los binarios de la consola nativa | Vuelve a descargar; si compilas tú, ejecuta `pnpm install` y luego `pnpm dist` |
-| El panel de git dice que no hay git | `git` no está en el `PATH` | `winget install --id Git.Git` y reinicia la app |
-| El panel de GitHub pide iniciar sesión | Falta la CLI de GitHub | `winget install --id GitHub.cli`, después `gh auth login --web` |
-| Ollama no aparece | El servidor no está corriendo | Arráncalo, o usa el botón de **Ajustes → Local** |
-| Un proveedor responde 401 | Clave incorrecta o caducada | Vuelve a pegarla en **Ajustes → Proveedores** |
+| Windows says "protected your PC" | The app isn't signed | **More info** → **Run anyway** |
+| No "Run anyway" button | Smart App Control is on | [Use the zip, or build it](#if-there-is-no-run-anyway-button) |
+| Antivirus quarantines it | Common false positive for unsigned Electron binaries | Verify the [SHA-256](#verifying-your-download) and add an exception, or build it yourself |
+| The app opens but everything is empty | That's normal at the start | Add a key or an agent: see [First steps](#first-steps) |
+| The terminal opens and hangs | The native console binaries are missing | Download again; if you built it, run `pnpm install` then `pnpm dist` |
+| The git panel says git is missing | `git` is not on your `PATH` | `winget install --id Git.Git`, then restart the app |
+| The GitHub panel asks you to sign in | GitHub's CLI isn't installed | `winget install --id GitHub.cli`, then `gh auth login --web` |
+| Ollama doesn't show up | The server isn't running | Start it, or use the button in **Settings → Local** |
+| A provider returns 401 | Wrong or expired key | Paste it again in **Settings → Providers** |
 
-¿Nada de esto lo arregla? [Abre una incidencia](https://github.com/Hredo/ai-command-center/issues/new/choose)
-contando tu versión de Windows, cómo instalaste la app y qué hiciste justo antes.
-
----
-
-## Qué hace
-
-**Panel** — gasto por día, tokens de entrada y salida, latencia media hasta el primer token,
-velocidad de generación, tasa de error y ranking de modelos por coste y rendimiento.
-
-**Consola** — conversaciones con cualquier modelo o con un agente de línea de comandos.
-Mientras responde se ven sus métricas en vivo (tiempo, primer token, tokens y velocidad
-estimados); al terminar se sustituyen por las reales del proveedor. Cada conversación es
-una sesión que puedes cerrar, reabrir, renombrar, fijar o borrar, y que sobrevive al
-cierre de la aplicación.
-
-Alrededor de cada turno se ve lo que el modelo o el agente informa de verdad:
-
-- **Razonamiento** desplegable, cuando lo publica. De la API salen los bloques de
-  pensamiento de Anthropic, el `reasoning_content` de los compatibles con OpenAI, los
-  *thoughts* de Gemini y el `thinking` de Ollama. De los agentes de línea de comandos,
-  los bloques `thinking` de Claude Code y los eventos `reasoning` de OpenCode. Si un
-  agente no lo publica, se dice; no se reconstruye adivinando sobre su salida.
-- **Contexto** consumido sobre la ventana del modelo, en tokens y en porcentaje.
-- **Límite de uso**: lo que queda de peticiones y de tokens, y cuándo se repone. Sale de
-  las cabeceras de la respuesta del proveedor, así que sólo aparece si él lo manda.
-
-Y en la barra lateral de la conversación, un panel de **consumo** con las tres cosas
-separadas: cuánto contexto llevas gastado y cuánto te cabe todavía, cuántas peticiones y
-tokens te quedan del plan, y una cuenta atrás hasta que se repongan. Lo que el proveedor
-no publica se dice con esas palabras, en vez de dibujar una barra a medias. El Panel
-recoge lo mismo de todos los proveedores que hayan contestado desde que abriste la app.
-
-Para **Claude Code** hay además su propio apartado: lo que llevas gastado en la ventana de
-cinco horas y en los últimos siete días, con los mensajes y las sesiones de cada una, y la
-cuenta atrás hasta el reinicio cuando el propio agente lo anuncia. Cuenta también lo que
-lanzas fuera de la aplicación, porque sale de las transcripciones que Claude Code deja en
-`~/.claude/projects`. Dos avisos que el panel da por escrito: los tokens releídos de caché
-van aparte —si se sumaran con los demás saldrían cientos de millones en una tarde— y el
-dinero es lo que costaría a precio de API, que con plan de pago no es lo que pagas. El
-tope del plan no lo publica nadie, así que no se pinta ningún porcentaje: se enseña el
-gasto real y la hora del reinicio, y ahí se para.
-
-- **Archivos que toca**: los que cambiaron de verdad, medidos comparando el repositorio
-  antes y después, con sus líneas añadidas y quitadas; y aparte los que el agente dice
-  haber abierto, distinguiendo lo que sólo leyó de lo que editó.
-- **Rama** en la que se ejecutó, con un selector para cambiar de rama o crear una nueva.
-- **Adjuntos**: eliges ficheros y van con el prompt. A un modelo por API se le manda el
-  contenido (recortado si se pasa de tamaño, y avisando); a un agente de línea de
-  comandos, las rutas, que ya sabe abrirlas.
-- **Esfuerzo** de razonamiento, de mínimo a máximo. Cada proveedor lo pide a su manera y
-  se traduce solo: presupuesto de pensamiento en Anthropic y Gemini, `reasoning_effort`
-  en OpenAI, `think` en Ollama, y la opción propia del CLI en claude, codex y aider. En
-  «Automático» no se manda nada, así que la petición sale igual que siempre. Si el
-  proveedor rechaza el campo, se reintenta sin él en vez de fallar.
-- **Qué está haciendo el agente**, paso a paso y mientras lo hace: cada pensamiento y cada
-  herramienta con su nombre, sobre qué fichero o qué comando, cuánto tardó, si salió bien
-  o mal y el **+N −M** de lo que editó. Arriba, el resumen de la tanda: cuántas acciones,
-  cuánto se añadió y se quitó y en cuántos ficheros. Mientras corre está abierto para que
-  se vea que no se ha colgado; al terminar se pliega y deja la respuesta limpia. Lo que
-  el agente no cuenta no se dibuja: si una herramienta no dice cuántas líneas tocó, no
-  sale el contador.
-- **Modelo y permisos del agente de consola**, cuando su CLI los admite. En Claude Code se
-  elige el modelo (Fable, Opus, Sonnet, Haiku) y con qué manga ancha trabaja: que edite
-  solo, que haga todo sin preguntar, que se quede en el plan o que pregunte. Los permisos
-  denegados aparecen en la línea de tiempo como lo que son, un paso que no se dejó hacer.
-
-**Arena** — el mismo prompt contra dos, tres o cuatro contendientes a la vez, en columnas
-y en streaming simultáneo. Un contendiente puede ser un modelo por API o un agente de
-línea de comandos: los dos acaban en la misma tabla comparativa, que resalta el mejor en
-cada métrica. Marcas un ganador y queda guardado.
-
-**Terminal** — terminales de verdad dentro de la aplicación, en pestañas. Detrás hay una
-consola real (ConPTY), así que funcionan las aplicaciones de pantalla completa: opencode,
-vim, los agentes en modo interactivo, todo con sus colores y su interfaz. Ctrl+C es un
-Ctrl+C auténtico. La ruta de cada pestaña y la duración de cada comando salen de una
-integración de shell que sólo añade marcadores invisibles al prompt.
-
-**Proyectos** — registras carpetas y desde ahí las abres en VS Code o en el explorador,
-tienes una terminal propia del proyecto, y lanzas agentes dentro con su salida en directo.
-La app escanea el proyecto: rama de git, lenguajes, gestor de paquetes, dependencias de IA
-y nombres (nunca valores) de las variables de su `.env`. Los scripts del `package.json` se
-ejecutan pinchándolos, en la terminal integrada. Un proyecto se puede **cerrar**: sigue
-guardado con su historial pero sale de la lista, y se reabre cuando quieras.
-
-Cada proyecto tiene además:
-
-- **Archivos** — árbol de carpetas que se abre por niveles (las pesadas, como
-  `node_modules`, se marcan y sólo se leen si las abres tú), y un editor con Ctrl+S,
-  numeración de líneas y aviso si el fichero cambió en disco desde que lo abriste, que es
-  lo que pasa cuando un agente ha estado trabajando por detrás. El código va **coloreado**
-  —comentarios, textos, números, palabras reservadas, tipos y llamadas— con **guías de
-  indentación** que marcan cada nivel, y el Tabulador tabula en vez de saltar de control.
-  El coloreado es propio, sin librería: unas cuantas expresiones regulares por familia de
-  lenguaje (TypeScript, JavaScript, Python, shell, JSON, CSS, HTML, YAML, SQL, Go, Rust,
-  C, Java, PHP, Ruby y Markdown). Los mismos colores se aplican a los bloques de código de
-  las respuestas del chat, adivinando el lenguaje cuando la valla del markdown no lo dice.
-  Crear, mandar a la papelera y mostrar en el explorador. Toda ruta se resuelve contra la
-  raíz del proyecto: un `..` de más se rechaza.
-- **Git** — qué ha cambiado con sus líneas, el diff de cada fichero, preparar, confirmar,
-  apartar en el stash y recuperarlo, fetch, pull, push, y una caja para cualquier otro
-  comando de git. La caja no es una shell: el comando se parte en argumentos y va directo
-  a git, sólo se aceptan subcomandos de una lista, y los que pueden tirar trabajo (`reset
-  --hard`, `push --force`) piden confirmación. Lo interactivo (un `rebase -i`, que abriría
-  un editor) se manda a la terminal integrada, donde sí tiene sentido.
-- **Árbol** — el histórico dibujado: un carril por rama, los merges con su curva, y las
-  etiquetas de cada rama local, remota o `tag` sobre su commit. Pinchando un commit se
-  hace **merge**, **rebase**, **cherry-pick**, **revert**, se crea una rama o una etiqueta
-  ahí mismo, se va a ese punto o se vuelve a él conservando o tirando lo posterior. Si un
-  merge o un rebase se queda a medias, arriba sale qué está pasando, por qué commit va y
-  qué ficheros están en conflicto —se abren en el editor de un clic— con **continuar**,
-  **saltar** y **abortar**. Las acciones no son texto libre: la interfaz dice qué quiere
-  hacer y el proceso principal arma la llamada a git, así que un nombre de rama no puede
-  colar una opción. Git corre sin editor y sin preguntas (`GIT_EDITOR=true`), de forma que
-  nada se queda esperando a un teclado que no existe.
-- **GitHub** — inicias sesión con su CLI oficial (`gh auth login --web`): se abre el
-  navegador y autorizas tú. La aplicación no ve ni guarda tu contraseña ni tu token;
-  sólo le pregunta a `gh` con qué cuenta está. Desde ahí ves tus repositorios, los
-  buscas, y clonas cualquiera eligiendo carpeta: queda dado de alta como proyecto en el
-  mismo gesto.
-
-**Agentes** — dos tipos, y los dos trabajan como agentes: usan herramientas y dan las
-vueltas que haga falta hasta acabar la tarea. Los de API son un modelo con sus
-instrucciones, su esfuerzo y sus permisos: leen, buscan, editan y ejecutan comandos con las
-herramientas de la app, en el proyecto o, si no hay, en su propia carpeta. Los de línea de
-comandos son los CLIs que ya tienes instalados (Claude Code, Codex, opencode, Aider, Gemini
-CLI…): la app los busca en tu PATH y los ejecuta dentro del proyecto. De Claude Code y
-OpenCode extrae tokens y coste reales. A OpenCode le eliges proveedor —Zen o tus modelos de
-Ollama—, modelo y esfuerzo; con Ollama, cada modelo va siempre con su ventana de contexto
-entera.
-
-Y también las sesiones que **no** lanzaste desde aquí: si abres `claude` en una terminal
-cualquiera, esa conversación entra igualmente en el histórico y en las estadísticas, con
-su proyecto, su modelo, sus mensajes y sus ficheros tocados, marcada como venida de fuera.
-Se lee de las transcripciones de Claude Code, que crecen por el final y nunca se
-reescriben, así que se repasan una vez enteras y después sólo lo que se haya añadido;
-mientras tanto se vigila la carpeta, de modo que una sesión que sigue viva aparece
-mientras trabajas, no cuando te acuerdes de mirar.
-
-**Modelos** — catálogo dinámico con más de 8.000 modelos de 200 proveedores y sus precios,
-descargado de models.dev y OpenRouter. Pinchas un modelo y se abre su ficha: contexto,
-precios, modalidades y enlaces a su página, a sus pesos o a su documentación. Cuando un
-proveedor no publica página por modelo, se dice y se enlaza su lista en vez de inventar
-una dirección.
-
-**Local** (en Ajustes) — gestión de Ollama sin salir de la app: estado del servidor y
-botón para arrancarlo, tu hardware, los modelos instalados con su peso, y recomendaciones
-calculadas con la VRAM real de tu GPU y el peso real de cada modelo según el registro de
-Ollama. Se instalan y se borran desde ahí, con barra de progreso.
-
-**La Casa** — la única pantalla que no sirve para configurar nada: sirve para mirar. Cada
-IA que la aplicación detecta —cada agente de consola, cada modelo local, cada proveedor con
-llave— vive en una casa dibujada píxel a píxel, en planta y vista de tres cuartos, con
-cocina, salón, despacho, dormitorio, sala de juegos, jardín, piscina y cancha de baloncesto.
-
-Si no le mandas nada, cada uno anda descansando: en el sofá, echando una cabezada, en la
-máquina recreativa, en el agua o tirando a canasta, y de vez en cuando se cambia de sitio.
-Si le mandas una tarea, se levanta y se pone a hacer faena por la casa —cocinar, fregar,
-barrer, regar, teclear en el despacho—. Y si le mandas dos a la vez, entra por la puerta
-de la calle otro vecino idéntico para la segunda, que se marcha por donde vino en cuanto
-esa tarea termina. Al pasar el ratón por encima dice quién es y qué está haciendo.
-
-Todo el dibujo es propio: no hay imágenes, ni sprites descargados, ni nada generado fuera.
-Se pinta en un lienzo de 768 por 640 puntos y se agranda por un número entero con el
-suavizado apagado, que es lo que hace que los píxeles salgan cuadrados en vez de
-emborronados. La animación se para sola cuando te vas a otra pestaña.
-
-**Histórico** — todas las ejecuciones con filtros, ficha detallada y exportación a CSV o JSON.
-
-**Notificaciones** — avisos del sistema al terminar un prompt, un agente, una comparativa,
-una descarga de modelo o un comando de terminal que haya tardado más de doce segundos.
-
-### Detalles que importan
-
-**Nada se interrumpe al cambiar de pantalla, ni al cambiar de ventana.** Las
-conversaciones, los agentes, las terminales y la Arena viven en un almacén global del
-renderer, no en las páginas: una pantalla que has visitado se queda montada y sólo se
-esconde, así que no se pierde el scroll, ni la pestaña de terminal abierta, ni lo que
-tuvieras a medio escribir. Cada terminal mantiene su emulador vivo; al volver a ella se
-reajusta al tamaño y recupera el foco, sin repintar el historial desde cero.
-
-Y lo mismo si te vas a otra aplicación. Chromium deja de dar fotogramas cuando su ventana
-está minimizada o tapada, y el texto que iba llegando se quedaba esperando un fotograma
-que no llegaba nunca: al volver aparecía todo de golpe y parecía que la IA se había
-colgado. Ahora hay un temporizador de respaldo —corre el que llegue antes— y la ventana
-pide no ser frenada en segundo plano. Cuesta algo de batería y a cambio lo que corre por
-detrás corre de verdad. La barra superior y la lateral muestran cuántas tareas hay en
-marcha y dónde.
-
-**La pantalla no se queda vieja.** El proceso principal vigila la carpeta de cada
-proyecto —`fs.watch` para enterarse al momento y un repaso cada cuatro segundos por lo que
-se le escape— y avisa a la interfaz cuando el repositorio cambia. Confirmar desde la app,
-desde una terminal de fuera o desde un agente da igual: la lista de cambios, la rama, el
-árbol y el explorador de ficheros se ponen al día solos, sin pulsar «releer». Sólo se manda
-aviso cuando el estado cambia de verdad, así que un repaso que no encuentra nada no
-repinta nada. Lo mismo con el gasto y el histórico: se releen al terminar cada ejecución.
-
-**Los motores locales se detectan solos.** El proceso principal sondea sus puertos cada
-pocos segundos y avisa al renderer cuando uno aparece o desaparece: arrancar Ollama con la
-app abierta se nota sin pulsar nada. Si el motor sólo responde por una de las dos
-direcciones (`127.0.0.1` o `localhost`), se guarda la que funciona.
-
-### Seguridad
-
-La ventana del renderer corre con `sandbox`, `contextIsolation` y sin acceso a Node. No
-puede navegar a ningún sitio, abrir ventanas nuevas ni pedir cámara, micrófono o
-ubicación. Una política de contenido (CSP) impide cargar nada que no sea suyo. Los
-mensajes que llegan por IPC se comprueban: que vengan de la ventana correcta, y que los
-argumentos sean del tipo y del tamaño que se espera. Abrir un enlace externo significa
-`http(s)` y nada más. Todo eso vive en [`src/main/security.ts`](src/main/security.ts), y
-la aplicación lo enseña en su propia pantalla de Seguridad: si alguien afloja un ajuste,
-se ve.
+None of this helps? [Open an issue](https://github.com/Hredo/ai-command-center/issues/new/choose)
+with your Windows version, how you installed the app, and what you did right before.
 
 ---
 
-## Proveedores
+## What it does
 
-32 en el catálogo, hablando cuatro protocolos: Anthropic, OpenAI (y los ~20 compatibles),
-Google Gemini y Ollama nativo.
+**Dashboard** — spend per day, input and output tokens, average time to first token,
+generation speed, error rate, and a ranking of models by cost and performance.
 
-**En la nube** — Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, xAI, Mistral,
-Together, Fireworks, Cerebras, Perplexity, Cohere, Moonshot, Zhipu, Qwen, NVIDIA,
-SambaNova, Nebius, Hyperbolic, Hugging Face, GitHub Models y Azure OpenAI.
+**Console** — conversations with any model or with a command-line agent. While it answers
+you see live metrics (elapsed time, first token, estimated tokens and speed); when it
+finishes those are replaced by the provider's real numbers. Each conversation is a session
+you can close, reopen, rename, pin or delete, and it survives closing the application.
 
-**En local**, detectados por sondeo de puertos — Ollama, LM Studio, llama.cpp, vLLM, Jan,
-LocalAI, GPT4All, KoboldCpp y Text generation WebUI.
+Around every turn you see what the model or the agent actually reports:
+
+- **Reasoning**, collapsible, when it publishes any. From the APIs come Anthropic's
+  thinking blocks, `reasoning_content` from the OpenAI-compatible ones, Gemini's
+  *thoughts* and Ollama's `thinking`. From command-line agents, Claude Code's `thinking`
+  blocks and OpenCode's `reasoning` events. If an agent publishes none, it says so; it is
+  never reconstructed by guessing at the output.
+- **Context** consumed against the model's window, in tokens and as a percentage.
+- **Rate limits**: how many requests and tokens are left, and when they reset. It comes
+  from the provider's response headers, so it only appears if the provider sends it.
+
+In the conversation sidebar there's a **usage** panel keeping the three things apart: how
+much context you've spent and how much still fits, how many requests and tokens are left
+on your plan, and a countdown to the reset. Whatever the provider doesn't publish is said
+in those words, instead of drawing half a bar. The Dashboard collects the same from every
+provider that has answered since you opened the app.
+
+**Claude Code** gets its own section on top of that: what you've spent in the five-hour
+window and over the last seven days, with the messages and sessions in each, and a
+countdown to the reset when the agent itself announces one. It also counts what you run
+outside the application, because it reads the transcripts Claude Code leaves in
+`~/.claude/projects`. Two caveats the panel states in writing: cache-read tokens are kept
+separate — added in with the rest they'd reach hundreds of millions in an afternoon — and
+the money shown is what it would cost at API prices, which on a paid plan is not what you
+pay. Nobody publishes the plan's ceiling, so no percentage is drawn: you get the real
+spend and the reset time, and it stops there.
+
+- **Files it touched**: the ones that actually changed, measured by diffing the repository
+  before and after, with lines added and removed; and separately the ones the agent says
+  it opened, distinguishing what it only read from what it edited.
+- **Branch** it ran on, with a picker to switch branches or create a new one.
+- **Attachments**: you pick files and they travel with the prompt. An API model gets the
+  contents (truncated if oversized, and it says so); a command-line agent gets the paths,
+  since it knows how to open them.
+- **Reasoning effort**, from minimum to maximum. Every provider asks for it differently
+  and it is translated automatically: thinking budget on Anthropic and Gemini,
+  `reasoning_effort` on OpenAI, `think` on Ollama, and each CLI's own option on claude,
+  codex and aider. On "Automatic" nothing is sent, so the request goes out exactly as it
+  always did. If a provider rejects the field, it is retried without it instead of
+  failing.
+- **What the agent is doing**, step by step and while it happens: every thought and every
+  tool with its name, on which file or which command, how long it took, whether it
+  succeeded, and the **+N −M** of what it edited. At the top, a summary of the run: how
+  many actions, how much was added and removed, across how many files. It stays open while
+  running so you can see it hasn't hung; when it finishes it folds away and leaves the
+  answer clean. What the agent doesn't report isn't drawn: if a tool doesn't say how many
+  lines it touched, no counter appears.
+- **Model and permissions for the console agent**, where its CLI supports them. On Claude
+  Code you pick the model (Fable, Opus, Sonnet, Haiku) and how much latitude it gets:
+  edit on its own, do everything without asking, stay in plan mode, or ask. Denied
+  permissions show up in the timeline as exactly what they are — a step that wasn't
+  allowed.
+
+**Arena** — the same prompt against two, three or four contenders at once, in columns,
+streaming simultaneously. A contender can be an API model or a command-line agent; both
+end up in the same comparison table, which highlights the best in each metric. You mark a
+winner and it is saved.
+
+**Terminal** — real terminals inside the application, in tabs. Behind them is a real
+console (ConPTY), so full-screen applications work: opencode, vim, agents in interactive
+mode, all with their colors and their interfaces. Ctrl+C is a genuine Ctrl+C. Each tab's
+path and each command's duration come from a shell integration that only adds invisible
+markers to the prompt.
+
+**Projects** — you register folders, and from there you open them in VS Code or in
+Explorer, get a terminal of the project's own, and launch agents inside with their output
+live. The app scans the project: git branch, languages, package manager, AI dependencies
+and the names (never the values) of its `.env` variables. `package.json` scripts run by
+clicking them, in the built-in terminal. A project can be **closed**: it stays saved with
+its history but leaves the list, and reopens whenever you want.
+
+Each project also has:
+
+- **Files** — a folder tree that expands one level at a time (heavy ones like
+  `node_modules` are flagged and only read if you open them yourself), and an editor with
+  Ctrl+S, line numbers, and a warning if the file changed on disk since you opened it,
+  which is what happens when an agent has been working behind your back. Code is
+  **syntax-highlighted** — comments, strings, numbers, keywords, types and calls — with
+  **indentation guides** marking each level, and Tab inserts a tab instead of jumping
+  between controls. The highlighting is homegrown, no library: a handful of regular
+  expressions per language family (TypeScript, JavaScript, Python, shell, JSON, CSS, HTML,
+  YAML, SQL, Go, Rust, C, Java, PHP, Ruby and Markdown). The same colors apply to code
+  blocks in chat replies, guessing the language when the markdown fence doesn't say. You
+  can create, send to the recycle bin, and reveal in Explorer. Every path is resolved
+  against the project root: one `..` too many is rejected.
+- **Git** — what changed with its line counts, the diff of each file, stage, commit,
+  stash and pop, fetch, pull, push, and a box for any other git command. The box is not a
+  shell: the command is split into arguments and goes straight to git, only subcommands
+  from a list are accepted, and the ones that can throw work away (`reset --hard`,
+  `push --force`) ask for confirmation. Interactive things (a `rebase -i`, which would
+  open an editor) are sent to the built-in terminal, where they make sense.
+- **Graph** — the history drawn: one lane per branch, merges with their curve, and the
+  labels of every local branch, remote branch or tag on its commit. Clicking a commit lets
+  you **merge**, **rebase**, **cherry-pick**, **revert**, create a branch or a tag right
+  there, check it out, or reset back to it keeping or discarding what came after. If a
+  merge or a rebase stalls, the top of the panel says what is going on, which commit it is
+  at and which files are conflicted — they open in the editor with one click — with
+  **continue**, **skip** and **abort**. The actions are not free text: the interface says
+  what it wants to do and the main process assembles the git call, so a branch name can't
+  smuggle in a flag. Git runs with no editor and no questions (`GIT_EDITOR=true`), so
+  nothing sits waiting for a keyboard that isn't there.
+- **GitHub** — you sign in with its official CLI (`gh auth login --web`): the browser
+  opens and you authorize it yourself. The application never sees or stores your password
+  or your token; it only asks `gh` which account it is on. From there you browse and
+  search your repositories, and clone any of them into a folder you pick — registered as a
+  project in the same gesture.
+
+**Agents** — two kinds, and both work as agents: they use tools and loop as many times as
+needed to finish the task. API agents are a model with its instructions, effort and
+permissions: they read, search, edit and run commands with the app's tools, in the project
+or, without one, in their own folder. Command-line agents are the CLIs you already have
+installed (Claude Code, Codex, opencode, Aider, Gemini CLI…): the app finds them on your
+PATH and runs them inside the project. From Claude Code and OpenCode it extracts real
+tokens and cost. For OpenCode you pick the provider —Zen or your Ollama models—, the model
+and the effort; with Ollama, every model always runs with its full context window.
+
+And also the sessions you did **not** start here: if you open `claude` in any terminal,
+that conversation still lands in the history and the statistics, with its project, its
+model, its messages and the files it touched, flagged as having come from outside. It is
+read from Claude Code's transcripts, which only grow at the end and are never rewritten,
+so they are read in full once and after that only the new part; meanwhile the folder is
+watched, so a session that is still alive shows up while you work, not whenever you
+remember to look.
+
+**Models** — a dynamic catalog with over 8,000 models from 200 providers and their prices,
+pulled from models.dev and OpenRouter. Click a model and its card opens: context, prices,
+modalities and links to its page, its weights or its documentation. When a provider
+publishes no per-model page, it says so and links their list instead of inventing a URL.
+
+**Local** (in Settings) — Ollama management without leaving the app: server status and a
+button to start it, your hardware, the installed models with their size, and
+recommendations computed from your GPU's real VRAM and each model's real size according to
+Ollama's registry. Install and remove from there, with a progress bar.
+
+**The House** — the one screen that doesn't configure anything: it's there to look at.
+Every AI the application detects — each console agent, each local model, each provider with
+a key — lives in a house drawn pixel by pixel, in plan and three-quarter view, with a
+kitchen, living room, office, bedroom, games room, garden, pool and basketball court.
+
+If you give it nothing to do, each one is resting: on the sofa, having a nap, at the
+arcade machine, in the water or shooting hoops, moving somewhere else now and then. Give
+it a task and it gets up and starts doing chores around the house — cooking, washing up,
+sweeping, watering, typing in the office. Give it two at once and an identical neighbour
+comes in through the front door for the second one, leaving the way they came as soon as
+that task ends. Hovering tells you who it is and what they're doing.
+
+All the artwork is original: no images, no downloaded sprites, nothing generated
+elsewhere. It's painted on a 768×640 canvas and scaled up by a whole number with smoothing
+off, which is what makes the pixels come out square instead of blurry. The animation stops
+by itself when you switch tabs.
+
+**History** — every run, with filters, a detail card and export to CSV or JSON.
+
+**Notifications** — system notifications when a prompt, an agent, a comparison, a model
+download or a terminal command taking more than twelve seconds finishes.
+
+### Details that matter
+
+**Nothing is interrupted by switching screens, or by switching windows.** Conversations,
+agents, terminals and the Arena live in a global store in the renderer, not in the pages:
+a screen you have visited stays mounted and is merely hidden, so you don't lose your
+scroll position, your open terminal tab, or what you were halfway through typing. Each
+terminal keeps its emulator alive; coming back to it resizes and refocuses without
+repainting the scrollback from scratch.
+
+The same goes for switching to another application. Chromium stops producing frames when
+its window is minimized or covered, and text arriving in the meantime was left waiting for
+a frame that never came: on return it all appeared at once and looked like the AI had
+hung. Now there is a fallback timer — whichever fires first wins — and the window asks not
+to be throttled in the background. It costs a little battery, and in exchange what runs in
+the background actually runs. The top and side bars show how many tasks are in flight and
+where.
+
+**The screen doesn't go stale.** The main process watches each project's folder —
+`fs.watch` for immediate notice, plus a sweep every four seconds for whatever slips past —
+and tells the interface when the repository changes. Committing from the app, from an
+outside terminal or from an agent makes no difference: the change list, the branch, the
+graph and the file explorer update themselves, with no "refresh" to press. A notice is
+only sent when the state really changed, so a sweep that finds nothing repaints nothing.
+Same for spend and history: they are re-read when each run finishes.
+
+**Local engines are detected on their own.** The main process probes their ports every few
+seconds and tells the renderer when one appears or disappears: starting Ollama with the
+app already open is noticed without pressing anything. If an engine only answers on one of
+the two addresses (`127.0.0.1` or `localhost`), the one that works is remembered.
+
+### Security
+
+The renderer window runs with `sandbox`, `contextIsolation` and no Node access. It cannot
+navigate anywhere, open new windows, or request camera, microphone or location. A content
+security policy blocks loading anything that isn't its own. Messages arriving over IPC are
+checked: that they come from the right window, and that the arguments are of the expected
+type and size. Opening an external link means `http(s)` and nothing else. All of it lives
+in [`src/main/security.ts`](src/main/security.ts), and the application displays it on its
+own Security screen — so if somebody loosens a setting, it shows.
 
 ---
 
-## Desarrollo
+## Providers
 
-Requiere Node 22 y **pnpm** (nunca npm: rompe el árbol de `node_modules`). Para el panel
-de git hace falta `git` en el PATH, y para GitHub su CLI oficial (`winget install --id
-GitHub.cli`); sin ella el resto de la aplicación funciona igual y el panel lo dice.
+32 in the catalog, speaking four protocols: Anthropic, OpenAI (and the ~20
+compatible ones), Google Gemini and native Ollama.
 
-`pnpm dist` comprueba antes de empaquetar que los binarios de la consola real estén en su
-sitio (`scripts/check-native.cjs`). Sin esa comprobación se puede generar un instalador
-que arranca bien y deja la terminal colgada al abrir la primera pestaña: pasó una vez,
-porque un `node-gyp` fallido había vaciado `build/Release`.
+**Cloud** — Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, xAI, Mistral, Together,
+Fireworks, Cerebras, Perplexity, Cohere, Moonshot, Zhipu, Qwen, NVIDIA, SambaNova, Nebius,
+Hyperbolic, Hugging Face, GitHub Models and Azure OpenAI.
+
+**Local**, detected by port probing — Ollama, LM Studio, llama.cpp, vLLM, Jan, LocalAI,
+GPT4All, KoboldCpp and Text generation WebUI.
+
+---
+
+## Development
+
+Requires Node 22 and **pnpm** (never npm — it breaks the `node_modules` tree). The git
+panel needs `git` on the PATH, and GitHub needs its official CLI (`winget install --id
+GitHub.cli`); without it the rest of the application works the same and the panel says so.
+
+`pnpm dist` checks, before packaging, that the real console's binaries are where they
+should be (`scripts/check-native.cjs`). Without that check you can produce an installer
+that starts fine and leaves the terminal hanging on the first tab: it happened once,
+because a failed `node-gyp` had emptied `build/Release`.
 
 ```bash
 pnpm install
-pnpm dev            # app en caliente con recarga
-pnpm build          # compila a out/
-pnpm dist           # genera el instalador en release/
-pnpm dist:zip       # genera sólo la versión portátil
-pnpm typecheck      # comprueba los tipos de los dos procesos
+pnpm dev            # hot-reloading app
+pnpm build          # compiles to out/
+pnpm dist           # builds the installer into release/
+pnpm dist:zip       # builds only the portable version
+pnpm typecheck      # typechecks both processes
 ```
 
-Verificación:
+Verification:
 
 ```bash
-pnpm exec electron scripts/smoke.cjs         # arranca y captura pantalla
-pnpm exec electron scripts/test-engine.cjs   # motor de streaming, con un SSE falso
-pnpm exec electron scripts/test-pty.cjs      # terminal real: opencode, Ctrl+C, códigos
-pnpm exec electron scripts/test-terminal.cjs # el motor de respaldo por tuberías
-pnpm exec electron scripts/test-features.cjs # sesiones, enlaces, detección, avisos
-pnpm exec electron scripts/test-agents.cjs   # razonamiento, contexto, límites, archivos, esfuerzo
-pnpm exec electron scripts/test-workspace.cjs # ficheros del proyecto, git y GitHub
-pnpm exec electron scripts/shot.cjs Terminal # capturas de una sección
-python scripts/make-icon.py                  # regenera build/icon.png
+pnpm exec electron scripts/smoke.cjs         # starts up and takes a screenshot
+pnpm exec electron scripts/test-engine.cjs   # streaming engine, against a fake SSE server
+pnpm exec electron scripts/test-pty.cjs      # real terminal: opencode, Ctrl+C, exit codes
+pnpm exec electron scripts/test-terminal.cjs # the pipe-based fallback engine
+pnpm exec electron scripts/test-features.cjs # sessions, links, detection, notifications
+pnpm exec electron scripts/test-agents.cjs   # reasoning, context, limits, files, effort
+pnpm exec electron scripts/test-workspace.cjs # project files, git and GitHub
+pnpm exec electron scripts/shot.cjs Terminal # screenshots of one section
+python scripts/make-icon.py                  # regenerates build/icon.png
 ```
 
-`scripts/ollama-setup.cjs` deja Ollama con los mejores modelos para el equipo. Con
-`--dry-run` sólo informa de lo que haría.
+`scripts/ollama-setup.cjs` sets Ollama up with the best models for the machine. With
+`--dry-run` it only reports what it would do.
 
-Las pruebas usan un servidor SSE local y agentes de mentira —un script de Node que emite
-los mismos eventos que Claude Code y OpenCode, capturados de las dos herramientas
-reales—, así que no gastan tokens ni tocan ninguna cuenta. Las de git y ficheros montan un
-repositorio temporal y lo borran al acabar.
+The tests use a local SSE server and fake agents — a Node script emitting the same events
+as Claude Code and OpenCode, captured from the two real tools — so they spend no tokens
+and touch no account. The git and file tests build a temporary repository and delete it
+when they're done.
 
-### Dependencias nativas
+### Native dependencies
 
-Sólo una: `@homebridge/node-pty-prebuilt-multiarch`, que es la que da la consola real.
-Trae binarios precompilados, así que **no** hace falta Visual Studio ni node-gyp. Si algún
-día no cargara, la terminal cae sola a un motor por tuberías que organiza la salida en
-bloques; se pierde lo interactivo pero la app sigue funcionando, y lo dice en pantalla.
+Exactly one: `@homebridge/node-pty-prebuilt-multiarch`, which provides the real console.
+It ships prebuilt binaries, so Visual Studio and node-gyp are **not** required. If it ever
+failed to load, the terminal falls back on its own to a pipe-based engine that groups
+output into blocks; you lose interactivity but the app keeps working, and it says so on
+screen.
 
-El resto no tiene nada nativo a propósito: el histórico es JSONL en vez de SQLite.
+Nothing else is native, on purpose: the history is JSONL rather than SQLite.
 
-pnpm 11 exige autorizar los scripts de instalación en `allowBuilds`, dentro de
-`pnpm-workspace.yaml`. Sin eso el módulo se instala sin binario y en silencio.
+pnpm 11 requires install scripts to be authorized under `allowBuilds` in
+`pnpm-workspace.yaml`. Without that the module installs with no binary, silently.
 
 ---
 
-## Publicar una versión
+## Cutting a release
 
-Los binarios los genera GitHub Actions, no la máquina de desarrollo. La razón es concreta:
-allí Smart App Control está activado y en modo de imposición, así que el instalador NSIS
-**no se puede ni generar** —electron-builder necesita lanzar un ejecutable temporal para
-escribir el desinstalador y Windows no le deja— ni ejecutar una vez hecho. El runner de
-GitHub es un Windows limpio sin esa restricción: allí sale siempre, y sale igual cada vez.
+The binaries are built by GitHub Actions, not on the development machine. The reason is
+concrete: there, Smart App Control is enabled and enforcing, so the NSIS installer
+**cannot even be generated** — electron-builder needs to launch a temporary executable to
+write the uninstaller and Windows won't let it — nor run once built. GitHub's runner is a
+clean Windows without that restriction: there it works every time, and works the same
+every time.
 
-Publicar es empujar una etiqueta:
+Releasing is pushing a tag:
 
 ```bash
 git tag v0.6.0 && git push origin v0.6.0
 ```
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) comprueba tipos, verifica
-los binarios nativos, compila, empaqueta el instalador y el zip portátil, calcula los
-SHA-256 y crea la Release con todo dentro.
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) hace lo mismo sin empaquetar, en
-cada empujón y en cada pull request.
+[`.github/workflows/release.yml`](.github/workflows/release.yml) typechecks, verifies the
+native binaries, compiles, packages the installer and the portable zip, computes the
+SHA-256 sums and creates the Release with everything in it.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) does the same without packaging, on
+every push and every pull request.
 
-### Actualizar una instalación sin instalador
+### Updating an installation without the installer
 
-Todo el código de la aplicación vive en `resources\app.asar`, así que en una máquina donde
-el instalador esté bloqueado basta con sustituir eso y dejar el ejecutable —que Windows ya
-tiene permitido— en paz:
+All of the application's code lives in `resources\app.asar`, so on a machine where the
+installer is blocked it is enough to replace that and leave the executable — which Windows
+already allows — alone:
 
 ```bash
 pnpm build && pnpm exec electron-builder --win --dir
@@ -610,109 +651,110 @@ pnpm build && pnpm exec electron-builder --win --dir
 powershell -ExecutionPolicy Bypass -File .\scripts\actualizar-instalacion.ps1
 ```
 
-El script pide elevación, cierra la aplicación si está abierta, guarda una copia fechada
-en `release\respaldo-<fecha>` y copia lo nuevo. Para volver atrás, se copia el `app.asar`
-del respaldo encima. Sólo vale mientras la versión de Electron no cambie.
+The script asks for elevation, closes the application if it is open, saves a dated copy
+under `release\respaldo-<date>` and copies the new build in. To roll back, copy the
+backup's `app.asar` over the current one. This only holds while the Electron version
+doesn't change.
 
 ---
 
-## Estructura
+## Layout
 
 ```
 src/
-  shared/types.ts      contrato común entre los tres procesos
+  shared/types.ts      the contract shared by all three processes
   main/
-    index.ts           ventana, ciclo de vida y CSP
-    ipc.ts             canales principales, con errores convertidos en mensajes
-    ipcExtra.ts        terminales, sesiones, Ollama, enlaces y avisos
+    index.ts           window, lifecycle and CSP
+    ipc.ts             main channels, with errors turned into messages
+    ipcExtra.ts        terminals, sessions, Ollama, links and notifications
     config.ts          config.json
-    secrets.ts         claves cifradas con DPAPI
-    runs.ts            histórico en JSONL y agregación de métricas
-    sessions.ts        conversaciones que se pueden cerrar y retomar
-    terminal.ts        consola real (ConPTY) y respaldo por tuberías
-    ollama.ts          estado, hardware, descargas y recomendaciones
-    notify.ts          notificaciones del sistema
-    detect.ts          detección de proveedores, CLIs y motores locales
-    projects.ts        escaneo de proyectos
-    files.ts           ficheros del proyecto, sin salir de su raíz
-    git.ts             estado, ramas, diffs, árbol de commits y operaciones
-    watch.ts           vigila cada proyecto y avisa cuando el repositorio cambia
-    usage.ts           lo último que dijo cada proveedor sobre tus límites
-    claudeSessions.ts  lee las transcripciones de Claude Code: ventanas de uso y
-                       sesiones lanzadas fuera de la aplicación
-    claudeWatch.ts     vigila esa carpeta para que una sesión viva salga en marcha
-    github.ts          sesión y repositorios a través de gh
-    attach.ts          adjuntos del prompt
-    effort.ts          el esfuerzo, traducido a cada proveedor
-    security.ts        endurecimiento: CSP, permisos y validación de IPC
+    secrets.ts         keys encrypted with DPAPI
+    runs.ts            JSONL history and metric aggregation
+    sessions.ts        conversations you can close and pick back up
+    terminal.ts        real console (ConPTY) and the pipe fallback
+    ollama.ts          status, hardware, downloads and recommendations
+    notify.ts          system notifications
+    detect.ts          detection of providers, CLIs and local engines
+    projects.ts        project scanning
+    files.ts           project files, never leaving the project root
+    git.ts             status, branches, diffs, commit graph and operations
+    watch.ts           watches each project and reports repository changes
+    usage.ts           the last thing each provider said about your limits
+    claudeSessions.ts  reads Claude Code transcripts: usage windows and
+                       sessions started outside the application
+    claudeWatch.ts     watches that folder so a live session shows up running
+    github.ts          session and repositories through gh
+    attach.ts          prompt attachments
+    effort.ts          reasoning effort, translated per provider
+    security.ts        hardening: CSP, permissions and IPC validation
     providers/
-      catalog.ts       los 32 proveedores
-      models.ts        catálogo dinámico y cálculo de precios
-      links.ts         de un modelo a su página
-      run.ts           motor de streaming: 4 dialectos y métricas
-      limits.ts        límites de uso leídos de las cabeceras
-    agents/cli.ts      ejecución de agentes de línea de comandos
-  preload/index.ts     puente aislado hacia el renderer
+      catalog.ts       the 32 providers
+      models.ts        dynamic catalog and price computation
+      links.ts         from a model to its page
+      run.ts           streaming engine: 4 dialects and metrics
+      limits.ts        rate limits read from response headers
+    agents/cli.ts      command-line agent execution
+  preload/index.ts     isolated bridge to the renderer
   renderer/
-    lib/engine.tsx     estado vivo de todo, fuera de las páginas
-    lib/ansi.ts        intérprete de secuencias ANSI para el modo respaldo
-    lib/highlight.ts   coloreado de código y guías de indentación, sin librería
-    lib/house.ts       el plano de La Casa: habitaciones, puertas, sitios y el
-                       vaivén de los vecinos
-    lib/pixelArt.ts    el dibujo de La Casa, píxel a píxel, sin imágenes
-    lib/i18n.tsx       los textos, en español y en inglés
-    components/        Terminal (xterm.js), FilesPanel, Code (editor coloreado),
-                       GitPanel, GitGraph (árbol, merges y rebases), GithubPanel,
-                       AgentPanel (contexto, consumo, plan de Claude, ramas),
-                       AgentActivity (lo que va haciendo el agente), HouseCanvas,
+    lib/engine.tsx     live state for everything, outside the pages
+    lib/ansi.ts        ANSI escape interpreter for fallback mode
+    lib/highlight.ts   syntax highlighting and indent guides, no library
+    lib/house.ts       The House's floor plan: rooms, doors, spots and the
+                       residents' comings and goings
+    lib/pixelArt.ts    The House's artwork, pixel by pixel, no images
+    lib/i18n.tsx       the strings, in Spanish and English
+    components/        Terminal (xterm.js), FilesPanel, Code (highlighting editor),
+                       GitPanel, GitGraph (graph, merges and rebases), GithubPanel,
+                       AgentPanel (context, usage, Claude's plan, branches),
+                       AgentActivity (what the agent is doing), HouseCanvas,
                        Stats…
-    pages/             las diez secciones
+    pages/             the ten sections
 ```
 
 ---
 
-## Dónde guarda los datos
+## Where your data lives
 
 `%APPDATA%\AI Command Center\data\`
 
-| Fichero | Qué lleva |
+| File | What's in it |
 |---|---|
-| `config.json` | Proveedores, agentes, proyectos y preferencias |
-| `secrets.json` | API keys cifradas con las credenciales de Windows |
-| `runs.jsonl` | Una línea por ejecución, con todas sus métricas |
-| `sessions.json` | Conversaciones y sesiones de agente |
-| `models-cache.json` | Catálogo de modelos y precios |
-| `shell-init.ps1` | Integración de shell que carga la terminal |
+| `config.json` | Providers, agents, projects and preferences |
+| `secrets.json` | API keys encrypted with your Windows credentials |
+| `runs.jsonl` | One line per run, with all its metrics |
+| `sessions.json` | Conversations and agent sessions |
+| `models-cache.json` | Model catalog and prices |
+| `shell-init.ps1` | The shell integration the terminal loads |
 
-Se abre desde **Ajustes → Preferencias → Abrir carpeta de datos**.
+Open it from **Settings → Preferences → Open data folder**.
 
-Nada de esto sale de tu equipo. No hay servidor al que mandarlo, ni telemetría, ni
-comprobación de licencia.
-
----
-
-## Contribuir
-
-Las aportaciones son bienvenidas, por el camino habitual de GitHub:
-
-1. Haz un **fork** del repositorio.
-2. Crea una rama para tu cambio (`git checkout -b arregla-lo-que-sea`).
-3. Comprueba que pasa `pnpm typecheck` y `pnpm build`.
-4. Abre un **pull request** contra `main`.
-
-**La rama `main` está protegida.** No se puede empujar a ella directamente, ni forzar el
-histórico, ni borrarla: todo entra por pull request, con la CI en verde, y el merge lo
-aprueba el responsable del repositorio. Por eso el paso 1 es un fork.
-
-Para informar de un fallo, usa la
-[plantilla de incidencias](https://github.com/Hredo/ai-command-center/issues/new/choose):
-pide la versión y cómo instalaste la app, que es lo que hace falta para reproducirlo.
+None of this leaves your machine. There is no server to send it to, no telemetry, and no
+license check.
 
 ---
 
-## Licencia
+## Contributing
+
+Contributions are welcome, through the usual GitHub route:
+
+1. **Fork** the repository.
+2. Create a branch for your change (`git checkout -b fix-whatever`).
+3. Make sure `pnpm typecheck` and `pnpm build` pass.
+4. Open a **pull request** against `main`.
+
+**The `main` branch is protected.** It cannot be pushed to directly, force-pushed, or
+deleted: everything arrives through a pull request, with CI green, and the merge is
+approved by the repository owner. That is why step 1 is a fork.
+
+To report a bug, use the
+[issue template](https://github.com/Hredo/ai-command-center/issues/new/choose): it asks for
+your version and how you installed the app, which is what's needed to reproduce it.
+
+---
+
+## License
 
 [MIT](LICENSE) — © 2026 Hredo.
 
-Puedes usarlo, modificarlo y distribuirlo, incluso comercialmente, conservando el aviso de
-copyright. Se entrega **sin garantía de ningún tipo**.
+You may use, modify and distribute it, including commercially, as long as the copyright
+notice is kept. It is provided **with no warranty of any kind**.

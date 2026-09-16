@@ -108,7 +108,9 @@ function SessionRow({
         </div>
         <div className="flex items-center gap-2 text-[10.5px] text-dim">
           <span>{relTime(session.updatedAt)}</span>
-          {turns > 0 ? <span className="num">{turns} turnos</span> : null}
+          {turns > 0 ? (
+            <span className="num">{turns === 1 ? t('chat.turnOne') : t('chat.turns', { n: turns })}</span>
+          ) : null}
           {spent > 0 ? <span className="num">{cost(spent)}</span> : null}
         </div>
       </button>
@@ -193,7 +195,7 @@ function TurnView({ turn, isCli }: { turn: Turn; isCli: boolean }): React.JSX.El
           {turn.streaming ? <Dot tone="ok" pulse /> : null}
           {turn.metrics?.effort ? (
             <Badge tone="violet" title={t('Esfuerzo de razonamiento pedido')}>
-              esfuerzo {EFFORT_LABEL[turn.metrics.effort].toLowerCase()}
+              {t('chat.effortBadge', { level: t(EFFORT_LABEL[turn.metrics.effort]).toLowerCase() })}
             </Badge>
           ) : null}
           {turn.metrics?.branch ? (
@@ -252,10 +254,10 @@ function TurnView({ turn, isCli }: { turn: Turn; isCli: boolean }): React.JSX.El
               )
             ) : turn.streaming ? (
               <span className="caret text-dim text-[12.5px]">
-                {turn.steps?.length ? 'trabajando' : 'generando'}
+                {turn.steps?.length ? t('trabajando') : t('generando')}
               </span>
             ) : (
-              <span className="text-dim text-[12.5px]">(respuesta vacía)</span>
+              <span className="text-dim text-[12.5px]">({t('respuesta vacía')})</span>
             )}
 
             {/* Qué archivos ha tocado: se va actualizando mientras trabaja. */}
@@ -679,10 +681,10 @@ export default function Chat(): React.JSX.Element {
                 placeholder={
                   isCli
                     ? cliAgent
-                      ? `Instrucción para ${cliAgent.name}…`
+                      ? t('chat.instructionFor', { name: cliAgent.name })
                       : t('Elige un agente a la derecha…')
                     : pick
-                      ? `Prompt para ${shortModel(pick.model)}…`
+                      ? t('chat.promptFor', { model: shortModel(pick.model) })
                       : t('Elige un modelo primero…')
                 }
                 rows={3}
@@ -725,12 +727,12 @@ export default function Chat(): React.JSX.Element {
                       ? opencodeEffortHint(session?.cliModel, ocVariants, t)
                       : effortSupported
                         ? t('Automático deja la petición como la manda el proveedor por omisión')
-                        : `${cliAgent?.command ?? t('este agente')} no tiene opción de esfuerzo`
+                        : t('chat.noEffort', { agent: cliAgent?.command ?? t('este agente') })
                   }
                   onChange={(e) => session && patchSessionConfig(session.id, { effort: e })}
                 />
               </div>
-              <span className="num">{input.length} caracteres</span>
+              <span className="num">{t('common.chars', { n: input.length })}</span>
             </div>
             <div className="mt-1 text-[11px] text-dim">
               {t('Ctrl + Enter para enviar · la respuesta sigue llegando si cambias de pantalla')}
@@ -785,7 +787,7 @@ export default function Chat(): React.JSX.Element {
                     />
                   </Field>
                 ) : MODEL_CLIS.has(cliAgent.command.toLowerCase()) ? (
-                  <Field label={t('Modelo')} hint={`Se le pasa a ${cliAgent.command} al lanzarlo`}>
+                  <Field label={t('Modelo')} hint={t('chat.passedTo', { command: cliAgent.command })}>
                     {CLI_MODELS[cliAgent.command.toLowerCase()] ? (
                       <Select
                         value={session.cliModel ?? ''}
@@ -833,7 +835,7 @@ export default function Chat(): React.JSX.Element {
                     ))}
                   </Select>
                   <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
-                    {PERMISSION_MODES.find((m) => m.id === (session.permissionMode ?? 'acceptEdits'))?.hint}
+                    {t(PERMISSION_MODES.find((m) => m.id === (session.permissionMode ?? 'acceptEdits'))?.hint ?? '')}
                   </p>
                 </Field>
               ) : null}

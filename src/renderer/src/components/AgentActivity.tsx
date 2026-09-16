@@ -123,7 +123,7 @@ function Row({
           >
             {step.kind === 'thinking' ? (
               <>
-                <span className="not-italic mr-1.5">{look.verb}</span>
+                <span className="not-italic mr-1.5">{t(look.verb)}</span>
                 {(step.detail ?? '').replace(/\s+/g, ' ').trim()}
               </>
             ) : (
@@ -248,14 +248,16 @@ export function AgentActivity({
           <Wrench size={11} className="shrink-0 text-dim" />
         )}
         <span className="text-muted shrink-0">
-          {totals.tools} {totals.tools === 1 ? t('acción') : 'acciones'}
+          {totals.tools} {totals.tools === 1 ? t('acción') : t('acciones')}
         </span>
-        {totals.thinking ? <span className="text-violet shrink-0">{totals.thinking} pensando</span> : null}
+        {totals.thinking ? (
+          <span className="text-violet shrink-0">{t('activity.thinking', { n: totals.thinking })}</span>
+        ) : null}
         {totals.added ? <span className="num text-ok shrink-0">+{totals.added}</span> : null}
         {totals.removed ? <span className="num text-bad shrink-0">-{totals.removed}</span> : null}
         {totals.files ? (
           <span className="text-dim shrink-0">
-            en {totals.files} archivo{totals.files === 1 ? '' : 's'}
+            {totals.files === 1 ? t('activity.inOneFile') : t('activity.inFiles', { n: totals.files })}
           </span>
         ) : null}
         {totals.errors ? <span className="text-bad shrink-0">{t('activity.errors', { n: totals.errors })}</span> : null}
@@ -264,7 +266,7 @@ export function AgentActivity({
         {/* Plegada y corriendo: al menos se ve qué está haciendo ahora. */}
         {!shown && running && last ? (
           <span className="ml-auto min-w-0 truncate text-dim">
-            {last.kind === 'tool' ? `${last.tool} ${last.target ?? ''}` : 'pensando…'}
+            {last.kind === 'tool' ? `${last.tool} ${last.target ?? ''}` : t('pensando…')}
           </span>
         ) : null}
       </button>
