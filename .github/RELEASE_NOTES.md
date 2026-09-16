@@ -126,4 +126,4 @@ least one of these three:
 Optional: `git` for the git panel, the `gh` CLI for the GitHub panel. Anything missing is
 flagged on its own screen and everything else works the same.
 
-📖 [Full instructions](https://github.com/Hredo/ai-command-center/blob/main/README.en.md#installation)
+📖 [Full instructions](https://github.com/Hredo/ai-command-center/blob/main/README.md#installation)

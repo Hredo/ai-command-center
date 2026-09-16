@@ -281,13 +281,12 @@ export function ClaudeWindows({ usage }: { usage: ClaudeUsage }): React.JSX.Elem
 
       <div className="space-y-1">
         <Line
-          label={usage.exact ? `ventana de 5 h (desde las ${from})` : t('últimas 5 h')}
+          label={usage.exact ? t('usage.fiveHourSince', { from }) : t('últimas 5 h')}
           value={`${tokens(fiveHour.tokens)} · ${cost(fiveHour.cost)}`}
         />
         <div className="flex items-center justify-between text-[10.5px] text-dim">
           <span>
-            {fiveHour.messages} mensaje{fiveHour.messages === 1 ? '' : 's'} en {fiveHour.sessions} sesion
-            {fiveHour.sessions === 1 ? '' : 'es'}
+            {t('usage.weekly', { messages: fiveHour.messages, sessions: fiveHour.sessions })}
             {fiveHour.cached ? ' · ' + t('usage.reread', { n: tokens(fiveHour.cached) }) : ''}
           </span>
           {fiveHour.resetsAt ? <span className="num">{t('usage.restartsIn', { at: countdown(fiveHour.resetsAt) })}</span> : null}
@@ -305,13 +304,14 @@ export function ClaudeWindows({ usage }: { usage: ClaudeUsage }): React.JSX.Elem
 
       {!usage.exact ? (
         <div className="text-[10.5px] text-dim leading-relaxed">
-          Claude Code sólo dice cuándo se reinicia la ventana cuando contesta; hasta entonces se cuentan las
-          últimas cinco horas. El tope del plan no lo publica, así que no se pinta ningún porcentaje.
+          {t(
+            'Claude Code sólo dice cuándo se reinicia la ventana cuando contesta; hasta entonces se cuentan las últimas cinco horas. El tope del plan no lo publica, así que no se pinta ningún porcentaje.'
+          )}
         </div>
       ) : null}
 
       <div className="text-[10.5px] text-dim leading-relaxed">
-        El dinero es lo que valdría a precio de API: con plan de pago no lo pagas, sirve para comparar.
+        {t('El dinero es lo que valdría a precio de API: con plan de pago no lo pagas, sirve para comparar.')}
         {weekly.unpriced || fiveHour.unpriced
           ? ' ' + t('Hay mensajes de un modelo sin precio publicado, así que su parte no está sumada.')
           : ''}
@@ -379,7 +379,7 @@ export function UsagePanel({
     <div className="border border-line rounded-lg bg-panel">
       <div className="px-3 py-2 border-b border-line flex items-center gap-2">
         <Gauge size={12} className="text-dim" />
-        <span className="text-[11.5px] font-medium">{title}</span>
+        <span className="text-[11.5px] font-medium">{t(title)}</span>
         {model ? <span className="num text-[10.5px] text-dim truncate">{model}</span> : null}
       </div>
 
@@ -387,7 +387,10 @@ export function UsagePanel({
         {/* ------------------------------------------- Contexto */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-[11.5px]">
-            <span className="text-dim">Contexto{estimated && used != null ? ' (estimado)' : ''}</span>
+            <span className="text-dim">
+              {t('Contexto')}
+              {estimated && used != null ? ` (${t('estimado')})` : ''}
+            </span>
             <span className="num text-muted">
               {used != null ? tokens(used) : '—'}
               {window_ ? ` / ${tokens(window_)}` : ''}
@@ -551,7 +554,8 @@ export function UsageRows(): React.JSX.Element {
               {s.limit ? (
                 <span className={low ? 'text-warn' : 'text-muted'}>
                   {s.limit.requestsRemaining != null
-                    ? `${s.limit.requestsRemaining}${s.limit.requestsLimit ? '/' + s.limit.requestsLimit : ''} peticiones`
+                    ? `${s.limit.requestsRemaining}${s.limit.requestsLimit ? '/' + s.limit.requestsLimit : ''} ` +
+                      t('peticiones')
                     : ''}
                   {s.limit.requestsRemaining != null && s.limit.tokensRemaining != null ? ' · ' : ''}
                   {s.limit.tokensRemaining != null
@@ -648,7 +652,11 @@ export function FileWork({
       >
         <ChevronDown size={12} className={cx('transition-transform text-dim', !open && '-rotate-90')} />
         <span className="text-muted">
-          {files?.length ? `${files.length} archivo${files.length === 1 ? '' : 's'} cambiado${files.length === 1 ? '' : 's'}` : 'sin cambios en disco'}
+          {files?.length
+            ? files.length === 1
+              ? t('files.changedOne')
+              : t('files.changedMany', { n: files.length })
+            : t('sin cambios en disco')}
         </span>
         {added ? <span className="num text-ok">+{added}</span> : null}
         {removed ? <span className="num text-bad">-{removed}</span> : null}
@@ -745,7 +753,7 @@ export function EffortPicker({
             !supported && e !== 'auto' && 'opacity-35 cursor-not-allowed'
           )}
         >
-          {EFFORT_LABEL[e]}
+          {t(EFFORT_LABEL[e])}
         </button>
       ))}
     </div>

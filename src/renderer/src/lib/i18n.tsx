@@ -27,6 +27,7 @@
 import React, { createContext, useCallback, useContext, useMemo } from 'react'
 import type { Language } from '@shared/types'
 import { en } from './i18n.en'
+import { setFormatLang } from './format'
 
 type Dict = Record<string, string>
 
@@ -278,7 +279,33 @@ const es: Dict = {
   'touch.times': '{what} {n} veces',
 
   /* ------------------------------------------------------------ Paneles */
-  'pane.resize': 'Arrastra para cambiar el tamaño; doble clic lo devuelve al de fábrica'
+  'pane.resize': 'Arrastra para cambiar el tamaño; doble clic lo devuelve al de fábrica',
+
+  /* Textos que se colaban sin traducir */
+  'dash.today': '{n} hoy',
+  'dash.thisMonth': '{cost} este mes',
+  'dash.inFlight': '{n} en curso',
+  'dash.errorRate': '{pct} de errores',
+  'dash.providersReady': '{ready} de {total} listos · {models} modelos disponibles',
+  'usage.fiveHourSince': 'ventana de 5 h (desde las {from})',
+  'files.changedOne': '1 archivo cambiado',
+  'files.changedMany': '{n} archivos cambiados',
+  'chat.turnOne': '1 turno',
+  'chat.turns': '{n} turnos',
+  'chat.effortBadge': 'esfuerzo {level}',
+  'chat.noEffort': '{agent} no tiene opción de esfuerzo',
+  'chat.instructionFor': 'Instrucción para {name}…',
+  'chat.promptFor': 'Prompt para {model}…',
+  'chat.passedTo': 'Se le pasa a {command} al lanzarlo',
+  'common.chars': '{n} caracteres',
+  'activity.thinking': '{n} pensando',
+  'activity.inOneFile': 'en 1 archivo',
+  'activity.inFiles': 'en {n} archivos',
+  'arena.history': 'Comparativas ({n})',
+  'arena.results': 'Comparativa · {n} resultados',
+  'graph.pushAhead': 'Subir tus {n} commits',
+  'house.onTheWay': 'de camino a {place}',
+  'house.sweeping': 'barriendo {place}'
 }
 
 const DICTS: Record<Language, Dict> = { es, en }
@@ -307,6 +334,10 @@ export function I18nProvider({
   lang: Language
   children: React.ReactNode
 }): React.JSX.Element {
+  // Las fechas relativas y los precios se formatean fuera de React: se les
+  // avisa del idioma antes de que los hijos se pinten.
+  setFormatLang(lang)
+
   const t = useCallback<Translate>(
     (key, vars) => {
       const raw = DICTS[lang]?.[key] ?? es[key] ?? key

@@ -1,5 +1,19 @@
 /** Formateadores compartidos. Todo lo numérico pasa por aquí. */
 
+/**
+ * Idioma de las fechas y de los textos cortos de aquí abajo.
+ *
+ * Estas funciones se llaman fuera de React, así que no pueden leer el contexto
+ * del idioma: lo fija el proveedor de idioma cada vez que cambia.
+ */
+let lang: 'es' | 'en' = 'es'
+
+export function setFormatLang(next: 'es' | 'en'): void {
+  lang = next
+}
+
+const locale = (): string => (lang === 'en' ? 'en-US' : 'es-ES')
+
 export function cost(usd: number, currency: 'USD' | 'EUR' = 'USD', rate = 0.92): string {
   const v = currency === 'EUR' ? usd * rate : usd
   const sym = currency === 'EUR' ? '€' : '$'
@@ -44,19 +58,20 @@ export function bytes(n?: number): string {
 
 export function relTime(t: number): string {
   const d = Date.now() - t
-  if (d < 60_000) return 'hace un momento'
-  if (d < 3_600_000) return `hace ${Math.floor(d / 60_000)} min`
-  if (d < 86_400_000) return `hace ${Math.floor(d / 3_600_000)} h`
-  if (d < 604_800_000) return `hace ${Math.floor(d / 86_400_000)} d`
-  return new Date(t).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' })
+  const en = lang === 'en'
+  if (d < 60_000) return en ? 'just now' : 'hace un momento'
+  if (d < 3_600_000) return en ? `${Math.floor(d / 60_000)} min ago` : `hace ${Math.floor(d / 60_000)} min`
+  if (d < 86_400_000) return en ? `${Math.floor(d / 3_600_000)} h ago` : `hace ${Math.floor(d / 3_600_000)} h`
+  if (d < 604_800_000) return en ? `${Math.floor(d / 86_400_000)} d ago` : `hace ${Math.floor(d / 86_400_000)} d`
+  return new Date(t).toLocaleDateString(locale(), { day: '2-digit', month: 'short', year: '2-digit' })
 }
 
 export function clock(t: number): string {
-  return new Date(t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(t).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 export function dateTime(t: number): string {
-  return new Date(t).toLocaleString('es-ES', {
+  return new Date(t).toLocaleString(locale(), {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
@@ -66,7 +81,7 @@ export function dateTime(t: number): string {
 
 export function price(v?: number): string {
   if (v == null) return '—'
-  if (v === 0) return 'gratis'
+  if (v === 0) return lang === 'en' ? 'free' : 'gratis'
   if (v < 1) return '$' + v.toFixed(3)
   return '$' + v.toFixed(2)
 }
