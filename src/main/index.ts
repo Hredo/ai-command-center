@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeTheme } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, screen } from 'electron'
 import { join } from 'node:path'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -62,10 +62,22 @@ function chromeOptions(): Electron.BrowserWindowConstructorOptions {
   }
 }
 
+/**
+ * Tamaño inicial: el de siempre, salvo que la pantalla sea más pequeña. En un
+ * portátil de 13" (o un Mac con la resolución «más espacio» desactivada) una
+ * ventana de 1480×940 se salía por abajo y los botones quedaban fuera.
+ */
+function initialSize(): { width: number; height: number } {
+  const area = screen.getPrimaryDisplay().workAreaSize
+  return {
+    width: Math.max(1080, Math.min(1480, Math.round(area.width * 0.94))),
+    height: Math.max(680, Math.min(940, Math.round(area.height * 0.94)))
+  }
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1480,
-    height: 940,
+    ...initialSize(),
     minWidth: 1080,
     minHeight: 680,
     show: false,
