@@ -34,7 +34,8 @@ the advisory, say so in the report.
 The application itself: the Electron main process, the renderer and the bridge between
 them, how API keys are stored, the terminals and the agents it launches. The
 [Security section of the README](README.md#security) describes the protections that are
-meant to hold, such as the sandboxed renderer, validated IPC and keys encrypted with DPAPI.
+meant to hold, such as the sandboxed renderer, validated IPC and keys encrypted with the
+system's keyring (DPAPI on Windows, the Keychain on macOS, Secret Service on Linux).
 A way around any of them counts as a vulnerability.
 
 Out of scope: the third-party tools the app runs (Claude Code, Codex, OpenCode, Ollama…)
@@ -76,7 +77,8 @@ el arreglo y cuándo sale. Si quieres aparecer en el aviso publicado, dilo en tu
 La aplicación en sí: el proceso principal de Electron, la ventana y el puente entre los
 dos, cómo se guardan las claves de API, las terminales y los agentes que lanza. La
 [sección de Seguridad del README](README.es.md#seguridad) describe lo que debe aguantar,
-como la ventana aislada, los mensajes IPC validados y las claves cifradas con DPAPI.
+como la ventana aislada, los mensajes IPC validados y las claves cifradas con el llavero del
+sistema (DPAPI en Windows, el Llavero en macOS, Secret Service en Linux).
 Saltarse cualquiera de esas protecciones cuenta como vulnerabilidad.
 
 No entran: las herramientas de terceros que ejecuta (Claude Code, Codex, OpenCode,

@@ -12,7 +12,8 @@ import { EngineProvider, useBusyCount, useInFlight, useRunsVersion } from './lib
 import { cx } from './components/ui'
 import { Pane } from './components/Resizable'
 import { cost } from './lib/format'
-import { TITLEBAR_HEIGHT } from '@shared/defaults'
+import { TITLEBAR_HEIGHT, TRAFFIC_LIGHTS_WIDTH } from '@shared/defaults'
+import { IS_MAC, modKey } from './lib/platform'
 /**
  * Cada sección se descarga la primera vez que se entra en ella.
  *
@@ -67,11 +68,12 @@ const NAV: { id: PageId; icon: React.ElementType; group: number }[] = [
 const ICONS_ONLY = 112
 
 /**
- * La barra de título y los botones de Windows.
+ * La barra de título y los botones de la ventana.
  *
  * Los botones los pinta el sistema, no la aplicación, así que hay que
  * mantenerlos de acuerdo con el tema y con la escala a mano: si no, quedan
- * blancos sobre un panel claro o a media altura al ampliar la interfaz.
+ * blancos sobre un panel claro o a media altura al ampliar la interfaz. En
+ * macOS son los semáforos, que no cambian de color: sólo se recentran.
  */
 function useWindowChrome(): void {
   const { theme, appearance } = usePrefs()
@@ -89,7 +91,10 @@ function useWindowChrome(): void {
 /** Estado global visible siempre: proveedores vivos, gasto y tareas en marcha. */
 function TitleBar(): React.JSX.Element {
   const { status, models, info } = useStore()
+  const { appearance } = usePrefs()
   const t = useT()
+  // Los botones del sistema no crecen con el zoom: su hueco tampoco.
+  const zoom = Math.min(2, Math.max(0.5, appearance.uiScale / 100))
   const busy = useBusyCount()
   const version = useRunsVersion()
   const [spend, setSpend] = useState(0)
@@ -116,14 +121,17 @@ function TitleBar(): React.JSX.Element {
   return (
     <div
       className="drag shrink-0 flex items-center justify-between px-3 border-b border-line bg-void select-none"
-      style={{ height: TITLEBAR_HEIGHT }}
+      style={{ height: TITLEBAR_HEIGHT, paddingLeft: IS_MAC ? Math.round(TRAFFIC_LIGHTS_WIDTH / zoom) : undefined }}
     >
       <div className="flex items-center gap-2.5">
         <div className="w-[18px] h-[18px] rounded-[5px] bg-gradient-to-br from-accent to-violet shrink-0" />
         <span className="text-[12.5px] font-medium tracking-tight">AI Command Center</span>
         <span className="num text-[10.5px] text-dim opacity-70">v{info?.version ?? '0.1.0'}</span>
       </div>
-      <div className="flex items-center gap-4 text-[11.5px] pr-[140px]">
+      <div
+        className="flex items-center gap-4 text-[11.5px]"
+        style={{ paddingRight: IS_MAC ? 0 : Math.round(140 / zoom) }}
+      >
         {total > 0 ? (
           <span
             className="flex items-center gap-1.5 text-ok"
@@ -255,10 +263,10 @@ function Shell(): React.JSX.Element {
     setVisited((v) => (v.has(p) ? v : new Set(v).add(p)))
   }, [])
 
-  // Atajos: Ctrl+1..9 salta de sección.
+  // Atajos: Ctrl+1..9 salta de sección (Cmd+1..9 en macOS).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!e.ctrlKey || e.shiftKey || e.altKey) return
+      if (!modKey(e) || e.shiftKey || e.altKey) return
       const n = Number(e.key)
       if (n >= 1 && n <= NAV.length) {
         e.preventDefault()

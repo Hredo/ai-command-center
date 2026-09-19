@@ -80,12 +80,15 @@ export function GithubPanel({
         hint={t('La sesión de GitHub se hace con su herramienta oficial, para que la contraseña no pase por aquí. Se instala en un minuto.')}
         action={
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => onOpenTerminal?.('winget install --id GitHub.cli --source winget')}
-            >
-              <TerminalIcon size={12} /> {t('Instalarlo en la terminal')}
-            </Button>
+            {status.installCommand ? (
+              <Button size="sm" onClick={() => onOpenTerminal?.(status.installCommand!)}>
+                <TerminalIcon size={12} /> {t('Instalarlo en la terminal')}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => void window.api.app.openExternal('https://cli.github.com')}>
+                <ExternalLink size={12} /> {t('Cómo instalarlo')}
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={() => void check(true)}>
               <RefreshCw size={12} /> {t('Ya lo instalé')}
             </Button>

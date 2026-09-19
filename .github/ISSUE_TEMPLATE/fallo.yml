@@ -5,9 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        Antes de nada: si Windows te bloquea el instalador y no te deja la opción
-        de «Ejecutar de todas formas», eso es Smart App Control y está explicado
-        en el README. Prueba el `.zip` portátil.
+        Antes de nada, los avisos del sistema al abrirla por primera vez no son un
+        fallo: la app no está firmada y el README explica qué hacer en cada caso.
+        - Windows sin la opción «Ejecutar de todas formas»: es Smart App Control.
+          Prueba el `.zip` portátil.
+        - macOS dice que no se puede abrir: Ajustes del Sistema → Privacidad y
+          seguridad → «Abrir igualmente».
   - type: input
     id: version
     attributes:
@@ -16,10 +19,22 @@ body:
       placeholder: "0.4.0"
     validations: { required: true }
   - type: dropdown
+    id: sistema
+    attributes:
+      label: Sistema
+      options: [Windows, macOS con chip de Apple, macOS con Intel, Linux]
+    validations: { required: true }
+  - type: dropdown
     id: origen
     attributes:
       label: Cómo la instalaste
-      options: [Instalador .exe, Zip portátil, Compilada desde el código]
+      options:
+        - Instalador .exe (Windows)
+        - Zip portátil (Windows)
+        - .dmg (macOS)
+        - .deb (Linux)
+        - AppImage (Linux)
+        - Compilada desde el código
     validations: { required: true }
   - type: textarea
     id: que-pasa
@@ -39,4 +54,4 @@ body:
     id: entorno
     attributes:
       label: Entorno
-      description: Versión de Windows, y si tienes git, gh u Ollama instalados.
+      description: Versión del sistema (y en Linux, la distribución), y si tienes git, gh u Ollama instalados.

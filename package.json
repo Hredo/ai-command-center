@@ -1,19 +1,23 @@
 {
   "name": "ai-command-center",
   "productName": "AI Command Center",
-  "version": "0.6.0",
-  "description": "Centro de mando local para IAs, agentes y proyectos",
+  "version": "0.7.0",
+  "description": "Centro de mando local para IAs, agentes y proyectos (Windows, macOS y Linux)",
   "author": "Hredo",
   "license": "MIT",
   "private": true,
   "main": "./out/main/index.js",
+  "desktopName": "ai-command-center.desktop",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "pack": "node scripts/check-native.cjs && electron-vite build && electron-builder --win --dir",
-    "dist": "node scripts/check-native.cjs && electron-vite build && electron-builder --win nsis",
+    "pack": "node scripts/check-native.cjs && electron-vite build && electron-builder --dir",
+    "dist": "node scripts/check-native.cjs && electron-vite build && electron-builder",
+    "dist:win": "node scripts/check-native.cjs && electron-vite build && electron-builder --win nsis zip",
     "dist:zip": "node scripts/check-native.cjs && electron-vite build && electron-builder --win zip",
+    "dist:mac": "node scripts/check-native.cjs && electron-vite build && electron-builder --mac dmg",
+    "dist:linux": "node scripts/check-native.cjs && electron-vite build && electron-builder --linux deb AppImage",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {

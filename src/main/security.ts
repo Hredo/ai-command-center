@@ -288,6 +288,19 @@ function realOf(p: string): string {
  * ------------------------------------------------------------------ */
 
 /**
+ * ¿Arrancó el proceso con --no-sandbox? Quitar el conmutador después no
+ * devuelve el aislamiento: Chromium ya ha decidido al arrancar. Así que no se
+ * promete nada: se apunta y la pantalla de Seguridad lo dice. En Linux lo pone
+ * el propio AppImage cuando el sistema no deja crear espacios de nombres
+ * (Ubuntu 23.10 y posteriores sin un perfil de AppArmor para la app).
+ */
+let startedWithoutSandbox = false
+
+export function launchedWithoutSandbox(): boolean {
+  return startedWithoutSandbox
+}
+
+/**
  * Lo que hay que cerrar antes de que exista la primera ventana.
  *
  * Una segunda instancia no puede colarse por la línea de órdenes: se ignoran
@@ -295,6 +308,7 @@ function realOf(p: string): string {
  * ejecutable con ellos desde un acceso directo manipulado.
  */
 export function hardenApp(): void {
+  startedWithoutSandbox = app.commandLine.hasSwitch('no-sandbox')
   const dangerous = [
     'no-sandbox',
     'disable-web-security',
@@ -317,6 +331,8 @@ export interface SecurityReport {
   contextIsolation: boolean
   nodeIntegration: boolean
   sandboxedRenderer: boolean
+  /** Arrancó con --no-sandbox: sin el aislamiento de Chromium a nivel del sistema. */
+  startedWithoutSandbox: boolean
   csp: boolean
   navigationLocked: boolean
   permissionsDenied: boolean

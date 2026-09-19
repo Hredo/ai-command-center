@@ -20,17 +20,22 @@
  * tuberías que organiza la salida en bloques delimitados por un centinela. Es
  * menos capaz —nada interactivo funciona— pero la app no se queda sin terminal.
  *
+ * En macOS y Linux sólo existe la primera: node-pty abre un pseudoterminal
+ * del sistema y no hay nada que Smart App Control pueda bloquear.
+ *
  * Sobre la consola se inyecta una integración de shell mínima: el prompt de
- * PowerShell emite, invisible, el directorio actual y el código de salida de
- * cada comando. De ahí salen la ruta de la pestaña y las duraciones, sin tener
- * que adivinar nada del texto.
+ * PowerShell, bash, zsh o fish emite, invisible, el directorio actual y el
+ * código de salida de cada comando. De ahí salen la ruta de la pestaña y las
+ * duraciones, sin tener que adivinar nada del texto.
  */
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { paths } from './paths'
+import { IS_MAC, IS_WIN, findInPath } from './platform'
+import { userShell } from './shellEnv'
 import { StringDecoder } from 'node:string_decoder'
 import { bridgeStatus, markBridgeBroken, probeBridge, spawnBridge, type Bridge } from './conpty'
 import { opencodeTerminalEnv } from './opencode'
@@ -93,12 +98,24 @@ const PTY_PKG = '@homebridge/node-pty-prebuilt-multiarch'
 function loadNativeBindings(): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const root = join(require.resolve(PTY_PKG), '..', '..')
-  const needed = process.platform === 'win32' ? ['conpty.node', 'pty.node'] : ['pty.node']
+  const needed = IS_WIN ? ['conpty.node', 'pty.node'] : ['pty.node']
   for (const file of needed) {
     const bin = join(root, 'build', 'Release', file)
     if (!existsSync(bin)) throw new Error(`falta ${file} en build/Release del módulo nativo`)
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     require(bin)
+  }
+  // En macOS cada consola nace a través de un pequeño ejecutable del paquete,
+  // spawn-helper. Si falta o perdió el permiso de ejecución, la pestaña se
+  // queda en «posix_spawnp failed». Se lanza desde fuera del asar, como hace
+  // el propio paquete.
+  if (IS_MAC) {
+    const helper = join(root, 'build', 'Release', 'spawn-helper').replace('app.asar', 'app.asar.unpacked')
+    try {
+      accessSync(helper, constants.X_OK)
+    } catch {
+      throw new Error('falta spawn-helper del módulo nativo, o no se puede ejecutar')
+    }
   }
 }
 
@@ -130,7 +147,7 @@ function loadPty(): PtyModule | null {
 
 /** El puente sólo tiene sentido en Windows y si no se ha pedido ir por tuberías. */
 function bridgeAllowed(): boolean {
-  return process.platform === 'win32' && forcedEngine() !== 'pipe'
+  return IS_WIN && forcedEngine() !== 'pipe'
 }
 
 /**
@@ -204,27 +221,33 @@ const PWSH_CANDIDATES = [
 ]
 
 export function defaultShell(): string {
-  if (process.platform === 'win32') {
+  if (IS_WIN) {
     const pwsh = PWSH_CANDIDATES.find((p) => existsSync(p))
     if (pwsh) return pwsh
     return process.env['SystemRoot']
       ? `${process.env['SystemRoot']}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
       : 'powershell.exe'
   }
-  return process.env['SHELL'] || '/bin/bash'
+  // La del usuario: zsh en un Mac de fábrica, bash en casi todos los Linux.
+  return userShell()
 }
 
+/** El nombre del programa sin carpeta ni extensión: «zsh», «pwsh», «bash». */
+function shellName(shell: string): string {
+  return (shell.split(/[\\/]/).pop() ?? shell).toLowerCase().replace(/\.exe$/, '')
+}
+
+/**
+ * Se mira sólo el nombre del programa y no la ruta entera: una carpeta que se
+ * llame «cmdtools» no convierte una zsh en cmd.
+ */
 function classify(shell: string): { kind: ShellKind; label: string } {
-  const b = shell.toLowerCase()
-  if (b.includes('pwsh')) return { kind: 'powershell', label: 'PowerShell 7' }
-  if (b.includes('powershell')) return { kind: 'powershell', label: 'PowerShell' }
-  if (b.includes('cmd')) return { kind: 'cmd', label: 'cmd' }
-  if (b.includes('zsh')) return { kind: 'posix', label: 'zsh' }
-  if (b.includes('bash')) return { kind: 'posix', label: 'bash' }
-  return {
-    kind: process.platform === 'win32' ? 'powershell' : 'posix',
-    label: shell.split(/[\\/]/).pop() ?? shell
-  }
+  const name = shellName(shell)
+  if (name === 'pwsh') return { kind: 'powershell', label: 'PowerShell 7' }
+  if (name === 'powershell') return { kind: 'powershell', label: 'PowerShell' }
+  if (name === 'cmd') return { kind: 'cmd', label: 'cmd' }
+  if (name === 'zsh' || name === 'bash' || name === 'fish') return { kind: 'posix', label: name }
+  return { kind: IS_WIN ? 'powershell' : 'posix', label: name || shell }
 }
 
 /**
@@ -245,6 +268,16 @@ function ptyEnv(): Record<string, string> {
   env['TERM_PROGRAM'] = 'ai-command-center'
   env['PYTHONIOENCODING'] = 'utf-8'
   env['ACC_TERMINAL'] = '1'
+  if (!IS_WIN) {
+    // Electron cambia XDG_CURRENT_DESKTOP al arrancar en algunos escritorios
+    // y guarda el original aparte; la shell tiene que ver el de verdad o
+    // xdg-open y compañía abren las cosas con el programa equivocado.
+    if (env['ORIGINAL_XDG_CURRENT_DESKTOP']) env['XDG_CURRENT_DESKTOP'] = env['ORIGINAL_XDG_CURRENT_DESKTOP']
+    delete env['ORIGINAL_XDG_CURRENT_DESKTOP']
+    // Las variables del AppImage son de la app, no de lo que se lance dentro:
+    // otro AppImage abierto desde esta terminal creería ser éste.
+    for (const k of ['APPDIR', 'APPIMAGE', 'ARGV0', 'OWD']) delete env[k]
+  }
   return env
 }
 
@@ -299,8 +332,127 @@ function psInitFile(): string {
   return file
 }
 
+/*
+ * La misma integración para las shells de macOS y Linux.
+ *
+ * Tampoco se teclea: cada shell tiene una forma de cargar un fichero propio
+ * al arrancar sin que se vea. Y en las tres se carga primero la configuración
+ * de siempre del usuario —sus alias, su prompt, su PATH— y después se añade
+ * el marcador, así que el aspecto no cambia y el marcador ve el código de
+ * salida antes que nadie.
+ *
+ * En macOS cada terminal nueva es de inicio de sesión, como en Terminal.app:
+ * así se leen .zprofile y /etc/zprofile, que es donde Homebrew se apunta al
+ * PATH. En Linux no, como en las terminales de GNOME o KDE.
+ */
+
+/** bash: se arranca con --rcfile, que sustituye a .bashrc; éste lo carga él. */
+const BASH_INIT = `# Generado por AI Command Center. Se carga al abrir una terminal con bash.
+# Carga tu configuración de siempre y después añade al prompt marcadores
+# invisibles con el código de salida y el directorio actual. No cambia el
+# aspecto del prompt.
+if [ "\${ACC_BASH_LOGIN:-}" = 1 ]; then
+  [ -r /etc/profile ] && . /etc/profile
+  if [ -r "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile"
+  elif [ -r "$HOME/.bash_login" ]; then . "$HOME/.bash_login"
+  elif [ -r "$HOME/.profile" ]; then . "$HOME/.profile"
+  fi
+else
+  [ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+fi
+unset ACC_BASH_LOGIN
+__acc_prompt() {
+  local ec=$?
+  builtin printf '\\033]133;D;%s\\007\\033]9;9;%s\\007' "$ec" "$PWD"
+  return $ec
+}
+if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
+  PROMPT_COMMAND=(__acc_prompt "\${PROMPT_COMMAND[@]}")
+else
+  PROMPT_COMMAND="__acc_prompt\${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+fi
+`
+
+/**
+ * zsh no tiene --rcfile: lee sus ficheros de la carpeta ZDOTDIR. La app la
+ * apunta a una suya, y cada fichero de ahí carga primero el tuyo del mismo
+ * nombre. Al terminar el arranque ZDOTDIR vuelve a ser la tuya.
+ */
+const ZSH_HEADER = '# Generado por AI Command Center. zsh lo lee porque la app apunta ZDOTDIR aquí.\n'
+const ZSH_FILES: Record<string, string> = {
+  '.zshenv': `${ZSH_HEADER}__acc_zdotdir="$ZDOTDIR"
+ZDOTDIR="\${ACC_USER_ZDOTDIR:-$HOME}"
+[[ -r "$ZDOTDIR/.zshenv" ]] && builtin source "$ZDOTDIR/.zshenv"
+ACC_USER_ZDOTDIR="$ZDOTDIR"
+ZDOTDIR="$__acc_zdotdir"
+`,
+  '.zprofile': `${ZSH_HEADER}ZDOTDIR="$ACC_USER_ZDOTDIR"
+[[ -r "$ZDOTDIR/.zprofile" ]] && builtin source "$ZDOTDIR/.zprofile"
+ZDOTDIR="$__acc_zdotdir"
+`,
+  '.zshrc': `${ZSH_HEADER}ZDOTDIR="$ACC_USER_ZDOTDIR"
+# El /etc/zshrc de macOS pone el historial dentro de ZDOTDIR, que en ese
+# momento era esta carpeta: se devuelve a su sitio para que sea el de siempre.
+[[ "$HISTFILE" == "$__acc_zdotdir/.zsh_history" ]] && HISTFILE="$ZDOTDIR/.zsh_history"
+[[ -r "$ZDOTDIR/.zshrc" ]] && builtin source "$ZDOTDIR/.zshrc"
+__acc_precmd() {
+  local ec=$?
+  builtin printf '\\e]133;D;%s\\a\\e]9;9;%s\\a' "$ec" "$PWD"
+  return $ec
+}
+precmd_functions=(__acc_precmd \${precmd_functions[@]})
+if [[ -o login ]]; then
+  ZDOTDIR="$__acc_zdotdir"
+else
+  unset __acc_zdotdir ACC_USER_ZDOTDIR
+fi
+`,
+  '.zlogin': `${ZSH_HEADER}ZDOTDIR="$ACC_USER_ZDOTDIR"
+[[ -r "$ZDOTDIR/.zlogin" ]] && builtin source "$ZDOTDIR/.zlogin"
+unset __acc_zdotdir ACC_USER_ZDOTDIR
+`
+}
+
+/**
+ * fish: --init-command se ejecuta después de su config.fish. El código de
+ * salida se toma al acabar cada comando (fish_postexec, donde $status es el
+ * suyo); el primer prompt, que no viene de ningún comando, se marca con un 0
+ * como en las demás shells.
+ */
+const FISH_INIT =
+  "function __acc_postexec --on-event fish_postexec; printf '\\e]133;D;%s\\a' $status; end; " +
+  'function __acc_prompt --on-event fish_prompt; ' +
+  "if not set -q __acc_started; set -g __acc_started 1; printf '\\e]133;D;0\\a'; end; " +
+  "printf '\\e]9;9;%s\\a' $PWD; end"
+
+let posixInitDir: string | null = null
+
+/**
+ * Escribe los ficheros de integración una vez por arranque (así una versión
+ * nueva de la app los actualiza) y devuelve la carpeta. Si no se puede
+ * escribir, la terminal abre igual, sólo que sin marcadores.
+ */
+function posixInitFiles(): string {
+  if (posixInitDir) return posixInitDir
+  const dir = join(paths.dir, 'shell')
+  try {
+    mkdirSync(join(dir, 'zsh'), { recursive: true })
+    const write = (file: string, text: string): void => {
+      const current = existsSync(file) ? readFileSync(file, 'utf8') : null
+      if (current !== text) writeFileSync(file, text, { encoding: 'utf8', mode: 0o644 })
+    }
+    write(join(dir, 'bash-init.sh'), BASH_INIT)
+    for (const [name, text] of Object.entries(ZSH_FILES)) write(join(dir, 'zsh', name), text)
+    posixInitDir = dir
+  } catch (err) {
+    console.error('[terminal] no se pudo escribir la integración de shell:', err)
+    return ''
+  }
+  return dir
+}
+
 /** Argumentos de arranque, con la integración ya cargada y sin eco. */
-function ptyArgs(kind: ShellKind): string[] {
+function ptyArgs(kind: ShellKind, shell: string): string[] {
   if (kind === 'powershell') {
     const file = psInitFile()
     if (!file) return ['-NoLogo']
@@ -309,26 +461,39 @@ function ptyArgs(kind: ShellKind): string[] {
     // -NoExit deja la sesión interactiva después de cargar el guión.
     return ['-NoLogo', '-NoExit', '-Command', `. '${quoted}'`]
   }
-  if (kind === 'posix') {
-    return ['-i']
-  }
-  return []
-}
+  if (kind !== 'posix') return []
+  // Git Bash en Windows sigue con la integración por variable de entorno.
+  if (IS_WIN) return ['-i']
 
-/**
- * En bash el equivalente se pone por variable de entorno, que tampoco se ve.
- * Se deja aparte porque no hay un fichero que cargar.
- */
-function posixEnvIntegration(env: Record<string, string>): void {
-  env['PROMPT_COMMAND'] =
-    'printf "\\033]133;D;%s\\007\\033]9;9;%s\\007" "$?" "$PWD"' +
-    (process.env['PROMPT_COMMAND'] ? `; ${process.env['PROMPT_COMMAND']}` : '')
+  const name = shellName(shell)
+  const dir = posixInitFiles()
+  if (name === 'bash' && dir) return ['--rcfile', join(dir, 'bash-init.sh'), '-i']
+  if (name === 'zsh') return IS_MAC ? ['-l', '-i'] : ['-i']
+  if (name === 'fish') return [...(IS_MAC ? ['-l'] : []), '-i', '--init-command', FISH_INIT]
+  return IS_MAC ? ['-l', '-i'] : ['-i']
 }
 
 /** Entorno completo de la shell de una consola real, con su integración. */
-function consoleEnv(kind: ShellKind, extra: Record<string, string> = {}): Record<string, string> {
+function consoleEnv(kind: ShellKind, shell: string, extra: Record<string, string> = {}): Record<string, string> {
   const env = { ...ptyEnv(), ...extra }
-  if (kind === 'posix') posixEnvIntegration(env)
+  if (kind !== 'posix') return env
+
+  if (IS_WIN) {
+    // Git Bash: el marcador va en PROMPT_COMMAND, que tampoco se ve.
+    env['PROMPT_COMMAND'] =
+      'printf "\\033]133;D;%s\\007\\033]9;9;%s\\007" "$?" "$PWD"' +
+      (process.env['PROMPT_COMMAND'] ? `; ${process.env['PROMPT_COMMAND']}` : '')
+    return env
+  }
+
+  const name = shellName(shell)
+  const dir = posixInitFiles()
+  if (name === 'zsh' && dir) {
+    env['ACC_USER_ZDOTDIR'] = env['ZDOTDIR'] || homedir()
+    env['ZDOTDIR'] = join(dir, 'zsh')
+  } else if (name === 'bash') {
+    if (IS_MAC) env['ACC_BASH_LOGIN'] = '1'
+  }
   return env
 }
 
@@ -530,12 +695,12 @@ function consoleEnded(t: Term, exitCode: number): void {
 
 function startPty(t: Term, lib: PtyModule): void {
   // Con perfil del usuario: es su terminal, con sus alias y su PATH.
-  const p = lib.spawn(t.shell, ptyArgs(t.kind), {
+  const p = lib.spawn(t.shell, ptyArgs(t.kind, t.shell), {
     name: 'xterm-256color',
     cols: t.cols,
     rows: t.rows,
     cwd: t.cwd,
-    env: consoleEnv(t.kind, t.extraEnv)
+    env: consoleEnv(t.kind, t.shell, t.extraEnv)
   })
   t.pty = p
   p.onData(consoleOutput(t))
@@ -549,11 +714,11 @@ function startPty(t: Term, lib: PtyModule): void {
 function startBridge(t: Term): void {
   t.bridge = spawnBridge({
     file: t.shell,
-    args: ptyArgs(t.kind),
+    args: ptyArgs(t.kind, t.shell),
     cwd: t.cwd,
     cols: t.cols,
     rows: t.rows,
-    env: consoleEnv(t.kind, t.extraEnv),
+    env: consoleEnv(t.kind, t.shell, t.extraEnv),
     onData: consoleOutput(t),
     onExit: (code, started) => {
       // Si ni siquiera llegó a arrancar la shell, el puente no sirve en este
@@ -588,6 +753,14 @@ function shellArgs(kind: ShellKind): string[] {
   return ['-i']
 }
 
+/**
+ * Fin de línea al escribir en la shell. Una shell POSIX no se come el \r: con
+ * \r\n, `ls` llegaría como `ls\r`, que no es ningún programa.
+ */
+function pipeEol(kind: ShellKind): string {
+  return kind === 'posix' ? '\n' : '\r\n'
+}
+
 /** Sonda que cierra el bloque: código de salida, éxito y directorio actual. */
 function probeLine(kind: ShellKind, marker: string): string {
   if (kind === 'powershell') {
@@ -615,7 +788,10 @@ function startPipe(t: Term): void {
   const marker = `__ACC${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`
   t.marker = marker
 
-  const child = spawn(t.shell, shellArgs(t.kind), {
+  // fish no entiende la sonda (`$?`, `VAR=valor`): el respaldo va con bash.
+  const file =
+    t.kind === 'posix' && shellName(t.shell) === 'fish' ? (existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh') : t.shell
+  const child = spawn(file, shellArgs(t.kind), {
     cwd: t.cwd,
     windowsHide: true,
     env: {
@@ -632,8 +808,9 @@ function startPipe(t: Term): void {
 
   wirePipe(t, marker)
 
-  for (const line of bootLines(t.kind)) child.stdin?.write(line + '\r\n')
-  child.stdin?.write(probeLine(t.kind, marker) + '\r\n')
+  const eol = pipeEol(t.kind)
+  for (const line of bootLines(t.kind)) child.stdin?.write(line + eol)
+  child.stdin?.write(probeLine(t.kind, marker) + eol)
 }
 
 function wirePipe(t: Term, marker: string): void {
@@ -760,8 +937,9 @@ export function runInTerm(id: string, command: string): boolean {
     t.bridge.write(line)
     return true
   }
-  t.child?.stdin?.write(encodePipeCommand(t.kind, command) + '\r\n')
-  t.child?.stdin?.write(probeLine(t.kind, t.marker!) + '\r\n')
+  const eol = pipeEol(t.kind)
+  t.child?.stdin?.write(encodePipeCommand(t.kind, command) + eol)
+  t.child?.stdin?.write(probeLine(t.kind, t.marker!) + eol)
   return true
 }
 
@@ -814,14 +992,13 @@ export function interruptTerm(id: string): Promise<boolean> {
   const pid = t.child?.pid
   if (!pid) return Promise.resolve(false)
 
-  if (process.platform !== 'win32') {
-    try {
-      process.kill(-pid, 'SIGINT')
-    } catch {
-      t.child?.kill('SIGINT')
-    }
-    t.pending = undefined
-    return Promise.resolve(true)
+  if (!IS_WIN) {
+    // Sin consola la shell no tiene control de trabajos: el Ctrl+C se manda
+    // a sus hijos, que son los que están trabajando. La shell sigue viva y
+    // su sonda cierra el bloque en cuanto el comando cae.
+    return new Promise((resolve) => {
+      execFile('pkill', ['-INT', '-P', String(pid)], { timeout: 4000 }, () => resolve(true))
+    })
   }
 
   return new Promise((resolve) => {
@@ -898,7 +1075,30 @@ export function availableShells(): { path: string; label: string }[] {
       }
     }
   } else {
-    for (const p of ['/bin/zsh', '/bin/bash', '/bin/sh']) if (existsSync(p)) out.push({ path: p, label: p })
+    // /etc/shells es la lista oficial de shells de inicio de sesión: ahí se
+    // apuntan también las de Homebrew o las que instala el gestor de paquetes.
+    let listed: string[] = []
+    try {
+      listed = readFileSync('/etc/shells', 'utf8')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith('/'))
+    } catch {
+      // Sin la lista, las de siempre.
+    }
+    // Las de Homebrew no siempre se apuntan en /etc/shells: también se
+    // buscan en el PATH, que ya es el de la shell del usuario.
+    const inPath = ['zsh', 'bash', 'fish'].map((n) => findInPath(n)).filter((p): p is string => Boolean(p))
+    const candidates = [userShell(), ...listed, ...inPath, '/bin/zsh', '/bin/bash', '/bin/sh']
+    const seen = new Set<string>()
+    for (const p of candidates) {
+      const name = shellName(p)
+      // Las variantes restringidas o de rescate no son para una terminal normal.
+      if (/^(rbash|nologin|false|git-shell|screen|tmux)$/.test(name)) continue
+      if (seen.has(p) || !existsSync(p)) continue
+      seen.add(p)
+      out.push({ path: p, label: `${name} · ${p}` })
+    }
   }
   return out
 }

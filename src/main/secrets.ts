@@ -20,15 +20,33 @@ function write(s: Store): void {
 }
 
 /**
- * Guarda la key cifrada con la API de credenciales del SO (DPAPI en Windows).
- * Si el cifrado no está disponible cae a base64, que no es seguridad real
- * pero evita dejar la key en claro por accidente.
+ * ¿Hay cifrado de verdad? En Windows es DPAPI y en macOS el Llavero. En Linux
+ * depende de que haya un llavero en la sesión (GNOME Keyring, KWallet): sin
+ * él, Electron dice que cifra, pero lo hace con una clave fija que viene
+ * dentro de Chromium, así que eso no se cuenta como cifrado.
+ */
+export function strongEncryption(): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false
+  if (process.platform !== 'linux') return true
+  try {
+    const backend = safeStorage.getSelectedStorageBackend()
+    return backend !== 'basic_text' && backend !== 'unknown'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Guarda la key cifrada con la API de credenciales del SO (DPAPI en Windows,
+ * el Llavero en macOS, el llavero de la sesión en Linux). Si el cifrado no
+ * está disponible cae a base64, que no es seguridad real pero evita dejar la
+ * key en claro por accidente.
  */
 export function setKey(providerId: string, key: string): void {
   const store = read()
   if (!key) {
     delete store[providerId]
-  } else if (safeStorage.isEncryptionAvailable()) {
+  } else if (strongEncryption()) {
     store[providerId] = 'enc:' + safeStorage.encryptString(key).toString('base64')
   } else {
     store[providerId] = 'b64:' + Buffer.from(key, 'utf8').toString('base64')

@@ -1,10 +1,11 @@
 /**
  * Terminal integrada.
  *
- * Con consola de verdad detrás (ConPTY) se usa xterm.js: es un emulador
- * completo, así que las aplicaciones de pantalla completa —opencode, vim, los
- * agentes en modo interactivo— se dibujan y responden igual que en Windows
- * Terminal. El teclado va tal cual a la consola, incluido Ctrl+C.
+ * Con consola de verdad detrás (ConPTY en Windows, un pseudoterminal en macOS
+ * y Linux) se usa xterm.js: es un emulador completo, así que las aplicaciones
+ * de pantalla completa —opencode, vim, los agentes en modo interactivo— se
+ * dibujan y responden igual que en Windows Terminal o en Terminal.app. El
+ * teclado va tal cual a la consola, incluido Ctrl+C.
  *
  * Si el módulo nativo del PTY no cargara, la app cae al motor por tuberías y
  * esta vista pinta la salida en bloques al estilo de Warp: cada comando con su
@@ -26,8 +27,9 @@ import {
   sendTermCommand, interruptTerm, clearTerm, writeTerm, resizeTerm, useTerm, useTick,
   onTermData, termScrollback, type TermBlock, type TermSegment
 } from '../lib/engine'
-
 import { useT } from '../lib/i18n'
+import { IS_MAC } from '../lib/platform'
+
 /** Líneas que se muestran antes de plegar la salida de un bloque. */
 const COLLAPSE_AFTER = 220
 
@@ -117,6 +119,10 @@ function XtermView({ termId }: { termId: string }): React.JSX.Element {
      */
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true
+      // En macOS copiar y pegar son Cmd+C y Cmd+V, que llegan por el menú
+      // Edición y xterm ya los entiende; Ctrl+C y Ctrl+V van siempre a la
+      // consola, como en Terminal.app.
+      if (IS_MAC) return true
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
         const sel = term.getSelection()
         if (sel) {

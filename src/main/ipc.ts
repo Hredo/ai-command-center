@@ -1,7 +1,7 @@
-import { ipcMain, dialog, shell, app, BrowserWindow, safeStorage } from 'electron'
+import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron'
 import { writeFileSync } from 'node:fs'
 import { getConfig, saveConfig, updateSettings, saveAgent, saveCliAgent, saveProject, removeFrom } from './config'
-import { setKey, getStoredKey, listKeyStatus, mask, resolveKey } from './secrets'
+import { setKey, getStoredKey, listKeyStatus, mask, resolveKey, strongEncryption } from './secrets'
 import { PROVIDERS } from './providers/catalog'
 import { fetchProviderModels, refreshCatalog, getCatalog, searchCatalog, priceFor, enrich } from './providers/models'
 import { runPrompt, abortRun, testProvider, answerApproval } from './providers/run'
@@ -12,9 +12,9 @@ import { scanProject, projectContext, listProjectFiles, openInEditor, openInExpl
 import { queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy } from './runs'
 import { paths, agentWorkspace } from './paths'
 import { registerExtraIpc } from './ipcExtra'
-import { checkArgs, isTrustedSender, openExternal, RENDERER_PREFS, type SecurityReport } from './security'
+import { checkArgs, isTrustedSender, launchedWithoutSandbox, openExternal, RENDERER_PREFS, type SecurityReport } from './security'
 import { notifyRun } from './notify'
-import { TITLEBAR_HEIGHT } from '@shared/defaults'
+import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 import type { RunOptions, CliRunOptions, Agent, CliAgent, Project } from '@shared/types'
 
 /** El servidor de desarrollo, si lo hay: es el otro origen de confianza. */
@@ -260,11 +260,12 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     return {
       contextIsolation: RENDERER_PREFS.contextIsolation,
       nodeIntegration: RENDERER_PREFS.nodeIntegration,
-      sandboxedRenderer: RENDERER_PREFS.sandbox,
+      sandboxedRenderer: RENDERER_PREFS.sandbox && !launchedWithoutSandbox(),
+      startedWithoutSandbox: launchedWithoutSandbox(),
       csp: true,
       navigationLocked: true,
       permissionsDenied: true,
-      encryptionAvailable: safeStorage.isEncryptionAvailable(),
+      encryptionAvailable: strongEncryption(),
       packaged: app.isPackaged,
       dataDir: paths.dir
     }
@@ -281,6 +282,13 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     const win = getWindow()
     if (!win || win.isDestroyed()) return false
     const zoom = Math.min(2, Math.max(0.5, Number(opts?.zoom) || 1))
+    if (process.platform === 'darwin') {
+      // En macOS los botones son los tres semáforos de la izquierda, que no
+      // cambian de color ni de tamaño: sólo hay que volver a centrarlos en la
+      // barra, que sí crece con el zoom.
+      win.setWindowButtonPosition(trafficLights(zoom))
+      return true
+    }
     const hex = /^#[0-9a-fA-F]{6}$/
     win.setTitleBarOverlay({
       height: Math.round(TITLEBAR_HEIGHT * zoom),

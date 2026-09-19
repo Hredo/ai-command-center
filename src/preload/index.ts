@@ -13,6 +13,7 @@ interface SecurityReport {
   contextIsolation: boolean
   nodeIntegration: boolean
   sandboxedRenderer: boolean
+  startedWithoutSandbox: boolean
   csp: boolean
   navigationLocked: boolean
   permissionsDenied: boolean
@@ -40,6 +41,11 @@ interface Res<T> {
 const call = <T>(channel: string, ...args: any[]): Promise<Res<T>> => ipcRenderer.invoke(channel, ...args)
 
 const api = {
+  /**
+   * El sistema, sin esperar a nadie: la interfaz lo necesita al pintar (los
+   * semáforos de macOS, Cmd o Ctrl en los atajos, cómo se llama el Finder).
+   */
+  platform: process.platform as 'win32' | 'darwin' | 'linux',
   config: {
     get: () => call<AppConfig>('config:get'),
     save: (cfg: AppConfig) => call<AppConfig>('config:save', cfg),

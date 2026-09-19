@@ -681,6 +681,11 @@ export interface GhStatus {
   url?: string
   scopes?: string
   hint?: string
+  /**
+   * Orden que lo instala en este sistema (winget, Homebrew, apt, dnf…), para
+   * lanzarla en la terminal integrada. Sin ella se enlaza la web de gh.
+   */
+  installCommand?: string
 }
 
 export interface GhRepo {
@@ -986,9 +991,12 @@ export interface OpencodeModel {
 
 export interface GpuInfo {
   name: string
+  /** En un Mac con chip de Apple, la parte de la memoria que puede usar la GPU. */
   vramMb?: number
   /** true si es la GPU dedicada con más memoria. */
   primary?: boolean
+  /** Comparte la memoria con el sistema (Mac con chip de Apple). */
+  unified?: boolean
 }
 
 export interface HardwareInfo {
@@ -998,6 +1006,8 @@ export interface HardwareInfo {
   gpus: GpuInfo[]
   /** VRAM de la mejor GPU, en MB. Es lo que decide qué modelos entran. */
   bestVramMb?: number
+  /** La GPU y el sistema comparten memoria: no hay VRAM aparte. */
+  unifiedMemory?: boolean
   platform: string
 }
 

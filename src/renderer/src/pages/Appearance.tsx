@@ -20,6 +20,7 @@ import { CodeEditor } from '../components/Code'
 import { FileIcon } from '../components/FileIcon'
 import { usePrefs } from '../lib/prefs'
 import { useT, LANGUAGES } from '../lib/i18n'
+import { perOs } from '../lib/platform'
 import { THEMES, UI_FONTS, CODE_FONTS, ACCENTS } from '../lib/themes'
 import { DEFAULT_PANES } from '@shared/defaults'
 import { useStore } from '../lib/store'
@@ -554,6 +555,7 @@ interface Report {
   contextIsolation: boolean
   nodeIntegration: boolean
   sandboxedRenderer: boolean
+  startedWithoutSandbox: boolean
   csp: boolean
   navigationLocked: boolean
   permissionsDenied: boolean
@@ -621,17 +623,19 @@ export function SecurityTab(): React.JSX.Element {
               ok={report.encryptionAvailable}
               icon={report.encryptionAvailable ? <Lock size={15} /> : <ShieldAlert size={15} />}
               title={t('security.keys')}
-              detail={report.encryptionAvailable ? t('security.keys.encrypted') : t('security.keys.fallback')}
+              detail={t(perOs(report.encryptionAvailable ? 'security.keys.encrypted' : 'security.keys.fallback'))}
             />
             <Row
               ok={report.contextIsolation && !report.nodeIntegration && report.sandboxedRenderer}
               icon={<Layers size={15} />}
               title={t('security.sandbox')}
-              detail={[
-                `contextIsolation: ${report.contextIsolation ? 'on' : 'off'}`,
-                `nodeIntegration: ${report.nodeIntegration ? 'on' : 'off'}`,
-                `sandbox: ${report.sandboxedRenderer ? 'on' : 'off'}`
-              ].join(' · ')}
+              detail={
+                [
+                  `contextIsolation: ${report.contextIsolation ? 'on' : 'off'}`,
+                  `nodeIntegration: ${report.nodeIntegration ? 'on' : 'off'}`,
+                  `sandbox: ${report.sandboxedRenderer ? 'on' : 'off'}`
+                ].join(' · ') + (report.startedWithoutSandbox ? ' — ' + t('security.sandbox.off') : '')
+              }
             />
             <Row ok={report.csp} icon={<ShieldCheck size={15} />} title={t('security.csp')} detail={t('security.csp.on')} />
             <Row

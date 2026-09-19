@@ -18,6 +18,7 @@ import { BranchPicker, useGit } from './AgentPanel'
 import type { FileChange } from '@shared/types'
 
 import { useT } from '../lib/i18n'
+import { withMod } from '../lib/platform'
 interface Commit {
   hash: string
   short: string
@@ -353,7 +354,7 @@ export function GitPanel({
         />
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-dim">
-            Confirma todo lo que git ya sigue (equivale a git commit -a). Ctrl + Enter.
+            Confirma todo lo que git ya sigue (equivale a git commit -a). {withMod('Ctrl + Enter')}.
           </span>
           <Button
             size="sm"

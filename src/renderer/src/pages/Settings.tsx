@@ -11,6 +11,7 @@ import { relTime } from '../lib/format'
 import type { DetectionResult, ProviderStatus } from '@shared/types'
 
 import { useT } from '../lib/i18n'
+import { IS_LINUX, IS_MAC, perOs } from '../lib/platform'
 function ProviderRow({
   p,
   onChanged
@@ -254,8 +255,7 @@ export default function Settings(): React.JSX.Element {
             <Panel className="px-4 py-3 flex items-center gap-2.5">
               <ShieldCheck size={15} className="text-ok shrink-0" />
               <span className="text-[12.5px] text-muted">
-                Las claves se guardan cifradas con las credenciales de Windows (DPAPI) en tu perfil de usuario.
-                Nunca salen del equipo salvo hacia el propio proveedor.
+                {t(perOs('security.keys.encrypted'))}
               </span>
             </Panel>
 
@@ -411,7 +411,7 @@ export default function Settings(): React.JSX.Element {
               <PanelHeader
                 title={t('Notificaciones del sistema')}
                 icon={<Bell size={14} />}
-                subtitle={t('Avisos de Windows cuando termina algo que tarda')}
+                subtitle={t('Avisos del sistema cuando termina algo que tarda')}
               />
               <div className="p-4 space-y-3">
                 <Toggle
@@ -472,12 +472,18 @@ export default function Settings(): React.JSX.Element {
                 </Field>
                 <Field
                   label={t('Terminal externa')}
-                  hint={t('Sólo si alguna vez quieres abrir una fuera de la app')}
+                  hint={
+                    IS_MAC
+                      ? t('El nombre de la aplicación: Terminal, iTerm, Warp, Ghostty…')
+                      : IS_LINUX
+                        ? t('Vacía: la del escritorio (x-terminal-emulator, GNOME, KDE…)')
+                        : t('Sólo si alguna vez quieres abrir una fuera de la app')
+                  }
                 >
                   <Input
                     defaultValue={s.terminalCommand}
                     onBlur={(e) => void setSetting({ terminalCommand: e.target.value })}
-                    placeholder="wt"
+                    placeholder={IS_MAC ? 'Terminal' : IS_LINUX ? t('automática') : 'wt'}
                     className="font-mono"
                   />
                 </Field>

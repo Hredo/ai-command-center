@@ -1,6 +1,8 @@
-import { app, BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, screen } from 'electron'
 import { join } from 'node:path'
-import { writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import icon from '../../build/icon.png?asset'
 import { registerIpc } from './ipc'
 import { paths } from './paths'
 import { getConfig } from './config'
@@ -13,29 +15,75 @@ import { initUsage } from './usage'
 import { initLive } from './live'
 import { watchClaude, stopWatchingClaude } from './claudeWatch'
 import { applyCsp, hardenApp, lockDownNavigation, lockDownPermissions, RENDERER_PREFS } from './security'
+import { IS_LINUX, IS_MAC } from './platform'
+import { ensureUtf8Locale, loadShellEnv } from './shellEnv'
+import { runSelfTest } from './selftest'
+import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
 // afloje el aislamiento. Tiene que pasar antes de que Electron los lea.
 hardenApp()
 
+/**
+ * Autoprueba: con ACC_SELFTEST=<carpeta> la app arranca con datos de usar y
+ * tirar, comprueba sus piezas de verdad (ventana, terminal, integración de
+ * shell, comandos del agente, PATH) y sale con 0 o 1. Es lo que usa la CI en
+ * cada sistema con la app ya empaquetada. Sin la variable no hace nada.
+ */
+const SELFTEST = process.env['ACC_SELFTEST']?.trim()
+if (SELFTEST) app.setPath('userData', mkdtempSync(join(tmpdir(), 'acc-selftest-')))
+
+// En macOS y Linux el PATH de la shell del usuario se lee ya, mientras
+// Electron arranca: cuando la ventana pida detectar CLIs, estará listo.
+const shellEnvReady = loadShellEnv()
+
 let mainWindow: BrowserWindow | null = null
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1480,
-    height: 940,
-    minWidth: 1080,
-    minHeight: 680,
-    show: false,
-    backgroundColor: '#0a0b0f',
-    title: 'AI Command Center',
+/**
+ * La barra de título la pinta la app en los tres sistemas. En Windows y
+ * Linux los botones de ventana van a la derecha, dibujados por el sistema
+ * encima de la barra; en macOS son los tres semáforos de la izquierda.
+ */
+function chromeOptions(): Electron.BrowserWindowConstructorOptions {
+  if (IS_MAC) {
+    return { titleBarStyle: 'hidden', trafficLightPosition: trafficLights(1) }
+  }
+  return {
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#0a0b0f',
       symbolColor: '#8b93a7',
-      height: 38
+      height: TITLEBAR_HEIGHT
     },
+    // En Linux la ventana necesita su icono aparte: el del escritorio sólo
+    // lo usa el lanzador.
+    ...(IS_LINUX ? { icon } : {})
+  }
+}
+
+/**
+ * Tamaño inicial: el de siempre, salvo que la pantalla sea más pequeña. En un
+ * portátil de 13" (o un Mac con la resolución «más espacio» desactivada) una
+ * ventana de 1480×940 se salía por abajo y los botones quedaban fuera.
+ */
+function initialSize(): { width: number; height: number } {
+  const area = screen.getPrimaryDisplay().workAreaSize
+  return {
+    width: Math.max(1080, Math.min(1480, Math.round(area.width * 0.94))),
+    height: Math.max(680, Math.min(940, Math.round(area.height * 0.94)))
+  }
+}
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
+    ...initialSize(),
+    minWidth: 1080,
+    minHeight: 680,
+    show: false,
+    backgroundColor: '#0a0b0f',
+    title: 'AI Command Center',
+    ...chromeOptions(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       ...RENDERER_PREFS
@@ -43,6 +91,11 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  // En macOS cerrar la ventana no cierra la app: se queda en el Dock y el
+  // icono la vuelve a abrir. Hasta entonces no hay ventana a la que avisar.
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
 
@@ -90,10 +143,15 @@ async function writeDiagnostics(): Promise<void> {
           electron: process.versions.electron,
           node: process.versions.node,
           abi: process.versions.modules,
+          platform: `${process.platform}-${process.arch}`,
           packaged: app.isPackaged,
           terminal:
             pty.engine === 'native'
-              ? { backend: 'pty', engine: 'native', detail: 'consola real (ConPTY con node-pty)' }
+              ? {
+                  backend: 'pty',
+                  engine: 'native',
+                  detail: `consola real (${process.platform === 'win32' ? 'ConPTY' : 'pseudoterminal del sistema'} con node-pty)`
+                }
               : pty.engine === 'bridge'
                 ? {
                     backend: 'pty',
@@ -113,8 +171,31 @@ async function writeDiagnostics(): Promise<void> {
   }
 }
 
-app.whenReady().then(() => {
+/**
+ * El menú de macOS. Allí la barra de menús es del sistema y sin ella no hay
+ * Cmd+C, Cmd+V, Cmd+Q ni Cmd+H. Sólo lleva eso: nada de recargar la ventana
+ * ni de abrir las herramientas de desarrollo.
+ */
+function macMenu(): void {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: 'appMenu' },
+      { role: 'editMenu' },
+      {
+        role: 'windowMenu',
+        submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'togglefullscreen' }, { type: 'separator' }, { role: 'front' }]
+      }
+    ])
+  )
+}
+
+app.whenReady().then(async () => {
   nativeTheme.themeSource = 'dark'
+  if (IS_MAC) macMenu()
+  ensureUtf8Locale(app.getLocale())
+  // Normalmente ya ha terminado. Si la configuración de la shell tarda, no se
+  // espera más de unos segundos: el PATH se completa igual cuando acabe.
+  await Promise.race([shellEnvReady, new Promise((r) => setTimeout(r, 4000))])
   applyCsp(Boolean(process.env['ELECTRON_RENDERER_URL']))
   lockDownPermissions()
   initNotify(() => mainWindow)
@@ -135,6 +216,7 @@ app.whenReady().then(() => {
   void writeDiagnostics()
   registerIpc(() => mainWindow)
   createWindow()
+  if (SELFTEST && mainWindow) void runSelfTest(mainWindow, SELFTEST)
 
   // Las sesiones de Claude Code que corren fuera de la app —en una terminal o
   // en la app de Claude— se leen de sus transcripciones y entran al histórico
@@ -161,12 +243,12 @@ app.whenReady().then(() => {
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (!mainWindow || BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (!IS_MAC || SELFTEST) app.quit()
 })
 
 // Las shells de las terminales son procesos hijos: hay que cerrarlas o
@@ -186,6 +268,9 @@ if (!app.requestSingleInstanceLock()) {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
+    } else if (app.isReady()) {
+      // macOS: la app seguía viva en el Dock, pero sin ventana.
+      createWindow()
     }
   })
 }

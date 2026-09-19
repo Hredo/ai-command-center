@@ -252,7 +252,11 @@ export function OllamaPanel(): React.JSX.Element {
             <div className="text-[11px] uppercase tracking-wider text-dim mb-1">{t('Gráfica')}</div>
             <div className="truncate" title={primaryGpu?.name}>{primaryGpu?.name ?? '—'}</div>
             <div className="num text-[11px] text-dim mt-0.5">
-              {primaryGpu?.vramMb ? `${(primaryGpu.vramMb / 1024).toFixed(1)} GB de VRAM` : t('VRAM sin determinar')}
+              {primaryGpu?.vramMb
+                ? t(primaryGpu.unified ? 'ollama.unified' : 'ollama.vram', { gb: (primaryGpu.vramMb / 1024).toFixed(1) })
+                : hw?.platform === 'darwin' && primaryGpu
+                  ? t('ollama.noGpuUse')
+                  : t('VRAM sin determinar')}
             </div>
           </div>
         </div>
@@ -320,7 +324,7 @@ export function OllamaPanel(): React.JSX.Element {
           icon={<Sparkles size={14} />}
           subtitle={
             primaryGpu?.vramMb
-              ? t('ollama.computedWith', {
+              ? t(primaryGpu.unified ? 'ollama.computedWithUnified' : 'ollama.computedWith', {
                   vram: (primaryGpu.vramMb / 1024).toFixed(1),
                   ram: hw?.ramGb ?? '?'
                 })

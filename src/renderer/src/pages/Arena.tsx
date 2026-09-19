@@ -27,6 +27,7 @@ import { SharedWidthHandle } from '../components/Resizable'
 import { usePaneSize } from '../lib/prefs'
 
 import { useT } from '../lib/i18n'
+import { withMod } from '../lib/platform'
 /** Marca el mejor valor de cada métrica entre los contendientes. */
 function best(runs: (RunRecord | undefined)[], field: keyof RunRecord, dir: 'min' | 'max'): number | null {
   const vals = runs.map((r) => (r ? Number(r[field] ?? NaN) : NaN)).filter((v) => !Number.isNaN(v) && v > 0)
@@ -193,7 +194,7 @@ export default function Arena(): React.JSX.Element {
             }
           }}
           rows={3}
-          placeholder={t('El prompt que recibirán todos. Ctrl+Enter para lanzar…')}
+          placeholder={withMod(t('El prompt que recibirán todos. Ctrl+Enter para lanzar…'))}
           className="text-[13px] leading-relaxed"
         />
         <div className="flex items-center justify-between mt-2">

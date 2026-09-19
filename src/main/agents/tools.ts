@@ -15,9 +15,18 @@ import { tmpdir } from 'node:os'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { guardPath } from '../security'
+import { IS_WIN, killTree, osName } from '../platform'
 import type { FileTouch } from '@shared/types'
 
 export type ToolKind = 'read' | 'search' | 'edit' | 'write' | 'run'
+
+/**
+ * Con qué se ejecutan los comandos del agente. En Windows, PowerShell; en
+ * macOS y Linux, bash, que está en los dos de fábrica y es lo que cualquier
+ * modelo sabe escribir sin pensar.
+ */
+const BASH = ['/bin/bash', '/usr/bin/bash'].find((p) => existsSync(p))
+export const COMMAND_SHELL = IS_WIN ? 'PowerShell' : BASH ? 'bash' : 'sh'
 
 interface ParamSpec {
   type: 'string' | 'integer' | 'boolean'
@@ -123,11 +132,11 @@ export const AGENT_TOOLS: AgentTool[] = [
     name: 'run_command',
     kind: 'run',
     description:
-      'Ejecuta un comando de PowerShell en la raíz del proyecto y devuelve su salida y su código de salida. Sirve para compilar, pasar pruebas o consultar git. No lances programas interactivos ni servidores que no terminan.',
+      `Ejecuta un comando de ${COMMAND_SHELL} en la raíz del proyecto (${osName()}) y devuelve su salida y su código de salida. Sirve para compilar, pasar pruebas o consultar git. No lances programas interactivos ni servidores que no terminan.`,
     parameters: {
       type: 'object',
       properties: {
-        command: { type: 'string', description: 'Comando de PowerShell.' },
+        command: { type: 'string', description: `Comando de ${COMMAND_SHELL}.` },
         timeout_seconds: { type: 'integer', description: 'Tiempo máximo en segundos. Por omisión 120, máximo 600.' }
       },
       required: ['command']
@@ -652,57 +661,72 @@ function clip(text: string, max = 30_000): string {
   return `${head}\n… (${text.length - max} caracteres omitidos) …\n${tail}`
 }
 
+/**
+ * Cómo se lanza un comando del agente en este sistema.
+ *
+ * En Windows el comando viaja en base64 (UTF-16): sin comillas que escapar y
+ * con los acentos intactos. La salida se pide en UTF-8 y el código de salida
+ * del último programa se propaga, que PowerShell por sí solo no lo hace.
+ *
+ * En macOS y Linux va tal cual a `bash -c`: bash ya habla UTF-8 y devuelve el
+ * código del último programa. No es una shell de inicio de sesión: el PATH ya
+ * es el del usuario (ver shellEnv.ts) y así no se cargan sus alias ni su
+ * prompt, que no pintan nada en un comando suelto.
+ */
+function commandLaunch(command: string): { file: string; args: string[] } {
+  if (IS_WIN) {
+    const script = [
+      "$ProgressPreference = 'SilentlyContinue'",
+      '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+      '$OutputEncoding = [System.Text.Encoding]::UTF8',
+      command,
+      '$__accOk = $?',
+      'if ($LASTEXITCODE) { exit $LASTEXITCODE }',
+      'if (-not $__accOk) { exit 1 }'
+    ].join('\n')
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    return {
+      file: 'powershell.exe',
+      args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded]
+    }
+  }
+  return { file: BASH ?? '/bin/sh', args: ['-c', command] }
+}
+
 function runCommandTool(root: string, args: any, signal: AbortSignal): Promise<ToolResult> {
   const command = str(args.command).trim()
   if (!command) return Promise.resolve({ output: 'falta command', isError: true })
   const seconds = Math.min(600, Math.max(1, int(args.timeout_seconds, 120)))
 
-  // El comando viaja en base64 (UTF-16): sin comillas que escapar y con los
-  // acentos intactos. La salida se pide en UTF-8 y el código de salida del
-  // último programa se propaga, que PowerShell por sí solo no lo hace.
-  const script = [
-    "$ProgressPreference = 'SilentlyContinue'",
-    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
-    '$OutputEncoding = [System.Text.Encoding]::UTF8',
-    command,
-    '$__accOk = $?',
-    'if ($LASTEXITCODE) { exit $LASTEXITCODE }',
-    'if (-not $__accOk) { exit 1 }'
-  ].join('\n')
-  const encoded = Buffer.from(script, 'utf16le').toString('base64')
   const root_ = resolve(root)
+  const launch = commandLaunch(command)
 
   return new Promise((done) => {
     const started = Date.now()
     let out = ''
     let finished = false
-    const child = spawn(
-      'powershell.exe',
-      ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-      {
-        cwd: root_,
-        windowsHide: true,
-        // Sin entrada: un programa que pregunte recibe fin de fichero en vez de
-        // quedarse esperando para siempre.
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          NO_COLOR: '1',
-          FORCE_COLOR: '0',
-          TERM: 'dumb',
-          CI: '1',
-          GIT_TERMINAL_PROMPT: '0',
-          GIT_PAGER: 'cat',
-          PAGER: 'cat'
-        }
+    const child = spawn(launch.file, launch.args, {
+      cwd: root_,
+      windowsHide: true,
+      // Fuera de Windows, en su propio grupo de procesos: al cortar por
+      // tiempo se mata el grupo entero y no sólo la shell.
+      detached: !IS_WIN,
+      // Sin entrada: un programa que pregunte recibe fin de fichero en vez de
+      // quedarse esperando para siempre.
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+        FORCE_COLOR: '0',
+        TERM: 'dumb',
+        CI: '1',
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_PAGER: 'cat',
+        PAGER: 'cat'
       }
-    )
+    })
 
-    const kill = (): void => {
-      if (child.pid && child.exitCode === null) {
-        spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
-      }
-    }
+    const kill = (): void => killTree(child, 'SIGKILL')
     const timer = setTimeout(() => {
       out += `\n[cortado: superó ${seconds} s]`
       kill()

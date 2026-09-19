@@ -22,6 +22,7 @@ import { langFromPath } from '../lib/highlight'
 import type { DirEntry, FileContent } from '@shared/types'
 
 import { useT } from '../lib/i18n'
+import { perOs } from '../lib/platform'
 /* ------------------------------------------------------------------ *
  * Árbol                                                              *
  * ------------------------------------------------------------------ */
@@ -364,14 +365,14 @@ export function FilesPanel({
               <div className="ml-auto flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={() => void window.api.files.reveal(root, sel)}
-                  title={t('files.reveal')}
+                  title={t(perOs('files.reveal'))}
                   className="p-1.5 rounded text-dim hover:text-accent hover:bg-raised"
                 >
                   <ExternalLink size={13} />
                 </button>
                 <button
                   onClick={() => setConfirmDel(sel)}
-                  title={t('files.trash')}
+                  title={t(perOs('files.trash'))}
                   className="p-1.5 rounded text-dim hover:text-bad hover:bg-raised"
                 >
                   <Trash2 size={13} />
@@ -412,7 +413,7 @@ export function FilesPanel({
                 <div className="text-[12.5px] text-muted">{t('files.binary', { size: fmtBytes(file.bytes) })}</div>
                 <div className="text-[11.5px] text-dim">{t('files.binary.hint')}</div>
                 <Button size="sm" onClick={() => void window.api.files.reveal(root, sel)}>
-                  <ExternalLink size={12} /> {t('files.reveal')}
+                  <ExternalLink size={12} /> {t(perOs('files.reveal'))}
                 </Button>
               </div>
             ) : (
@@ -458,7 +459,7 @@ export function FilesPanel({
         </div>
       </Modal>
 
-      <Modal open={Boolean(confirmDel)} onClose={() => setConfirmDel(null)} title={t('files.trash')}>
+      <Modal open={Boolean(confirmDel)} onClose={() => setConfirmDel(null)} title={t(perOs('files.trash'))}>
         <div className="space-y-3">
           <div className="text-[12.5px]">{t('files.trashExplain', { path: confirmDel ?? '' })}</div>
           <div className="flex justify-end gap-2">

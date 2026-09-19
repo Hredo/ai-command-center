@@ -38,6 +38,7 @@ import {
 import { Pane } from '../components/Resizable'
 
 import { useT } from '../lib/i18n'
+import { withMod } from '../lib/platform'
 function CopyBtn({ text }: { text: string }): React.JSX.Element {
   const t = useT()
   const [done, setDone] = useState(false)
@@ -655,7 +656,7 @@ export default function Chat(): React.JSX.Element {
                     ? t('Elige el agente y el proyecto a la derecha. La app recoge sus tokens, su tiempo y su coste real cuando el agente los informa.')
                     : models.length === 0
                       ? t('Aún no hay modelos disponibles. Añade una API key en Ajustes o arranca Ollama; la app lo detecta solo.')
-                      : t('Elige modelo a la derecha, escribe abajo y pulsa Ctrl+Enter. Verás sus métricas mientras responde.')
+                      : withMod(t('Elige modelo a la derecha, escribe abajo y pulsa Ctrl+Enter. Verás sus métricas mientras responde.'))
                 }
               />
             ) : null}
@@ -735,7 +736,7 @@ export default function Chat(): React.JSX.Element {
               <span className="num">{t('common.chars', { n: input.length })}</span>
             </div>
             <div className="mt-1 text-[11px] text-dim">
-              {t('Ctrl + Enter para enviar · la respuesta sigue llegando si cambias de pantalla')}
+              {withMod(t('Ctrl + Enter para enviar · la respuesta sigue llegando si cambias de pantalla'))}
             </div>
           </div>
         </div>

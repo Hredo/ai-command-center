@@ -7,10 +7,11 @@
  * registro de Ollama y la puntuación se calcula con la VRAM de la máquina.
  */
 import { execFile, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { cpus, totalmem, homedir } from 'node:os'
 import { join } from 'node:path'
 import { getConfig } from './config'
+import { IS_LINUX, IS_MAC, IS_WIN, findInPath } from './platform'
 import { effectiveBaseUrl, providerById } from './providers/catalog'
 import type {
   GpuInfo, HardwareInfo, ModelRecommendation, OllamaModel, OllamaStatus, PullProgress
@@ -32,21 +33,45 @@ function run(cmd: string, args: string[], timeout = 8000): Promise<{ out: string
   })
 }
 
-/** Rutas habituales del ejecutable en Windows, además del PATH. */
+/** El ejecutable: primero el PATH, después donde lo deja cada instalador. */
 function findBinary(): string | undefined {
-  if (process.platform === 'win32') {
+  if (IS_WIN) {
     const candidates = [
       join(homedir(), 'AppData', 'Local', 'Programs', 'Ollama', 'ollama.exe'),
       'C:\\Program Files\\Ollama\\ollama.exe'
     ]
     const hit = candidates.find((p) => existsSync(p))
     if (hit) return hit
-  } else {
-    for (const p of ['/usr/local/bin/ollama', '/usr/bin/ollama', '/opt/homebrew/bin/ollama']) {
-      if (existsSync(p)) return p
-    }
+    return undefined
   }
-  return undefined
+  const inPath = findInPath('ollama')
+  if (inPath) return inPath
+  return [
+    '/usr/local/bin/ollama',
+    '/usr/bin/ollama',
+    '/opt/homebrew/bin/ollama',
+    // La app de macOS lleva el binario dentro aunque no se haya enlazado.
+    '/Applications/Ollama.app/Contents/Resources/ollama',
+    join(homedir(), 'Applications', 'Ollama.app', 'Contents', 'Resources', 'ollama'),
+    join(homedir(), '.local', 'bin', 'ollama')
+  ].find((p) => existsSync(p))
+}
+
+/** La app de Ollama para macOS, si está instalada. */
+function macApp(): string | undefined {
+  return ['/Applications/Ollama.app', join(homedir(), 'Applications', 'Ollama.app')].find((p) => existsSync(p))
+}
+
+/**
+ * En Linux el instalador oficial deja Ollama como servicio del sistema, que
+ * corre con su propio usuario y guarda los modelos en su carpeta. Arrancar
+ * aquí un `ollama serve` a mano lo levantaría con tu usuario y sin ninguno de
+ * esos modelos: con el servicio, lo correcto es arrancar el servicio.
+ */
+function linuxService(): boolean {
+  return ['/etc/systemd/system/ollama.service', '/usr/lib/systemd/system/ollama.service', '/lib/systemd/system/ollama.service'].some(
+    (p) => existsSync(p)
+  )
 }
 
 /** timeoutMs <= 0 significa sin límite: las descargas duran lo que duran. */
@@ -105,23 +130,34 @@ export async function ollamaStatus(): Promise<OllamaStatus> {
 }
 
 /**
- * Arranca el servidor. En Windows se prefiere la app de bandeja, que es como
- * lo tiene instalado el usuario y sobrevive al cierre de esta app.
+ * Arranca el servidor. En Windows y macOS se prefiere la app de Ollama, que es
+ * como lo tiene instalado el usuario, pone su icono en la barra y sobrevive al
+ * cierre de esta app.
  */
 export async function startOllama(): Promise<{ started: boolean; detail: string }> {
   const pre = await ollamaStatus()
   if (pre.up) return { started: true, detail: 'Ya estaba corriendo' }
 
   const bin = findBinary()
-  if (!bin) return { started: false, detail: 'No encuentro el ejecutable de Ollama en este equipo' }
+  const app = IS_MAC ? macApp() : undefined
+  if (!bin && !app) return { started: false, detail: 'No encuentro el ejecutable de Ollama en este equipo' }
 
-  const trayApp = join(bin, '..', process.platform === 'win32' ? 'ollama app.exe' : 'ollama')
-  const useTray = process.platform === 'win32' && existsSync(trayApp)
+  if (IS_LINUX && linuxService()) {
+    return {
+      started: false,
+      detail: 'Ollama está instalado como servicio del sistema y está parado. Arráncalo con: sudo systemctl start ollama'
+    }
+  }
+
+  const trayApp = IS_WIN && bin ? join(bin, '..', 'ollama app.exe') : undefined
 
   try {
-    const child = useTray
-      ? spawn(trayApp, [], { detached: true, stdio: 'ignore', windowsHide: true })
-      : spawn(bin, ['serve'], { detached: true, stdio: 'ignore', windowsHide: true })
+    const child = app
+      ? spawn('open', ['-a', app], { detached: true, stdio: 'ignore' })
+      : trayApp && existsSync(trayApp)
+        ? spawn(trayApp, [], { detached: true, stdio: 'ignore', windowsHide: true })
+        : spawn(bin!, ['serve'], { detached: true, stdio: 'ignore', windowsHide: true })
+    child.on('error', (err) => console.error('[ollama] no se pudo lanzar:', err.message))
     child.unref()
   } catch (err: any) {
     return { started: false, detail: `No se pudo lanzar: ${err?.message ?? err}` }
@@ -345,6 +381,87 @@ async function pullInner(
 
 let hwCache: { at: number; data: HardwareInfo } | null = null
 
+/**
+ * Un Mac con chip de Apple no tiene VRAM aparte: la GPU usa la misma memoria
+ * que todo lo demás. macOS le deja usar hasta unos dos tercios (tres cuartos
+ * a partir de 48 GB), que es lo que Ollama puede llenar de pesos antes de
+ * repartir el modelo con la CPU. En un Mac con Intel Ollama no usa la GPU:
+ * se enseña su nombre, pero no cuenta para las recomendaciones.
+ */
+async function macGpus(info: HardwareInfo): Promise<void> {
+  if (process.arch === 'arm64') {
+    const share = info.ramGb > 36 ? 0.75 : 0.67
+    info.unifiedMemory = true
+    info.gpus.push({
+      name: `${info.cpu.replace(/\s+/g, ' ')} · GPU`,
+      vramMb: Math.round(info.ramGb * 1024 * share),
+      unified: true
+    })
+    return
+  }
+  const sp = await run('system_profiler', ['SPDisplaysDataType', '-json'], 10_000)
+  if (sp.code !== 0) return
+  try {
+    const items: any[] = JSON.parse(sp.out)?.SPDisplaysDataType ?? []
+    for (const it of items) {
+      const name = String(it.sppci_model ?? it._name ?? '').trim()
+      if (name && !info.gpus.some((g) => g.name === name)) info.gpus.push({ name })
+    }
+  } catch {
+    // Sin la lista de gráficas se sigue: las recomendaciones no dependen de ella.
+  }
+}
+
+/** El nombre del procesador o de la placa en un Linux con ARM (una Raspberry Pi, un servidor Ampere…). */
+async function linuxCpuName(): Promise<string> {
+  try {
+    const board = readFileSync('/sys/firmware/devicetree/base/model', 'utf8').replace(/\0/g, '').trim()
+    if (board) return board
+  } catch {
+    // No es una placa con árbol de dispositivos: se pregunta a lscpu.
+  }
+  const r = await run('lscpu', [], 4000)
+  const field = (k: string): string => new RegExp(`^${k}:\\s*(.+)$`, 'm').exec(r.out)?.[1]?.trim() ?? ''
+  const name = [field('Vendor ID'), field('Model name')].filter((x) => x && x !== '-').join(' ')
+  return name || 'desconocida'
+}
+
+/**
+ * En Linux, nvidia-smi ya ha dicho lo suyo. El resto de gráficas se nombran
+ * con lspci, y la VRAM de las AMD la da el propio controlador en /sys, sin
+ * herramientas aparte: es lo que Ollama usa con ROCm.
+ */
+async function linuxGpus(info: HardwareInfo): Promise<void> {
+  const vramBySlot = new Map<string, number>()
+  try {
+    for (const card of readdirSync('/sys/class/drm').filter((d) => /^card\d+$/.test(d))) {
+      const device = join('/sys/class/drm', card, 'device')
+      const file = join(device, 'mem_info_vram_total')
+      if (!existsSync(file)) continue
+      const bytes = Number(readFileSync(file, 'utf8').trim())
+      const slot = realpathSync(device).split('/').pop()?.replace(/^0000:/, '')
+      if (slot && bytes > 0) vramBySlot.set(slot, Math.round(bytes / 1024 ** 2))
+    }
+  } catch {
+    // Sin /sys legible (un contenedor, por ejemplo): sólo nombres.
+  }
+
+  const pci = await run('lspci', ['-mm'], 5000)
+  if (pci.code !== 0) return
+  for (const line of pci.out.split(/\r?\n/)) {
+    const m = /^(\S+) "([^"]*)" "([^"]*)" "([^"]*)"/.exec(line)
+    if (!m || !/VGA|3D|Display/i.test(m[2])) continue
+    const vendor = m[3]
+      .replace(/\b(Corporation|Corp\.?|Inc\.?|Co\.?|Ltd\.?)(?=\s|$)/g, '')
+      .replace(/\[(.*)\]/, '$1')
+      .trim()
+    // nvidia-smi ya las ha contado, y con la VRAM exacta.
+    if (/nvidia/i.test(vendor) && info.gpus.some((g) => /nvidia/i.test(g.name))) continue
+    const name = `${vendor} ${m[4]}`.replace(/\s+/g, ' ').trim()
+    if (!info.gpus.some((g) => g.name === name)) info.gpus.push({ name, vramMb: vramBySlot.get(m[1]) })
+  }
+}
+
 export async function hardware(): Promise<HardwareInfo> {
   if (hwCache && Date.now() - hwCache.at < 300_000) return hwCache.data
 
@@ -367,7 +484,14 @@ export async function hardware(): Promise<HardwareInfo> {
     }
   }
 
-  if (process.platform === 'win32') {
+  if (IS_MAC) await macGpus(info)
+  if (IS_LINUX) {
+    // En ARM el kernel no da «model name» y Node se queda en «unknown».
+    if (!info.cpu || info.cpu === 'unknown') info.cpu = await linuxCpuName()
+    await linuxGpus(info)
+  }
+
+  if (IS_WIN) {
     const wmi = await run(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-Command',
@@ -513,6 +637,9 @@ export async function recommendations(): Promise<{ hw: HardwareInfo; installed: 
   const vramGb = hw.bestVramMb ? hw.bestVramMb / 1024 : 0
   const budgetGb = Math.max(0, vramGb - 1.3)
   const ramGb = hw.ramGb
+  // Con memoria unificada lo que no cabe en la parte de la GPU no va a otra
+  // memoria: comparte la misma con el sistema, que se queda con unos 4 GB.
+  const partialCapGb = hw.unifiedMemory ? Math.max(budgetGb, ramGb - 4) : budgetGb + ramGb * 0.5
 
   const sizes = await Promise.all(CANDIDATES.map((c) => registrySize(c.name)))
 
@@ -522,7 +649,7 @@ export async function recommendations(): Promise<{ hw: HardwareInfo; installed: 
 
     let fits: ModelRecommendation['fits']
     if (sizeGb && sizeGb <= budgetGb) fits = 'gpu'
-    else if (sizeGb && sizeGb <= budgetGb + ramGb * 0.5) fits = 'partial'
+    else if (sizeGb && sizeGb <= partialCapGb) fits = 'partial'
     else fits = 'cpu'
 
     // Una mezcla de expertos repartida sigue siendo rápida: se le perdona.

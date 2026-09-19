@@ -13,7 +13,8 @@
  * OpenAI y compatibles, Ollama, Anthropic y Google.
  */
 import { randomUUID } from 'node:crypto'
-import { describeCall, executeTool, needsApproval, toolsFor, type AgentTool, type ToolResult } from './tools'
+import { COMMAND_SHELL, describeCall, executeTool, needsApproval, toolsFor, type AgentTool, type ToolResult } from './tools'
+import { osName } from '../platform'
 import { lines, readError } from '../providers/http'
 import { readUsageLimit } from '../providers/limits'
 import { applyAnthropicEffort, applyGoogleEffort, applyOllamaEffort, applyOpenAiEffort, stripEffort } from '../effort'
@@ -174,8 +175,8 @@ function agentInstructions(root: string, tools: AgentTool[], inProject: boolean)
   const canRun = tools.some((t) => t.kind === 'run')
   return [
     inProject
-      ? 'Eres un agente de programación que trabaja dentro del proyecto del usuario, en su equipo con Windows.'
-      : 'Eres un agente que trabaja en su propia carpeta de trabajo, en el equipo con Windows del usuario: ahí creas, lees y editas archivos y ejecutas comandos para hacer lo que te pidan.',
+      ? `Eres un agente de programación que trabaja dentro del proyecto del usuario, en su equipo con ${osName()}.`
+      : `Eres un agente que trabaja en su propia carpeta de trabajo, en el equipo con ${osName()} del usuario: ahí creas, lees y editas archivos y ejecutas comandos para hacer lo que te pidan.`,
     `La raíz ${inProject ? 'del proyecto' : 'de tu carpeta'} es ${root}. Las rutas que pases a las herramientas son relativas a esa raíz.`,
     'Tienes herramientas para mirar el proyecto' +
       (canEdit ? ', modificar archivos' : '') +
@@ -186,7 +187,7 @@ function agentInstructions(root: string, tools: AgentTool[], inProject: boolean)
       ? 'Cuando te pidan un cambio, hazlo en los archivos. Lee cada archivo antes de editarlo y usa edit_file con un fragmento exacto y único del archivo actual; write_file sólo para archivos nuevos o para reescribir uno entero.'
       : 'Estás en modo sólo lectura: investiga y propone un plan concreto, con archivos y cambios, pero no puedes modificar nada.',
     canRun
-      ? 'Los comandos se ejecutan con PowerShell en la raíz del proyecto. El usuario puede tener que aprobarlos y puede rechazarlos.'
+      ? `Los comandos se ejecutan con ${COMMAND_SHELL} en la raíz del proyecto. El usuario puede tener que aprobarlos y puede rechazarlos.`
       : '',
     'Si una herramienta devuelve un error, corrige la llamada y sigue. Al terminar, resume en pocas líneas qué has hecho y en qué archivos.'
   ]

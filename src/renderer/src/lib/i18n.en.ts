@@ -137,11 +137,20 @@ export const en: Record<string, string> = {
   'security.title': 'Security',
   'security.subtitle': 'What the app protects and what it is allowed to touch',
   'security.keys': 'API keys',
-  'security.keys.encrypted':
+  'security.keys.encrypted.win':
     'Encrypted with your Windows credentials (DPAPI) in your profile. They never leave the machine except towards the provider itself.',
-  'security.keys.fallback':
+  'security.keys.encrypted.mac':
+    'Encrypted with the macOS Keychain, tied to your user. They never leave the machine except towards the provider itself.',
+  'security.keys.encrypted.linux':
+    'Encrypted with your session keyring (GNOME Keyring or KWallet). They never leave the machine except towards the provider itself.',
+  'security.keys.fallback.win':
     'System encryption is unavailable: keys are stored encoded, not encrypted. Check the keyring of your Windows session.',
+  'security.keys.fallback.mac': 'The macOS Keychain is unavailable: keys are stored encoded, not encrypted.',
+  'security.keys.fallback.linux':
+    'Your session has no keyring (GNOME Keyring or KWallet): keys are stored encoded, not encrypted. Install one or pass the keys through environment variables.',
   'security.sandbox': 'Window isolation',
+  'security.sandbox.off':
+    "the app was started with --no-sandbox, so Chromium doesn't isolate the window at system level. On Linux the AppImage adds it when the system blocks user namespaces (Ubuntu 23.10 and later): the .deb package doesn't need it.",
   'security.csp': 'Content policy',
   'security.csp.on':
     'On: the window only loads its own resources and cannot reach the internet.',
@@ -166,8 +175,12 @@ export const en: Record<string, string> = {
   'files.filter': 'filter by name…',
   'files.newFile': 'New file',
   'files.newFolder': 'New folder',
-  'files.reveal': 'Show in Explorer',
-  'files.trash': 'Move to the recycle bin',
+  'files.reveal.win': 'Show in Explorer',
+  'files.reveal.mac': 'Show in Finder',
+  'files.reveal.linux': 'Show in folder',
+  'files.trash.win': 'Move to the Recycle Bin',
+  'files.trash.mac': 'Move to the Trash',
+  'files.trash.linux': 'Move to the trash',
   'files.reading': 'Reading the folder…',
   'files.pick': 'Pick a file',
   'files.pick.hint':
@@ -237,6 +250,7 @@ export const en: Record<string, string> = {
   'house.visiting': '{n} visiting',
   'models.showing600': 'Showing 600 of {total}. Narrow the search to see the rest.',
   'ollama.computedWith': 'Computed with {vram} GB of VRAM and {ram} GB of RAM',
+  'ollama.computedWithUnified': 'Computed with {vram} GB of memory for the GPU, out of the {ram} GB it shares with the system',
   'ollama.deleteExplain': '{name} is deleted from disk and {size} is freed.',
   'ollama.installed': '{n} models, {size} on disk',
   'ollama.notResponding':
@@ -378,8 +392,8 @@ export const en: Record<string, string> = {
   Arrancar: 'Start',
   Atajos: 'Shortcuts',
   'Avisar cuando termine una tarea': 'Notify when a task finishes',
-  'Avisos de Windows cuando termina algo que tarda':
-    'Windows notifications when something slow finishes',
+  'Avisos del sistema cuando termina algo que tarda':
+    'System notifications when something slow finishes',
   'Añade la carpeta de un proyecto para trabajar sobre él desde aquí.':
     'Add a project folder to work on it from here.',
   'Añade una API key o arranca un motor local como Ollama. La app detecta sola lo que tengas en el equipo.':
@@ -1074,5 +1088,12 @@ export const en: Record<string, string> = {
   estimado: 'estimated',
   'respuesta vacía': 'empty response',
   'Cada vecino es una IA de las que tienes. Si le mandas una tarea se pone a hacer faena; si le mandas otra a la vez, entra por la puerta una copia suya que se marcha cuando esa tarea acaba. El dibujo se para solo cuando te vas a otra pestaña.':
-    'Each resident is one of your AIs. Give it a task and it gets to work; give it another at the same time and a copy of it comes in through the door, leaving when that task ends. The drawing pauses by itself when you switch tabs.'
+    'Each resident is one of your AIs. Give it a task and it gets to work; give it another at the same time and a copy of it comes in through the door, leaving when that task ends. The drawing pauses by itself when you switch tabs.',
+  'Cómo instalarlo': 'How to install it',
+  'El nombre de la aplicación: Terminal, iTerm, Warp, Ghostty…': "The application's name: Terminal, iTerm, Warp, Ghostty…",
+  'Vacía: la del escritorio (x-terminal-emulator, GNOME, KDE…)': "Empty: your desktop's own (x-terminal-emulator, GNOME, KDE…)",
+  automática: 'automatic',
+  'ollama.vram': '{gb} GB of VRAM',
+  'ollama.unified': '{gb} GB of unified memory for the GPU (approx.)',
+  'ollama.noGpuUse': 'Ollama does not use this GPU on Intel Macs'
 }

@@ -1,12 +1,19 @@
-# Genera el instalador de Windows en una máquina limpia.
+# Genera los instaladores de Windows, macOS y Linux en máquinas limpias de
+# GitHub, prueba cada uno tal y como lo instalaría un usuario y, con etiqueta,
+# los publica juntos en una Release.
 #
-# Existe por una razón concreta: en el equipo de desarrollo Smart App Control
-# está en modo de imposición y no deja a electron-builder lanzar el ejecutable
-# temporal con el que escribe el desinstalador, así que el NSIS no llega ni a
-# generarse. El runner de GitHub es un Windows sin esa restricción: aquí el
-# instalador sale siempre, y sale igual cada vez.
+# Windows se empaqueta aquí y no en el equipo de desarrollo por una razón
+# concreta: allí Smart App Control está en modo de imposición y no deja a
+# electron-builder lanzar el ejecutable temporal con el que escribe el
+# desinstalador, así que el NSIS no llega ni a generarse. macOS y Linux, porque
+# no hay otra forma de tener los tres sistemas a mano.
 #
-# Empuja una etiqueta para publicar:  git tag v0.4.0 && git push origin v0.4.0
+# Cada paquete pasa la autoprueba de la app (src/main/selftest.ts) después de
+# instalarse: ventana, terminales con cada shell, comandos del agente y el PATH
+# del usuario. Si algo falla, no se publica nada.
+#
+# Empuja una etiqueta para publicar:  git tag v0.7.0 && git push origin v0.7.0
+# Sin etiqueta (Run workflow) se empaqueta y se prueba igual, sin publicar.
 name: release
 
 on:
@@ -15,20 +22,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  # ------------------------------------------------------------------ Windows
   windows:
+    name: Windows
     runs-on: windows-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -38,18 +44,14 @@ jobs:
       # Así lo que se publica es exactamente el árbol que se probó.
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
-
-      - name: Comprobar tipos (proceso principal)
-        run: pnpm exec tsc --noEmit -p tsconfig.node.json
-
-      - name: Comprobar tipos (ventana)
-        run: pnpm exec tsc --noEmit -p tsconfig.web.json
-
+      - name: Comprobar tipos
+        run: |
+          pnpm exec tsc --noEmit -p tsconfig.node.json
+          pnpm exec tsc --noEmit -p tsconfig.web.json
       # Sin estos binarios la app arranca y la terminal se cuelga al abrir la
       # primera pestaña. Mejor romper la build que publicar eso.
       - name: Comprobar la consola nativa
         run: node scripts/check-native.cjs
-
       - name: Compilar
         run: pnpm build
 
@@ -58,45 +60,256 @@ jobs:
       - name: Empaquetar
         run: pnpm exec electron-builder --win nsis zip --publish never
 
-      # Sin -Recurse y solo ficheros: dentro de release/win-unpacked esta la
-      # aplicacion entera desempaquetada, con sus propios .exe (OpenConsole y
-      # compania). Recorrerla mete esos binarios donde no pintan nada.
-      - name: Calcular SHA-256
+      - name: Autoprueba de la app empaquetada
         shell: pwsh
         run: |
-          $files = Get-ChildItem -Path release -File |
-                   Where-Object { $_.Extension -in '.exe', '.zip' }
-          if (-not $files) { throw 'No hay artefactos en release/' }
-          $lines = foreach ($f in $files) {
-            $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
-            "$h  $($f.Name)"
-          }
-          $lines | Out-File -FilePath release/SHA256SUMS.txt -Encoding utf8
-          Get-Content release/SHA256SUMS.txt
+          $out = Join-Path $env:RUNNER_TEMP 'selftest'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $env:ACC_SELFTEST = $out
+          $env:ACC_SELFTEST_EXPECT_SANDBOX = '1'
+          $p = Start-Process -FilePath 'release\win-unpacked\AI Command Center.exe' -Wait -PassThru `
+            -RedirectStandardOutput (Join-Path $out 'log.txt') -RedirectStandardError (Join-Path $out 'err.txt')
+          Select-String -Path (Join-Path $out 'log.txt') -Pattern '\[selftest\]' | ForEach-Object { $_.Line }
+          if (-not (Test-Path (Join-Path $out 'selftest.json'))) { Get-Content (Join-Path $out 'err.txt') -Tail 40 }
+          exit $p.ExitCode
 
-      - name: Guardar artefactos
+      - name: Guardar el informe
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: selftest-windows
+          path: ${{ runner.temp }}/selftest
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Guardar los paquetes
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ai-command-center-windows
           path: |
             release/*.exe
             release/*.zip
-            release/SHA256SUMS.txt
           retention-days: 30
 
+  # -------------------------------------------------------------------- macOS
+  # Un Mac de cada arquitectura: el binario del PTY se compila en cada uno y
+  # cada .dmg lleva sólo el suyo.
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            os: macos-latest
+          - arch: x64
+            os: macos-15-intel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          # Versión exacta a propósito: con «11» el instalador se actualiza a
+          # la última y, en los Mac con Intel, se para porque no puede
+          # verificar el binario nativo de pnpm para darwin-x64.
+          version: 11.25.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+      - name: Comprobar la consola nativa
+        run: node scripts/check-native.cjs
+      - name: Compilar
+        run: pnpm build
+      - name: Empaquetar
+        run: pnpm exec electron-builder --mac dmg --${{ matrix.arch }} --publish never
+
+      - name: Comprobar la firma ad hoc
+        run: |
+          app=$(ls -d release/mac*/"AI Command Center.app" | head -1)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E 'Signature|Identifier|Format'
+          pty="$app/Contents/Resources/app.asar.unpacked/node_modules/@homebridge/node-pty-prebuilt-multiarch/build/Release"
+          file "$pty/pty.node" "$pty/spawn-helper"
+          test -x "$pty/spawn-helper"
+
+      # Como un usuario: se abre el .dmg y se arrastra la app a Aplicaciones.
+      - name: Instalar desde el .dmg
+        run: |
+          dmg=$(ls release/*.dmg)
+          mnt=$(hdiutil attach -nobrowse -readonly "$dmg" | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)
+          ls "$mnt"
+          test -L "$mnt/Applications"
+          cp -R "$mnt/AI Command Center.app" /Applications/
+          hdiutil detach "$mnt"
+
+      - name: Shells de prueba
+        run: brew install fish
+
+      - name: Autoprueba de la app instalada
+        env:
+          ACC_SELFTEST_EXPECT_SANDBOX: '1'
+        run: scripts/selftest.sh "$RUNNER_TEMP/selftest" "/Applications/AI Command Center.app/Contents/MacOS/AI Command Center"
+
+      # Abierta por LaunchServices, que es lo que pasa al hacer doble clic o
+      # abrirla desde el Dock: con el entorno mínimo de launchd.
+      - name: Autoprueba abierta desde el Finder
+        run: |
+          out="$RUNNER_TEMP/selftest-finder"
+          mkdir -p "$out"
+          open -W -n \
+            --env ACC_SELFTEST="$out" \
+            --env ACC_SELFTEST_EXPECT_PATH="$HOME/acc-selftest-bin" \
+            --env ACC_SELFTEST_EXPECT_CLI=claude \
+            "/Applications/AI Command Center.app"
+          python3 - "$out/selftest.json" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          for c in r['checks']:
+              print(('OK    ' if c['ok'] else 'FALLA ') + c['name'] + ' — ' + c['detail'])
+          sys.exit(0 if r['ok'] else 1)
+          PY
+
+      # Una captura de la pantalla entera, con la app abierta: la única forma
+      # de ver los semáforos de macOS, que no salen en las capturas de la página.
+      - name: Captura de la ventana
+        continue-on-error: true
+        run: |
+          open "/Applications/AI Command Center.app"
+          sleep 12
+          screencapture -x "$RUNNER_TEMP/selftest/pantalla.png"
+          osascript -e 'tell application "AI Command Center" to quit' || true
+
+      - name: Guardar el informe
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: selftest-macos-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/selftest
+            ${{ runner.temp }}/selftest-finder
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Guardar los paquetes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ai-command-center-macos-${{ matrix.arch }}
+          path: release/*.dmg
+          retention-days: 30
+
+  # -------------------------------------------------------------------- Linux
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            os: ubuntu-24.04
+          - arch: arm64
+            os: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 11
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+      - name: Comprobar la consola nativa
+        run: node scripts/check-native.cjs
+      - name: Compilar
+        run: pnpm build
+      - name: Empaquetar
+        run: pnpm exec electron-builder --linux deb AppImage --${{ matrix.arch }} --publish never
+
+      - name: Shells de prueba y pantalla virtual
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb zsh fish libfuse2t64
+          # El runner deja carpetas de funciones de zsh escribibles por otros,
+          # y compinit se para a preguntar si seguir. Es el arreglo de siempre.
+          zsh -c 'autoload -Uz compaudit; compaudit' | xargs -r sudo chmod g-w,o-w
+
+      # Como en un Ubuntu de escritorio desde la 23.10: sin espacios de nombres
+      # para quien no tenga un perfil de AppArmor que se los permita. Es lo que
+      # rompe a tantas apps de Electron; aquí se pone a propósito.
+      - name: Restricción de AppArmor de Ubuntu
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
+      # Como un usuario de Ubuntu: con apt.
+      - name: Instalar el .deb
+        run: sudo apt-get install -y -q ./release/*.deb
+      # El .deb instala su perfil de AppArmor: tiene que arrancar aislado.
+      - name: Autoprueba del .deb instalado
+        env:
+          ACC_SELFTEST_EXPECT_SANDBOX: '1'
+        run: scripts/selftest.sh "$RUNNER_TEMP/selftest" /usr/bin/ai-command-center
+
+      # El AppImage no puede traer perfil de AppArmor: con la restricción
+      # puesta, su lanzador arranca la app con --no-sandbox. Funciona, y la
+      # pantalla de Seguridad lo dice; por eso el README recomienda el .deb.
+      - name: Autoprueba del AppImage
+        run: |
+          chmod +x release/*.AppImage
+          scripts/selftest.sh "$RUNNER_TEMP/selftest-appimage" "$(ls "$GITHUB_WORKSPACE"/release/*.AppImage)"
+
+      - name: Guardar el informe
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: selftest-linux-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/selftest
+            ${{ runner.temp }}/selftest-appimage
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Guardar los paquetes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ai-command-center-linux-${{ matrix.arch }}
+          path: |
+            release/*.deb
+            release/*.AppImage
+          retention-days: 30
+
+  # ------------------------------------------------------------- Publicación
+  # Sólo con etiqueta, y sólo si los cinco paquetes han pasado su autoprueba.
+  publish:
+    name: Publicar
+    needs: [windows, macos, linux]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ai-command-center-*
+          path: dist
+          merge-multiple: true
+
+      - name: Calcular SHA-256
+        run: |
+          cd dist
+          ls -la
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Publicar la Release
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $assets = Get-ChildItem -Path release -File |
-                    Where-Object { $_.Extension -in '.exe', '.zip', '.blockmap' -or
-                                   $_.Name -eq 'SHA256SUMS.txt' } |
-                    ForEach-Object { $_.FullName }
-          if (-not $assets) { throw 'No hay nada que publicar en release/' }
-          Write-Host 'Se publican:'
-          $assets | ForEach-Object { Write-Host "  $_" }
-          gh release create $env:GITHUB_REF_NAME @assets `
-            --title "AI Command Center $env:GITHUB_REF_NAME" `
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "AI Command Center $GITHUB_REF_NAME" \
             --notes-file .github/RELEASE_NOTES.md
