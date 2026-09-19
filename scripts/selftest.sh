@@ -36,6 +36,7 @@ env -i \
   PATH=/usr/bin:/bin:/usr/sbin:/sbin \
   TMPDIR="${TMPDIR:-/tmp}" DISPLAY="${DISPLAY:-}" \
   ACC_SELFTEST="$out" ACC_SELFTEST_EXPECT_PATH="$bin" ACC_SELFTEST_EXPECT_CLI=claude \
+  ACC_SELFTEST_EXPECT_SANDBOX="${ACC_SELFTEST_EXPECT_SANDBOX:-}" \
   "${run[@]}" > "$out/log.txt" 2>&1
 code=$?
 

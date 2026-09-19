@@ -164,6 +164,7 @@ const es: Dict = {
   'security.keys.fallback.mac': 'El Llavero de macOS no está disponible: las claves se guardan codificadas, no cifradas.',
   'security.keys.fallback.linux': 'Tu sesión no tiene llavero (GNOME Keyring o KWallet): las claves se guardan codificadas, no cifradas. Instala uno o pasa las claves por variables de entorno.',
   'security.sandbox': 'Aislamiento de la ventana',
+  'security.sandbox.off': 'la app arrancó con --no-sandbox y Chromium no aísla la ventana a nivel del sistema. En Linux lo añade el AppImage cuando el sistema no deja usar espacios de nombres (Ubuntu 23.10 y posteriores): el paquete .deb no lo necesita.',
   'security.csp': 'Política de contenido',
   'security.csp.on': 'Activa: la ventana sólo carga sus propios recursos y no puede pedir nada a internet.',
   'security.nav': 'Navegación bloqueada',

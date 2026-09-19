@@ -13,6 +13,7 @@ interface SecurityReport {
   contextIsolation: boolean
   nodeIntegration: boolean
   sandboxedRenderer: boolean
+  startedWithoutSandbox: boolean
   csp: boolean
   navigationLocked: boolean
   permissionsDenied: boolean

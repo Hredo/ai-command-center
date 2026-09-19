@@ -412,6 +412,20 @@ async function macGpus(info: HardwareInfo): Promise<void> {
   }
 }
 
+/** El nombre del procesador o de la placa en un Linux con ARM (una Raspberry Pi, un servidor Ampere…). */
+async function linuxCpuName(): Promise<string> {
+  try {
+    const board = readFileSync('/sys/firmware/devicetree/base/model', 'utf8').replace(/\0/g, '').trim()
+    if (board) return board
+  } catch {
+    // No es una placa con árbol de dispositivos: se pregunta a lscpu.
+  }
+  const r = await run('lscpu', [], 4000)
+  const field = (k: string): string => new RegExp(`^${k}:\\s*(.+)$`, 'm').exec(r.out)?.[1]?.trim() ?? ''
+  const name = [field('Vendor ID'), field('Model name')].filter((x) => x && x !== '-').join(' ')
+  return name || 'desconocida'
+}
+
 /**
  * En Linux, nvidia-smi ya ha dicho lo suyo. El resto de gráficas se nombran
  * con lspci, y la VRAM de las AMD la da el propio controlador en /sys, sin
@@ -471,7 +485,11 @@ export async function hardware(): Promise<HardwareInfo> {
   }
 
   if (IS_MAC) await macGpus(info)
-  if (IS_LINUX) await linuxGpus(info)
+  if (IS_LINUX) {
+    // En ARM el kernel no da «model name» y Node se queda en «unknown».
+    if (!info.cpu || info.cpu === 'unknown') info.cpu = await linuxCpuName()
+    await linuxGpus(info)
+  }
 
   if (IS_WIN) {
     const wmi = await run(

@@ -149,6 +149,8 @@ export const en: Record<string, string> = {
   'security.keys.fallback.linux':
     'Your session has no keyring (GNOME Keyring or KWallet): keys are stored encoded, not encrypted. Install one or pass the keys through environment variables.',
   'security.sandbox': 'Window isolation',
+  'security.sandbox.off':
+    "the app was started with --no-sandbox, so Chromium doesn't isolate the window at system level. On Linux the AppImage adds it when the system blocks user namespaces (Ubuntu 23.10 and later): the .deb package doesn't need it.",
   'security.csp': 'Content policy',
   'security.csp.on':
     'On: the window only loads its own resources and cannot reach the internet.',

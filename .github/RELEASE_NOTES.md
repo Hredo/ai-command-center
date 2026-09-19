@@ -1,13 +1,33 @@
 ## ⬇ Descargar · Download
 
-| Archivo · File | Español | English |
-|---|---|---|
-| `AI-Command-Center-Setup-*.exe` | **Instalador.** Lo normal: crea accesos directos y desinstalador. No pide permisos de administrador. | **Installer.** The normal choice: creates shortcuts and an uninstaller. No admin rights needed. |
-| `AI-Command-Center-*-x64.zip` | **Portátil.** Descomprime y ejecuta. No instala nada. | **Portable.** Extract and run. Installs nothing. |
-| `SHA256SUMS.txt` | Para verificar la descarga. | To verify your download. |
+**Windows · macOS · Linux.** Elige la línea de tu sistema · *Pick the line for your system*:
 
-Windows 10 (22H2+) u 11, 64 bits · *Windows 10 (22H2+) or 11, 64-bit*
-No necesitas Node, Python ni Visual Studio · *No Node, Python or Visual Studio required*
+| Sistema · System | Archivo · File | |
+|---|---|---|
+| **Windows** 10 (22H2+) / 11, 64 bits | `AI-Command-Center-Setup-*.exe` | **Instalador**, lo normal · **Installer**, the usual choice |
+| | `AI-Command-Center-*-x64.zip` | **Portátil**, sin instalar · **Portable**, nothing to install |
+| **macOS** 13+ con chip de Apple · *with an Apple chip* (M1–M4…) | `AI-Command-Center-*-mac-arm64.dmg` | Arrástrala a Aplicaciones · *Drag it into Applications* |
+| **macOS** 13+ con Intel · *with Intel* | `AI-Command-Center-*-mac-x64.dmg` | Arrástrala a Aplicaciones · *Drag it into Applications* |
+| **Ubuntu, Debian, Mint, Pop!_OS**… (x64) | `AI-Command-Center-*-linux-amd64.deb` | `sudo apt install ./<archivo · file>.deb` |
+| **Cualquier Linux** · *Any Linux* (x64) | `AI-Command-Center-*-linux-x86_64.AppImage` | `chmod +x` y a ejecutar · *and run it* |
+| Linux **ARM64** | `…-linux-arm64.deb` · `…-linux-arm64.AppImage` | Igual · *Same* |
+| | `SHA256SUMS.txt` | Para verificar la descarga · *To verify your download* |
+
+No necesitas Node, Python ni compiladores · *No Node, Python or compilers required*.
+Cada paquete se instaló y se probó en GitHub Actions antes de publicarse · *Every package was installed and tested on GitHub Actions before being published*.
+
+---
+
+## ✨ Novedades en 0.7.0 · What's new in 0.7.0
+
+| Español | English |
+|---|---|
+| **macOS y Linux.** La app funciona en los tres sistemas: `.dmg` para Mac con chip de Apple y con Intel, y `.deb` y AppImage para Linux x64 y ARM64. | **macOS and Linux.** The app runs on all three systems: a `.dmg` for Apple-chip and Intel Macs, and a `.deb` and an AppImage for Linux x64 and ARM64. |
+| **La terminal con tu shell.** bash, zsh y fish con su integración (código de salida y carpeta de cada comando), cargando antes tu configuración; en macOS, como terminal de inicio de sesión, igual que Terminal.app. | **The terminal with your shell.** bash, zsh and fish with their integration (each command's exit code and folder), loading your own configuration first; on macOS as a login shell, just like Terminal.app. |
+| **Tus CLIs aunque abras la app desde el Dock.** La app lee el `PATH` de tu shell al arrancar, así que encuentra `claude`, `codex`, `opencode`, `gh` u `ollama` instalados con Homebrew, npm o pnpm. | **Your CLIs even when you open the app from the Dock.** The app reads your shell's `PATH` at startup, so it finds `claude`, `codex`, `opencode`, `gh` or `ollama` installed with Homebrew, npm or pnpm. |
+| **Agentes que ejecutan con bash** fuera de Windows, y que al cortarlos por tiempo no dejan procesos vivos. | **Agents run commands with bash** outside Windows, and when timed out they leave no processes behind. |
+| **Hecha para cada sistema:** semáforos de macOS y atajos con ⌘, Llavero de macOS y llavero de GNOME/KDE para las claves, memoria unificada de los chips de Apple para recomendar modelos locales, Finder o gestor de archivos, y Homebrew o apt para instalar `gh`. | **Made for each system:** macOS traffic lights and ⌘ shortcuts, the macOS Keychain and the GNOME/KDE keyring for keys, Apple chips' unified memory for local model recommendations, Finder or your file manager, and Homebrew or apt to install `gh`. |
+| **La ventana cabe en tu pantalla** también en portátiles pequeños. | **The window fits your screen**, small laptops included. |
 
 ---
 
@@ -37,30 +57,42 @@ No necesitas Node, Python ni Visual Studio · *No Node, Python or Visual Studio 
 
 ## 🇪🇸 Español
 
-### Windows te va a avisar, y es normal
+### La primera vez, tu sistema te va a avisar, y es normal
 
-**La aplicación no está firmada digitalmente.** Firmarla exige un certificado de pago de
-200-400 € al año, y este proyecto es gratuito y no tiene ninguno. El aviso **no dice que
-el programa sea peligroso**: dice que nadie ha pagado por acreditar quién lo publica.
+**La aplicación no está firmada con un certificado de pago** (200-400 € al año en
+Windows, 99 dólares al año para notarizar en macOS), y este proyecto es gratuito y no
+tiene ninguno. El aviso **no dice que el programa sea peligroso**: dice que nadie ha
+pagado por acreditar quién lo publica. Sólo pasa la primera vez.
 
-Al abrirlo verás *«Windows protegió su PC»*. Pulsa **Más información** y después
-**Ejecutar de todas formas**. Sólo pasa la primera vez.
+**Windows** — Sale *«Windows protegió su PC»*. Pulsa **Más información** y después
+**Ejecutar de todas formas**. ¿No aparece ese botón? Tienes **Smart App Control**: prueba
+el **`.zip` portátil** (antes de descomprimirlo: clic derecho → **Propiedades** → marca
+**Desbloquear**) o compílala tú (`pnpm dist`). Desactivar Smart App Control es
+**irreversible sin reinstalar Windows**; no lo hagas por una aplicación.
 
-**¿No aparece ese botón?** Tienes **Smart App Control** activado, que viene de fábrica en
-las instalaciones limpias de Windows 11 y no ofrece ninguna opción. Entonces:
+**macOS** — Arrastra la app a Aplicaciones y ábrela. macOS la bloquea:
 
-1. Prueba el **`.zip` portátil**. Antes de descomprimirlo: clic derecho → **Propiedades**
-   → marca **Desbloquear**.
-2. O **compílalo tú mismo**, que es la vía que siempre funciona:
-   `git clone` → `pnpm install` → `pnpm dist`.
-3. Desactivar Smart App Control es **irreversible sin reinstalar Windows**. No lo hagas
-   por una aplicación.
+1. Pulsa **OK** en el aviso (no *Trasladar a la Papelera*).
+2. **Ajustes del Sistema → Privacidad y seguridad**, abajo del todo: **Abrir igualmente**.
+3. Confirma con tu contraseña y otra vez **Abrir igualmente**.
+
+En macOS 13 y 14 vale también clic derecho sobre la app → **Abrir** → **Abrir**. Desde la
+Terminal, lo mismo en una línea:
+`xattr -dr com.apple.quarantine "/Applications/AI Command Center.app"`
+
+**Linux** — Sin avisos. Con el `.deb`: `sudo apt install ./` y el nombre del archivo. Con
+el AppImage: `chmod +x` y a ejecutar; si se queja de `libfuse.so.2`, instala FUSE 2
+(`sudo apt install libfuse2t64` en Ubuntu 24.04). En Ubuntu 23.10 y posteriores, mejor el
+`.deb`: el AppImage arranca allí sin el aislamiento de Chromium, porque sólo el `.deb`
+instala el perfil de AppArmor que lo permite.
 
 ### Verificar lo que has descargado
 
-```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.6.0.exe' -Algorithm SHA256
-```
+| Sistema | Orden |
+|---|---|
+| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.7.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.7.0-mac-arm64.dmg` |
+| Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
 lo ejecutes.
@@ -70,8 +102,8 @@ lo ejecutes.
 Arranca vacía a propósito: sin claves, sin cuenta y sin conectarse a nada. Necesitas al
 menos una de estas tres cosas:
 
-- **Una clave de API** — en Ajustes → Proveedores. Se guarda cifrada con DPAPI en tu
-  perfil de Windows y no sale de tu equipo.
+- **Una clave de API** — en Ajustes → Proveedores. Se guarda cifrada con el llavero de tu
+  sistema (DPAPI, el Llavero de macOS o GNOME Keyring/KWallet) y no sale de tu equipo.
 - **Un agente de línea de comandos** ya instalado (Claude Code, Codex, Aider, OpenCode,
   Gemini CLI…). Se detecta solo, y no hace falta ninguna clave.
 - **Ollama** corriendo, para modelos locales sin pagar nada.
@@ -79,36 +111,48 @@ menos una de estas tres cosas:
 Opcionales: `git` para el panel de git, la CLI `gh` para el de GitHub. Lo que falte se
 señala en su pantalla y el resto funciona igual.
 
-📖 [Instrucciones completas](https://github.com/Hredo/ai-command-center#instalación)
+📖 [Instrucciones completas para cada sistema](https://github.com/Hredo/ai-command-center/blob/main/README.es.md#instalación)
 
 ---
 
 ## 🇬🇧 English
 
-### Windows will warn you, and that's expected
+### The first time, your system will warn you, and that's expected
 
-**The application is not code-signed.** Signing requires a paid certificate costing
-€200–400 a year, and this project is free and doesn't have one. The warning **does not say
-the program is dangerous**: it says nobody has paid to certify who publishes it.
+**The application is not signed with a paid certificate** (€200–400 a year on Windows,
+US$99 a year to notarize on macOS), and this project is free and has neither. The warning
+**does not say the program is dangerous**: it says nobody has paid to certify who
+publishes it. It only happens the first time.
 
-On opening it you'll see *"Windows protected your PC"*. Click **More info**, then
-**Run anyway**. It only happens the first time.
+**Windows** — You'll see *"Windows protected your PC"*. Click **More info**, then
+**Run anyway**. No such button? You have **Smart App Control**: try the **portable
+`.zip`** (before extracting: right-click → **Properties** → tick **Unblock**) or build it
+yourself (`pnpm dist`). Turning Smart App Control off **cannot be undone without
+reinstalling Windows**; don't do it for one application.
 
-**No such button?** You have **Smart App Control** enabled — it ships on by default on
-clean Windows 11 installations and offers no choice. In that case:
+**macOS** — Drag the app into Applications and open it. macOS blocks it:
 
-1. Try the **portable `.zip`**. Before extracting: right-click → **Properties** → tick
-   **Unblock**.
-2. Or **build it yourself**, which always works:
-   `git clone` → `pnpm install` → `pnpm dist`.
-3. Turning Smart App Control off **cannot be undone without reinstalling Windows**. Don't
-   do it for one application.
+1. Click **Done** on the warning (not *Move to Trash*).
+2. **System Settings → Privacy & Security**, at the bottom: **Open Anyway**.
+3. Confirm with your password and click **Open Anyway** again.
+
+On macOS 13 and 14, right-clicking the app → **Open** → **Open** works too. From the
+Terminal, the same in one line:
+`xattr -dr com.apple.quarantine "/Applications/AI Command Center.app"`
+
+**Linux** — No warnings. With the `.deb`: `sudo apt install ./` followed by the file name.
+With the AppImage: `chmod +x` and run it; if it complains about `libfuse.so.2`, install
+FUSE 2 (`sudo apt install libfuse2t64` on Ubuntu 24.04). On Ubuntu 23.10 and later, prefer
+the `.deb`: the AppImage starts there without Chromium's isolation, because only the
+`.deb` installs the AppArmor profile that allows it.
 
 ### Verifying your download
 
-```powershell
-Get-FileHash '.\AI-Command-Center-Setup-0.6.0.exe' -Algorithm SHA256
-```
+| System | Command |
+|---|---|
+| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.7.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.7.0-mac-arm64.dmg` |
+| Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.
 
@@ -117,8 +161,8 @@ It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't r
 It starts empty on purpose: no keys, no account, no connections of its own. You need at
 least one of these three:
 
-- **An API key** — in Settings → Providers. Stored encrypted with DPAPI in your Windows
-  profile; it never leaves your machine.
+- **An API key** — in Settings → Providers. Stored encrypted with your system's keyring
+  (DPAPI, the macOS Keychain or GNOME Keyring/KWallet); it never leaves your machine.
 - **A command-line agent** you already have (Claude Code, Codex, Aider, OpenCode, Gemini
   CLI…). Detected automatically, and no key required.
 - **Ollama** running, for local models at no cost.
@@ -126,4 +170,4 @@ least one of these three:
 Optional: `git` for the git panel, the `gh` CLI for the GitHub panel. Anything missing is
 flagged on its own screen and everything else works the same.
 
-📖 [Full instructions](https://github.com/Hredo/ai-command-center/blob/main/README.md#installation)
+📖 [Full instructions for each system](https://github.com/Hredo/ai-command-center/blob/main/README.md#installation)

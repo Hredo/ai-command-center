@@ -66,6 +66,7 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'selftest'
           New-Item -ItemType Directory -Force $out | Out-Null
           $env:ACC_SELFTEST = $out
+          $env:ACC_SELFTEST_EXPECT_SANDBOX = '1'
           $p = Start-Process -FilePath 'release\win-unpacked\AI Command Center.exe' -Wait -PassThru `
             -RedirectStandardOutput (Join-Path $out 'log.txt') -RedirectStandardError (Join-Path $out 'err.txt')
           Select-String -Path (Join-Path $out 'log.txt') -Pattern '\[selftest\]' | ForEach-Object { $_.Line }
@@ -148,6 +149,8 @@ jobs:
         run: brew install fish
 
       - name: Autoprueba de la app instalada
+        env:
+          ACC_SELFTEST_EXPECT_SANDBOX: '1'
         run: scripts/selftest.sh "$RUNNER_TEMP/selftest" "/Applications/AI Command Center.app/Contents/MacOS/AI Command Center"
 
       # Abierta por LaunchServices, que es lo que pasa al hacer doble clic o
@@ -246,11 +249,16 @@ jobs:
       # Como un usuario de Ubuntu: con apt.
       - name: Instalar el .deb
         run: sudo apt-get install -y -q ./release/*.deb
+      # El .deb instala su perfil de AppArmor: tiene que arrancar aislado.
       - name: Autoprueba del .deb instalado
+        env:
+          ACC_SELFTEST_EXPECT_SANDBOX: '1'
         run: scripts/selftest.sh "$RUNNER_TEMP/selftest" /usr/bin/ai-command-center
 
+      # El AppImage no puede traer perfil de AppArmor: con la restricción
+      # puesta, su lanzador arranca la app con --no-sandbox. Funciona, y la
+      # pantalla de Seguridad lo dice; por eso el README recomienda el .deb.
       - name: Autoprueba del AppImage
-        continue-on-error: true
         run: |
           chmod +x release/*.AppImage
           scripts/selftest.sh "$RUNNER_TEMP/selftest-appimage" "$(ls "$GITHUB_WORKSPACE"/release/*.AppImage)"

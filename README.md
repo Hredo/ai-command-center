@@ -301,7 +301,12 @@ doesn't open and a terminal shows an error about `libfuse.so.2`:
 | Fedora | `sudo dnf install fuse-libs` |
 | Arch, Manjaro | `sudo pacman -S fuse2` |
 
-On Ubuntu, the `.deb` is still the simpler route.
+> **On Ubuntu 23.10 and later, prefer the `.deb`.** Those versions only let an app use the
+> user namespaces Chromium isolates its windows with if the app has an AppArmor profile,
+> and only the `.deb` can install one. The AppImage still opens and works — its launcher
+> detects the restriction and starts the app with `--no-sandbox` rather than crashing —
+> but without that isolation, and **Settings → Security** says so. On Fedora, Arch and
+> most other distributions there is no such restriction and the AppImage runs isolated.
 
 #### Keys on Linux
 
@@ -442,6 +447,7 @@ that folder by hand.
 | macOS | *"AI Command Center" is damaged and can't be opened* | macOS says this when the quarantine mark and the signature don't agree; it isn't damage | `xattr -dr com.apple.quarantine "/Applications/AI Command Center.app"` |
 | macOS | It doesn't find a CLI you installed with the app open | The `PATH` is read when the app starts | Quit it (⌘Q) and open it again |
 | Linux | The AppImage doesn't open; error about `libfuse.so.2` | FUSE 2 isn't installed | [Install it](#option-b--appimage-any-distribution), or use the `.deb` |
+| Linux | Security says the app started with `--no-sandbox` | The AppImage on Ubuntu 23.10+, which blocks the user namespaces Chromium needs | Use the `.deb`, which installs its AppArmor profile |
 | Linux | Security says keys are "encoded, not encrypted" | There's no keyring in your session | Install `gnome-keyring`, or use environment variables |
 | All | The app opens but everything is empty | That's normal at the start | Add a key or an agent: see [First steps](#first-steps) |
 | All | The terminal opens and hangs | The native console binaries are missing | Download again; if you built it, run `pnpm install` then `pnpm dist` |

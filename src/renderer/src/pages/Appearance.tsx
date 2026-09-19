@@ -555,6 +555,7 @@ interface Report {
   contextIsolation: boolean
   nodeIntegration: boolean
   sandboxedRenderer: boolean
+  startedWithoutSandbox: boolean
   csp: boolean
   navigationLocked: boolean
   permissionsDenied: boolean
@@ -628,11 +629,13 @@ export function SecurityTab(): React.JSX.Element {
               ok={report.contextIsolation && !report.nodeIntegration && report.sandboxedRenderer}
               icon={<Layers size={15} />}
               title={t('security.sandbox')}
-              detail={[
-                `contextIsolation: ${report.contextIsolation ? 'on' : 'off'}`,
-                `nodeIntegration: ${report.nodeIntegration ? 'on' : 'off'}`,
-                `sandbox: ${report.sandboxedRenderer ? 'on' : 'off'}`
-              ].join(' · ')}
+              detail={
+                [
+                  `contextIsolation: ${report.contextIsolation ? 'on' : 'off'}`,
+                  `nodeIntegration: ${report.nodeIntegration ? 'on' : 'off'}`,
+                  `sandbox: ${report.sandboxedRenderer ? 'on' : 'off'}`
+                ].join(' · ') + (report.startedWithoutSandbox ? ' — ' + t('security.sandbox.off') : '')
+              }
             />
             <Row ok={report.csp} icon={<ShieldCheck size={15} />} title={t('security.csp')} detail={t('security.csp.on')} />
             <Row

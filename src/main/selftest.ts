@@ -29,6 +29,7 @@ import { executeTool } from './agents/tools'
 import { detectClis } from './detect'
 import { hardware } from './ollama'
 import { IS_MAC, IS_WIN } from './platform'
+import { launchedWithoutSandbox } from './security'
 import type { TermEvent } from '@shared/types'
 
 interface Check {
@@ -276,6 +277,14 @@ async function agentChecks(work: string): Promise<void> {
  * ------------------------------------------------------------------ */
 
 async function envChecks(): Promise<void> {
+  // Informativo salvo que se pida: el AppImage arranca sin aislamiento en los
+  // Ubuntu que bloquean los espacios de nombres, y eso se dice, no se esconde.
+  await check('aislamiento de Chromium', async () => {
+    const off = launchedWithoutSandbox()
+    if (process.env['ACC_SELFTEST_EXPECT_SANDBOX'] === '1') assert(!off, 'arrancó con --no-sandbox')
+    return off ? 'desactivado: arrancó con --no-sandbox' : 'activo'
+  })
+
   const expectDir = process.env['ACC_SELFTEST_EXPECT_PATH']?.trim()
   if (expectDir) {
     await check('PATH de la shell del usuario', async () => {

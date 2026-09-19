@@ -12,7 +12,7 @@ import { scanProject, projectContext, listProjectFiles, openInEditor, openInExpl
 import { queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy } from './runs'
 import { paths, agentWorkspace } from './paths'
 import { registerExtraIpc } from './ipcExtra'
-import { checkArgs, isTrustedSender, openExternal, RENDERER_PREFS, type SecurityReport } from './security'
+import { checkArgs, isTrustedSender, launchedWithoutSandbox, openExternal, RENDERER_PREFS, type SecurityReport } from './security'
 import { notifyRun } from './notify'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 import type { RunOptions, CliRunOptions, Agent, CliAgent, Project } from '@shared/types'
@@ -260,7 +260,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     return {
       contextIsolation: RENDERER_PREFS.contextIsolation,
       nodeIntegration: RENDERER_PREFS.nodeIntegration,
-      sandboxedRenderer: RENDERER_PREFS.sandbox,
+      sandboxedRenderer: RENDERER_PREFS.sandbox && !launchedWithoutSandbox(),
+      startedWithoutSandbox: launchedWithoutSandbox(),
       csp: true,
       navigationLocked: true,
       permissionsDenied: true,
