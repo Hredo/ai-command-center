@@ -1,0 +1,20 @@
+# Dependabot vigila las GitHub Actions de los workflows.
+#
+# Van fijadas a un commit concreto (no a una etiqueta que se puede mover), así
+# que sin esto se quedarían congeladas para siempre. Una vez por semana abre una
+# sola PR con todas las que tengan versión nueva, y la CI la prueba antes de
+# que nadie la fusione.
+#
+# Las dependencias de npm no entran a propósito: Electron y compañía se suben
+# a mano, probando la app, y no a golpe de PR automática.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
