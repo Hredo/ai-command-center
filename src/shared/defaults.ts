@@ -79,3 +79,18 @@ export const PANE_LIMITS: Record<string, { min: number; max: number }> = {
  * coincidir, los botones quedan a media altura.
  */
 export const TITLEBAR_HEIGHT = 38
+
+/**
+ * macOS: dónde van los tres semáforos para quedar centrados en la barra, con
+ * el zoom que tenga la interfaz. Los pinta el sistema a tamaño fijo (unos
+ * 14 px de alto con su margen), así que sólo se mueven, no se escalan.
+ */
+export function trafficLights(zoom = 1): { x: number; y: number } {
+  return { x: 14, y: Math.max(0, Math.round((TITLEBAR_HEIGHT * zoom - 14) / 2)) }
+}
+
+/**
+ * Hueco que la barra deja a la izquierda en macOS para esos semáforos, en
+ * píxeles de pantalla: la barra lo divide por el zoom para que no crezca con él.
+ */
+export const TRAFFIC_LIGHTS_WIDTH = 82

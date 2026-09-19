@@ -11,15 +11,22 @@ files:
   # Explicito aunque electron-builder ya incluye las dependencias de
   # produccion: deja claro que el binario del PTY tiene que viajar.
   - node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*
-# El unico modulo nativo trae binarios precompilados compatibles con la ABI de
-# Electron 44 (verificado), asi que no hay que recompilar nada. Sin esto
-# electron-builder llama a node-gyp y falla por no encontrar Visual Studio.
+  # Pero no su codigo fuente ni el de winpty: en la app no pinta nada.
+  - '!node_modules/@homebridge/node-pty-prebuilt-multiarch/{deps,src,scripts}/**'
+# El unico modulo nativo es N-API: el mismo binario vale para cualquier
+# version de Node y de Electron, asi que no hay que recompilar nada. En
+# Windows viene precompilado; en macOS y Linux lo deja listo
+# scripts/check-native.cjs antes de empaquetar. Sin esto electron-builder
+# llama a node-gyp y en Windows falla por no encontrar Visual Studio.
 npmRebuild: false
 asar: true
-# El PTY es un modulo nativo: sus .node, la DLL de ConPTY y OpenConsole.exe
-# tienen que quedar fuera del asar para que Windows pueda cargarlos.
+# El PTY es un modulo nativo: sus .node (y en Windows la DLL de ConPTY y
+# OpenConsole.exe; en macOS spawn-helper) tienen que quedar fuera del asar
+# para que el sistema pueda cargarlos o ejecutarlos.
 asarUnpack:
   - '**/node_modules/@homebridge/node-pty-prebuilt-multiarch/**'
+
+# ------------------------------------------------------------------ Windows
 win:
   target:
     - target: nsis
@@ -47,3 +54,60 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: AI Command Center
   deleteAppDataOnUninstall: false
+
+# -------------------------------------------------------------------- macOS
+# Un .dmg por arquitectura (Apple Silicon y los Mac con Intel), cada uno
+# generado en un Mac de GitHub de esa arquitectura: el binario del PTY se
+# compila alli mismo y no hay que juntar dos en uno.
+mac:
+  target:
+    - target: dmg
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  # Sin certificado de Apple (el proyecto es gratuito y no lo tiene) la app se
+  # firma "ad hoc": macOS en Apple Silicon no arranca nada que no este
+  # firmado de alguna forma, y esta firma no pide cuenta ni cuesta nada.
+  # Gatekeeper sigue avisando la primera vez; el README explica como abrirla.
+  identity: '-'
+  # El runtime endurecido solo sirve para notarizar, y con firma ad hoc
+  # impediria cargar el binario del PTY.
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  artifactName: AI-Command-Center-${version}-mac-${arch}.${ext}
+  # Lo que macOS ensena al pedir permiso cuando un proyecto o una terminal de
+  # la app entra en estas carpetas.
+  extendInfo:
+    NSDocumentsFolderUsageDescription: AI Command Center abre tus proyectos y sus terminales trabajan en ellos.
+    NSDesktopFolderUsageDescription: AI Command Center abre tus proyectos y sus terminales trabajan en ellos.
+    NSDownloadsFolderUsageDescription: AI Command Center abre tus proyectos y sus terminales trabajan en ellos.
+    NSRemovableVolumesUsageDescription: AI Command Center abre tus proyectos y sus terminales trabajan en ellos.
+    NSNetworkVolumesUsageDescription: AI Command Center abre tus proyectos y sus terminales trabajan en ellos.
+dmg:
+  artifactName: AI-Command-Center-${version}-mac-${arch}.${ext}
+
+# -------------------------------------------------------------------- Linux
+# .deb para Debian, Ubuntu y derivadas: se instala con apt, deja la app en el
+# menu y configura bien el aislamiento de Chromium. AppImage para el resto de
+# distribuciones: un solo fichero que se ejecuta sin instalar.
+linux:
+  target:
+    - target: deb
+    - target: AppImage
+  category: Development
+  icon: build/icon.png
+  executableName: ai-command-center
+  # Asi el .desktop se llama como el app_id de la ventana y el escritorio
+  # asocia la ventana abierta a su icono (ver desktopName en package.json).
+  syncDesktopName: true
+  maintainer: Hredo <91625845+Hredo@users.noreply.github.com>
+  vendor: Hredo
+  synopsis: Centro de mando local para IAs, agentes y proyectos
+  description: >-
+    Envia prompts a distintas IAs desde un solo sitio, compara sus respuestas,
+    lanza agentes sobre tus proyectos y ve tokens, velocidad y coste de cada
+    una. Todo local: sin cuenta y sin servidores propios.
+  artifactName: AI-Command-Center-${version}-linux-${arch}.${ext}
+deb:
+  artifactName: AI-Command-Center-${version}-linux-${arch}.${ext}
+appImage:
+  artifactName: AI-Command-Center-${version}-linux-${arch}.${ext}

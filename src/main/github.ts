@@ -9,9 +9,10 @@
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { IS_MAC, IS_WIN, findInPath } from './platform'
 import type { GhRepo, GhStatus } from '@shared/types'
 
-/** Sitios donde winget y el instalador dejan gh, por si no está en el PATH. */
+/** Sitios donde winget, Homebrew o el paquete del sistema dejan gh, por si no está en el PATH. */
 const GH_CANDIDATES = [
   'C:\\Program Files\\GitHub CLI\\gh.exe',
   'C:\\Program Files (x86)\\GitHub CLI\\gh.exe',
@@ -40,10 +41,26 @@ function run(
   })
 }
 
+/**
+ * Cómo se instala gh aquí, con el gestor de paquetes que haya. En Linux sólo
+ * se propone el del sistema cuando la distribución lo trae en sus
+ * repositorios; si no, la web explica cómo añadir el de GitHub.
+ */
+function ghInstallCommand(): string | undefined {
+  if (IS_WIN) return 'winget install --id GitHub.cli --source winget'
+  if (IS_MAC) return findInPath('brew') ? 'brew install gh' : undefined
+  if (findInPath('apt')) return 'sudo apt install gh'
+  if (findInPath('dnf')) return 'sudo dnf install gh'
+  if (findInPath('pacman')) return 'sudo pacman -S github-cli'
+  if (findInPath('zypper')) return 'sudo zypper install gh'
+  if (findInPath('brew')) return 'brew install gh'
+  return undefined
+}
+
 /** Ruta de gh: primero el PATH, luego los sitios habituales. */
 export async function ghPath(): Promise<string | null> {
   if (ghPathMemo !== undefined) return ghPathMemo
-  const finder = process.platform === 'win32' ? 'where' : 'which'
+  const finder = IS_WIN ? 'where' : 'which'
   const found = await run(finder, ['gh'], { timeout: 6000 })
   if (found.ok && found.out.trim()) {
     ghPathMemo = found.out.split(/\r?\n/)[0].trim()
@@ -61,10 +78,14 @@ export function forgetGhPath(): void {
 export async function ghStatus(): Promise<GhStatus> {
   const gh = await ghPath()
   if (!gh) {
+    const installCommand = ghInstallCommand()
     return {
       installed: false,
       authed: false,
-      hint: 'GitHub CLI no está instalado. Se instala con: winget install --id GitHub.cli'
+      installCommand,
+      hint: installCommand
+        ? `GitHub CLI no está instalado. Se instala con: ${installCommand}`
+        : 'GitHub CLI no está instalado. Cómo instalarlo en tu sistema: https://cli.github.com'
     }
   }
 

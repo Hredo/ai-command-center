@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import { join, extname, basename, relative } from 'node:path'
 import { shell } from 'electron'
 import { getConfig } from './config'
+import { IS_MAC, IS_WIN, defaultTerminalCommand, findInPath } from './platform'
 import type { ProjectInfo } from '@shared/types'
 
 const IGNORE = new Set([
@@ -288,7 +289,7 @@ function splitCommand(line: string): string[] {
  * comillas no significan nada, y las comillas del propio texto se doblan.
  */
 function launch(command: string, args: string[], cwd?: string): void {
-  if (process.platform === 'win32') {
+  if (IS_WIN) {
     const quoted = [command, ...args].map((a) => `"${String(a).replace(/"/g, '""')}"`)
     // `/s` con un par de comillas envolviendo todo es la forma documentada de
     // decirle a cmd.exe «quita este par y ejecuta el resto tal cual». Y el modo
@@ -303,14 +304,63 @@ function launch(command: string, args: string[], cwd?: string): void {
       windowsVerbatimArguments: true
     }).unref()
   } else {
-    spawn(command, args, { cwd, detached: true, stdio: 'ignore' }).unref()
+    const child = spawn(command, args, { cwd, detached: true, stdio: 'ignore' })
+    // Un programa que no existe se avisa con un evento, no con una excepción:
+    // sin escucharlo, el fallo acabaría en el proceso principal.
+    child.on('error', (err) => console.error(`[projects] no se pudo abrir ${command}:`, err.message))
+    child.unref()
   }
 }
 
-export function openInEditor(path: string): { ok: boolean; error?: string } {
+/** ¿Se puede lanzar? Una ruta, si existe; un nombre, si está en el PATH. */
+function launchable(cmd: string): boolean {
+  if (cmd.includes('/')) return existsSync(cmd)
+  return Boolean(findInPath(cmd))
+}
+
+/** Para `open` de macOS, que termina enseguida y dice si pudo abrir la aplicación. */
+function runOnce(file: string, args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout: 15_000 }, (err, _out, stderr) =>
+      resolve(err ? String(stderr ?? '').trim() || err.message : null)
+    )
+  })
+}
+
+/**
+ * Terminales de Linux conocidas y cómo decirle a cada una en qué carpeta
+ * abrir. La primera es la que el sistema tenga elegida como predeterminada
+ * (Debian y Ubuntu la apuntan ahí); las demás, por si no existe.
+ */
+const LINUX_TERMINALS: [string, (dir: string) => string[]][] = [
+  ['x-terminal-emulator', () => []],
+  ['ptyxis', (d) => ['--new-window', `--working-directory=${d}`]],
+  ['gnome-terminal', (d) => [`--working-directory=${d}`]],
+  ['kgx', (d) => [`--working-directory=${d}`]],
+  ['konsole', (d) => ['--workdir', d]],
+  ['xfce4-terminal', (d) => [`--working-directory=${d}`]],
+  ['mate-terminal', (d) => [`--working-directory=${d}`]],
+  ['tilix', (d) => [`--working-directory=${d}`]],
+  ['kitty', (d) => ['--directory', d]],
+  ['alacritty', (d) => ['--working-directory', d]],
+  ['wezterm', (d) => ['start', '--cwd', d]],
+  ['foot', (d) => [`--working-directory=${d}`]],
+  ['xterm', () => []]
+]
+
+export async function openInEditor(path: string): Promise<{ ok: boolean; error?: string }> {
   const [cmd, ...extra] = splitCommand(getConfig().settings.editorCommand || 'code')
   if (!cmd) return { ok: false, error: 'no hay ningún editor configurado en Ajustes' }
   try {
+    if (!IS_WIN && !launchable(cmd)) {
+      // En macOS VS Code no deja `code` en el PATH hasta que se le pide desde
+      // su paleta de comandos, pero se puede abrir por su identificador.
+      if (IS_MAC && cmd === 'code') {
+        const err = await runOnce('open', ['-b', 'com.microsoft.VSCode', path])
+        return err ? { ok: false, error: 'VS Code no está instalado; elige otro editor en Ajustes' } : { ok: true }
+      }
+      return { ok: false, error: `no encuentro «${cmd}»; cambia el editor en Ajustes` }
+    }
     launch(cmd, [...extra, path])
     return { ok: true }
   } catch (e: any) {
@@ -322,19 +372,36 @@ export function openInExplorer(path: string): void {
   shell.openPath(path)
 }
 
-export function openInTerminal(path: string): { ok: boolean; error?: string } {
-  const [cmd, ...extra] = splitCommand(getConfig().settings.terminalCommand || 'wt')
-  if (!cmd) return { ok: false, error: 'no hay ninguna terminal configurada en Ajustes' }
+export async function openInTerminal(path: string): Promise<{ ok: boolean; error?: string }> {
+  const setting = (getConfig().settings.terminalCommand ?? '').trim() || defaultTerminalCommand()
+  const [cmd, ...extra] = splitCommand(setting)
   try {
-    if (process.platform === 'win32') {
+    if (IS_WIN) {
+      if (!cmd) return { ok: false, error: 'no hay ninguna terminal configurada en Ajustes' }
       // Windows Terminal si está; si no, una consola normal en la carpeta. La
       // ruta viaja como argumento y nunca pegada dentro de otro comando: no hay
       // ningún `cd /d "…"` que un nombre de carpeta con comillas pueda romper.
       if (cmd === 'wt') launch('wt', [...extra, '-d', path])
       else launch(cmd, [...extra], path)
-    } else {
-      launch(cmd, [...extra, path], path)
+      return { ok: true }
     }
+
+    // En macOS lo normal es el nombre de una aplicación («Terminal», «iTerm»,
+    // «Warp», «Ghostty»): `open -a` la abre con la carpeta. Si lo que hay es
+    // un comando del PATH (kitty, wezterm…), va por el camino de Linux.
+    if (IS_MAC && !(cmd && launchable(cmd))) {
+      const err = await runOnce('open', ['-a', setting, path])
+      return err ? { ok: false, error: `no encuentro la aplicación «${setting}»; cámbiala en Ajustes` } : { ok: true }
+    }
+
+    const known = new Map(LINUX_TERMINALS)
+    const chosen = cmd || LINUX_TERMINALS.map(([name]) => name).find((name) => launchable(name))
+    if (!chosen) return { ok: false, error: 'no encuentro ninguna terminal; escribe la tuya en Ajustes' }
+    if (!launchable(chosen)) return { ok: false, error: `no encuentro «${chosen}»; cambia la terminal en Ajustes` }
+    const dirArgs = known.get(chosen.split('/').pop() ?? chosen)?.(path) ?? []
+    // La carpeta va también como directorio de trabajo: las terminales que no
+    // tienen opción para elegirla abren donde las lanzan.
+    launch(chosen, [...extra, ...dirArgs], path)
     return { ok: true }
   } catch (e: any) {
     return { ok: false, error: e?.message ?? String(e) }

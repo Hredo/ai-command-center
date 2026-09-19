@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { paths } from './paths'
 import { notifyChange } from './live'
+import { defaultTerminalCommand } from './platform'
 import { DEFAULT_APPEARANCE, DEFAULT_EDITOR } from '@shared/defaults'
 import type { AppConfig, Settings, Agent, CliAgent, Project } from '@shared/types'
 
@@ -11,7 +12,7 @@ const defaultSettings: Settings = {
   editor: { ...DEFAULT_EDITOR },
   panes: {},
   editorCommand: 'code',
-  terminalCommand: 'wt',
+  terminalCommand: defaultTerminalCommand(),
   autoRefreshCatalog: true,
   currency: 'USD',
   eurRate: 0.92,

@@ -11,6 +11,7 @@ import { cliEffortArgs, cliModelArgs, cliPermissionArgs } from '../effort'
 import { contextLimitFor } from '../providers/models'
 import { snapshot, changesSince, type GitSnapshot } from '../git'
 import { opencodeLaunch, type OpencodeLaunch } from '../opencode'
+import { killTree } from '../platform'
 import type {
   AgentStep, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
@@ -34,12 +35,9 @@ const running = new Map<string, ChildProcess>()
 export function killCli(runId: string): boolean {
   const child = running.get(runId)
   if (!child) return false
-  // En Windows hay que matar el árbol: el .cmd lanza un node hijo.
-  if (process.platform === 'win32' && child.pid) {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
-  } else {
-    child.kill('SIGTERM')
-  }
+  // Hay que matar el árbol: en Windows el .cmd lanza un node hijo, y en
+  // cualquier sistema el agente abre sus propios procesos (git, tests…).
+  killTree(child)
   running.delete(runId)
   return true
 }
@@ -730,6 +728,8 @@ function startCliAgent(
       } else {
         child = spawn(agent.command, args, {
           cwd,
+          // Su propio grupo de procesos, para poder pararlo entero.
+          detached: true,
           env: { ...process.env, ...(agent.env ?? {}), ...(prep?.env ?? {}) },
           stdio: ['pipe', 'pipe', 'pipe']
         })

@@ -20,6 +20,7 @@ import { CodeEditor } from '../components/Code'
 import { FileIcon } from '../components/FileIcon'
 import { usePrefs } from '../lib/prefs'
 import { useT, LANGUAGES } from '../lib/i18n'
+import { perOs } from '../lib/platform'
 import { THEMES, UI_FONTS, CODE_FONTS, ACCENTS } from '../lib/themes'
 import { DEFAULT_PANES } from '@shared/defaults'
 import { useStore } from '../lib/store'
@@ -621,7 +622,7 @@ export function SecurityTab(): React.JSX.Element {
               ok={report.encryptionAvailable}
               icon={report.encryptionAvailable ? <Lock size={15} /> : <ShieldAlert size={15} />}
               title={t('security.keys')}
-              detail={report.encryptionAvailable ? t('security.keys.encrypted') : t('security.keys.fallback')}
+              detail={t(perOs(report.encryptionAvailable ? 'security.keys.encrypted' : 'security.keys.fallback'))}
             />
             <Row
               ok={report.contextIsolation && !report.nodeIntegration && report.sandboxedRenderer}

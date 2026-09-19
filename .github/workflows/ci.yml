@@ -1,5 +1,7 @@
-# Comprobación rápida en cada empujón: que compila y que los tipos cuadran.
-# El empaquetado no se hace aquí; eso vive en release.yml y sólo con etiqueta.
+# Comprobación en cada empujón y en cada PR, en los tres sistemas: que compila,
+# que los tipos cuadran y que la app arranca y funciona (su autoprueba abre la
+# ventana, terminales con cada shell, comandos del agente y el PATH del
+# usuario). El empaquetado vive en release.yml.
 name: ci
 
 on:
@@ -14,9 +16,20 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    runs-on: windows-latest
-    timeout-minutes: 20
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+          - name: macOS
+            os: macos-latest
+          - name: Linux
+            os: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -31,3 +44,59 @@ jobs:
       - run: pnpm exec tsc --noEmit -p tsconfig.web.json
       - run: node scripts/check-native.cjs
       - run: pnpm build
+
+      # Más shells que la de fábrica, para probar la integración de cada una.
+      - name: Shells de prueba (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb zsh fish
+          # Ubuntu 24.04 no deja crear espacios de nombres sin privilegios y el
+          # Electron de node_modules no trae su chrome-sandbox con SUID. En los
+          # paquetes de verdad esto no pasa: release.yml prueba el .deb con la
+          # restricción puesta.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Shells de prueba (macOS)
+        if: runner.os == 'macOS'
+        run: brew install fish
+
+      - name: Autoprueba
+        if: runner.os != 'Windows'
+        run: scripts/selftest.sh "$RUNNER_TEMP/selftest" "$(node -p "require('electron')")" "$GITHUB_WORKSPACE"
+      - name: Autoprueba
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'selftest'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $env:ACC_SELFTEST = $out
+          $electron = node -p "require('electron')"
+          # Es una aplicación de ventana: PowerShell no la espera si no se le pide.
+          $p = Start-Process -FilePath $electron -ArgumentList "`"$env:GITHUB_WORKSPACE`"" -Wait -PassThru `
+            -RedirectStandardOutput (Join-Path $out 'log.txt') -RedirectStandardError (Join-Path $out 'err.txt')
+          Select-String -Path (Join-Path $out 'log.txt') -Pattern '\[selftest\]' | ForEach-Object { $_.Line }
+          if (-not (Test-Path (Join-Path $out 'selftest.json'))) { Get-Content (Join-Path $out 'err.txt') -Tail 40 }
+          exit $p.ExitCode
+
+      - name: Guardar capturas e informe
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: selftest-${{ matrix.name }}
+          path: ${{ runner.temp }}/selftest
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # La protección de main pide un check llamado «check». Sigue existiendo y
+  # sólo sale en verde si pasan los tres sistemas.
+  check:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Los tres sistemas en verde
+        run: |
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "Algún sistema ha fallado: ${{ needs.build.result }}"
+            exit 1
+          fi
