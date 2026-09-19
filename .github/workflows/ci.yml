@@ -34,12 +34,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11
+          # Ver la nota de release.yml sobre los Mac con Intel.
+          version: ${{ runner.os == 'macOS' && '11.25.0' || '11' }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Electron 44 ya no se descarga al instalar, sino la primera vez que se
+      # le pide la ruta, y entonces lo anuncia por la salida estándar. Se
+      # descarga aquí aparte para que la autoprueba reciba sólo la ruta.
+      - name: Descargar Electron
+        run: node node_modules/electron/install.js
       - run: pnpm exec tsc --noEmit -p tsconfig.node.json
       - run: pnpm exec tsc --noEmit -p tsconfig.web.json
       - run: node scripts/check-native.cjs
@@ -51,6 +57,9 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q xvfb zsh fish
+          # El runner deja carpetas de funciones de zsh escribibles por otros,
+          # y compinit se para a preguntar si seguir. Es el arreglo de siempre.
+          zsh -c 'autoload -Uz compaudit; compaudit' | xargs -r sudo chmod g-w,o-w
           # Ubuntu 24.04 no deja crear espacios de nombres sin privilegios y el
           # Electron de node_modules no trae su chrome-sandbox con SUID. En los
           # paquetes de verdad esto no pasa: release.yml prueba el .deb con la
@@ -70,7 +79,7 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'selftest'
           New-Item -ItemType Directory -Force $out | Out-Null
           $env:ACC_SELFTEST = $out
-          $electron = node -p "require('electron')"
+          $electron = (node -p "require('electron')" | Select-Object -Last 1).Trim()
           # Es una aplicación de ventana: PowerShell no la espera si no se le pide.
           $p = Start-Process -FilePath $electron -ArgumentList "`"$env:GITHUB_WORKSPACE`"" -Wait -PassThru `
             -RedirectStandardOutput (Join-Path $out 'log.txt') -RedirectStandardError (Join-Path $out 'err.txt')

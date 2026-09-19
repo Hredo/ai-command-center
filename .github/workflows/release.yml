@@ -108,7 +108,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11
+          # Versión exacta a propósito: con «11» el instalador se actualiza a
+          # la última y, en los Mac con Intel, se para porque no puede
+          # verificar el binario nativo de pnpm para darwin-x64.
+          version: 11.25.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -228,6 +231,9 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q xvfb zsh fish libfuse2t64
+          # El runner deja carpetas de funciones de zsh escribibles por otros,
+          # y compinit se para a preguntar si seguir. Es el arreglo de siempre.
+          zsh -c 'autoload -Uz compaudit; compaudit' | xargs -r sudo chmod g-w,o-w
 
       # Como un usuario de Ubuntu: con apt, y con la restricción de AppArmor
       # de Ubuntu 24.04 puesta, que es la que rompe a otras apps de Electron.

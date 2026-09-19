@@ -308,6 +308,24 @@ async function envChecks(): Promise<void> {
  * Ventana                                                            *
  * ------------------------------------------------------------------ */
 
+/**
+ * Guarda una captura de la página. Es para mirarla, no una comprobación: en
+ * una pantalla virtual sin GPU (la CI de Linux) Chromium a veces no puede
+ * componer el fotograma y falla, y eso no dice nada de la app.
+ */
+async function snap(win: BrowserWindow, file: string): Promise<string> {
+  for (let i = 0; i < 3; i++) {
+    try {
+      writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+      return ''
+    } catch (err: any) {
+      if (i === 2) return ` (sin captura: ${err?.message ?? err})`
+      await sleep(700)
+    }
+  }
+  return ''
+}
+
 async function windowChecks(win: BrowserWindow, outDir: string): Promise<void> {
   const js = <T>(code: string): Promise<T> => win.webContents.executeJavaScript(code, true)
 
@@ -322,8 +340,7 @@ async function windowChecks(win: BrowserWindow, outDir: string): Promise<void> {
     }
     assert(nodes >= 150, `sólo hay ${nodes} elementos en la página`)
     await sleep(1500)
-    writeFileSync(join(outDir, 'selftest-panel.png'), (await win.webContents.capturePage()).toPNG())
-    return `${nodes} elementos`
+    return `${nodes} elementos` + (await snap(win, join(outDir, 'selftest-panel.png')))
   })
 
   await check('atajo de sección y terminal en pantalla', async () => {
@@ -338,8 +355,7 @@ async function windowChecks(win: BrowserWindow, outDir: string): Promise<void> {
     }
     assert(text.trim().length >= 3, 'la terminal de la página no pintó ningún prompt')
     await sleep(1000)
-    writeFileSync(join(outDir, 'selftest-terminal.png'), (await win.webContents.capturePage()).toPNG())
-    return `prompt: «${text.trim().slice(0, 60)}»`
+    return `prompt: «${text.trim().slice(0, 60)}»` + (await snap(win, join(outDir, 'selftest-terminal.png')))
   })
 
   if (IS_MAC) {
