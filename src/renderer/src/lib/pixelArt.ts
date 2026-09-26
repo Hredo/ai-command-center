@@ -17,9 +17,9 @@
  * cabezones de dibujo infantil.
  */
 import {
-  DOORS, HOUSE, ROOMS, WALL_H, WORLD,
-  hash, roomById,
-  type Dir, type Dweller, type Rect
+  DOORS, HOOP, HOUSE, POOL, POSTURE, ROOMS, WALL_H, WORLD,
+  hash, roomById, waterDepth,
+  type Dir, type Dweller, type Pt, type Rect
 } from './house'
 
 type Ctx = CanvasRenderingContext2D
@@ -153,7 +153,8 @@ function cocinaMuebles(c: Ctx, box: Rect): void {
   for (let x = box.x + 30; x < box.x + 126; x += 28) R(c, x, suelo - 6, 1, 16, C.madera2)
   // fogones
   R(c, box.x + 26, suelo - 11, 26, 3, '#2a2530')
-  R(c, box.x + 28, suelo - 11, 8, 2, '#ff8b3d')
+  // Los fuegos se pintan apagados: sólo arden si alguien cocina.
+  R(c, box.x + 28, suelo - 11, 8, 2, '#3a3440')
   R(c, box.x + 42, suelo - 11, 8, 2, '#3a3440')
   // fregadero
   R(c, box.x + 92, suelo - 11, 24, 3, C.metal2)
@@ -321,7 +322,6 @@ function hierba(c: Ctx): void {
   }
 }
 
-const POOL = { x: 580, y: 76, w: 160, h: 116 }
 const COURT = { x: 96, y: 496, w: 374, h: 130 }
 
 function piscina(c: Ctx): void {
@@ -362,6 +362,8 @@ function caminoPuerta(c: Ctx): void {
   for (let y = 404; y < 440; y += 8) for (let x = 544; x < 672; x += 8) baldosa(x, y)
   for (let y = 440; y < 520; y += 8) for (let x = 624; x < 672; x += 8) baldosa(x, y)
   for (let y = 512; y < 544; y += 8) for (let x = 470; x < 672; x += 8) baldosa(x, y)
+  // y hacia la derecha, a la calle: por ahí llega quien viene de visita
+  for (let y = 404; y < 440; y += 8) for (let x = 672; x < WORLD.w; x += 8) baldosa(x, y)
 }
 
 function valla(c: Ctx): void {
@@ -446,10 +448,7 @@ export function drawWorld(c: Ctx): void {
     R(c, x + 19, b.y, 3, WALL_H, C.muro)
   }
 
-  // puerta de la calle, en la pared derecha del recibidor
-  R(c, HOUSE.x + HOUSE.w - 6, 394, 12, 52, C.madera2)
-  R(c, HOUSE.x + HOUSE.w - 4, 398, 8, 44, C.madera)
-  R(c, HOUSE.x + HOUSE.w - 1, 418, 3, 4, '#f0c860')
+  // La puerta de la calle no va aquí: se abre y se cierra, así que es un mueble más.
 
   // rótulo de la entrada sobre el camino
   R(c, 556, 446, 44, 2, C.madera2)
@@ -459,10 +458,20 @@ export function drawWorld(c: Ctx): void {
  * Muebles que se mezclan con la gente                                *
  * ------------------------------------------------------------------ */
 
+/** Lo que hace falta saber para pintar lo que se mueve: la hora y quién usa qué. */
+export interface Scene {
+  /** Segundos, para lo que se mueve solo. */
+  t: number
+  /** Sitios en los que hay alguien ya acomodado. */
+  busy: Set<string>
+  /** La puerta de la calle, de 0 cerrada a 1 abierta. */
+  door: number
+}
+
 export interface Prop {
   /** Por dónde se ordena con los vecinos. */
   sort: number
-  draw: (c: Ctx, t: number) => void
+  draw: (c: Ctx, s: Scene) => void
 }
 
 function sofa(c: Ctx): void {
@@ -517,34 +526,85 @@ function butaca(c: Ctx): void {
   R(c, 132, 448, 42, 3, C.sombra)
 }
 
-function recreativa(c: Ctx): void {
+function recreativa(c: Ctx, s: Scene): void {
   const x = 208
   const y = 266
+  const t = s.t
   R(c, x, y, 34, 56, '#42356a')
   R(c, x, y, 34, 3, '#5a4a8c')
   R(c, x + 4, y + 6, 26, 20, '#161a2a')
-  R(c, x + 6, y + 8, 22, 16, '#2b4a86')
-  R(c, x + 8, y + 12, 5, 4, '#e8d36b')
-  R(c, x + 18, y + 16, 6, 4, '#e06a7f')
+  if (s.busy.has('r-arcade')) {
+    // Partida en marcha: la nave se mueve, los marcianos bajan y hay disparos.
+    R(c, x + 6, y + 8, 22, 16, '#1d2f5c')
+    const nave = x + 8 + Math.round((Math.sin(t * 2.3) + 1) * 7)
+    R(c, nave, y + 20, 5, 3, '#e8d36b')
+    const baja = Math.floor(t * 1.5) % 5
+    for (let i = 0; i < 3; i++) R(c, x + 9 + i * 7, y + 10 + baja, 4, 3, '#e06a7f')
+    if (Math.floor(t * 6) % 3 === 0) R(c, nave + 2, y + 13 + (Math.floor(t * 12) % 6), 1, 2, '#f4f7ff')
+  } else {
+    // Sola, la máquina enseña su demo y el rótulo parpadea despacio.
+    R(c, x + 6, y + 8, 22, 16, '#2b4a86')
+    R(c, x + 8, y + 12, 5, 4, '#e8d36b')
+    R(c, x + 18, y + 16, 6, 4, '#e06a7f')
+    if (Math.floor(t * 0.8) % 2) R(c, x + 9, y + 21, 16, 2, '#9fd0ef')
+  }
   R(c, x + 8, y + 32, 18, 4, '#5a4a8c')
   R(c, x + 11, y + 28, 3, 5, '#d8d2c4')
   R(c, x + 20, y + 30, 4, 3, '#e06a7f')
   R(c, x, y + 56, 34, 4, C.sombra)
 }
 
-function futbolin(c: Ctx): void {
+function futbolin(c: Ctx, s: Scene): void {
   const x = 268
   const y = 384
+  // Sólo se mueve si hay alguien jugando.
+  const juegan = s.busy.has('r-futbolin') || s.busy.has('r-futbolin2')
   R(c, x, y, 56, 36, '#3f7a55')
   R(c, x + 2, y + 2, 52, 32, '#4a8f64')
   R(c, x + 2, y + 17, 52, 2, '#3f7a55')
   R(c, x, y, 56, 3, '#5aa87a')
+  if (juegan) {
+    const bx = x + 26 + Math.round(Math.sin(s.t * 1.9) * 20)
+    const by = y + 16 + Math.round(Math.sin(s.t * 3.1 + 1) * 11)
+    R(c, bx, by, 3, 3, '#f4f7ff')
+  }
   for (let i = 0; i < 4; i++) {
     const bx = x + 8 + i * 13
+    const vaiven = juegan ? Math.round(Math.sin(s.t * 5 + i * 1.7) * 3) : 0
     R(c, bx, y - 4, 2, 44, C.metal2)
-    R(c, bx - 2, y + 6 + (i % 2) * 16, 6, 6, i % 2 ? '#4f86c4' : '#d8873f')
+    R(c, bx - 2, y + 6 + (i % 2) * 16 + vaiven, 6, 6, i % 2 ? '#4f86c4' : '#d8873f')
   }
   R(c, x, y + 36, 56, 3, C.sombra)
+}
+
+/**
+ * La puerta de la calle. Gira hacia dentro sobre la bisagra de arriba, y con
+ * ella abierta se ve el umbral y entra algo de luz al recibidor.
+ */
+function puertaCalle(c: Ctx, s: Scene): void {
+  const x = HOUSE.x + HOUSE.w - 6
+  const o = s.door
+  if (o < 0.04) {
+    R(c, x, 394, 12, 52, C.madera2)
+    R(c, x + 2, 398, 8, 44, C.madera)
+    R(c, x + 5, 418, 3, 4, '#f0c860')
+    return
+  }
+  R(c, x, 394, 12, 52, C.madera2)
+  R(c, x + 2, 398, 8, 44, C.camino)
+  R(c, x + 2, 398, 8, 2, C.camino2)
+  c.fillStyle = `rgba(255,236,190,${(0.13 * o).toFixed(3)})`
+  c.fillRect(x - 34, 400, 36, 40)
+  const ang = o * 1.35
+  const hx = x + 5
+  const hy = 399
+  for (let i = 0; i <= 42; i++) {
+    const px = hx - Math.sin(ang) * i
+    const py = hy + Math.cos(ang) * i
+    R(c, px - 2, py - 1, 4, 3, C.madera)
+    R(c, px - 2, py - 2, 4, 1, C.maderaLuz)
+    if (i === 34) R(c, px - 1, py - 1, 2, 2, '#f0c860')
+  }
 }
 
 function tumbona(c: Ctx): void {
@@ -571,17 +631,16 @@ function arbol(c: Ctx, x: number, y: number): void {
   R(c, x - 30, y - 58, 10, 8, '#285036')
 }
 
-function macetas(c: Ctx): void {
-  for (let i = 0; i < 3; i++) {
-    const x = 566 + i * 22
-    const y = 322 + (i % 2) * 12
-    R(c, x, y, 14, 12, '#a5613f')
-    R(c, x - 1, y, 16, 3, '#bd7550')
-    R(c, x + 3, y - 10, 8, 10, '#4a8f5f')
-    R(c, x + 1, y - 6, 12, 4, '#3f7d52')
-    if (i !== 1) R(c, x + 5, y - 14, 4, 4, '#e07a9b')
-    R(c, x, y + 12, 14, 3, C.sombra)
-  }
+/** Una de las tres macetas del jardín; cada una se ordena por su base, que quien riega pasa entre ellas. */
+function maceta(c: Ctx, i: number): void {
+  const x = 566 + i * 22
+  const y = 322 + (i % 2) * 12
+  R(c, x, y, 14, 12, '#a5613f')
+  R(c, x - 1, y, 16, 3, '#bd7550')
+  R(c, x + 3, y - 10, 8, 10, '#4a8f5f')
+  R(c, x + 1, y - 6, 12, 4, '#3f7d52')
+  if (i !== 1) R(c, x + 5, y - 14, 4, 4, '#e07a9b')
+  R(c, x, y + 12, 14, 3, C.sombra)
 }
 
 function canasta(c: Ctx): void {
@@ -657,8 +716,11 @@ export const PROPS: Prop[] = [
   { sort: 324, draw: recreativa },
   { sort: 420, draw: futbolin },
   { sort: 258, draw: tumbona },
-  { sort: 348, draw: macetas },
+  { sort: 334, draw: (c) => maceta(c, 0) },
+  { sort: 346, draw: (c) => maceta(c, 1) },
+  { sort: 334, draw: (c) => maceta(c, 2) },
   { sort: 554, draw: canasta },
+  { sort: 400, draw: puertaCalle },
   { sort: 404, draw: (c) => arbol(c, 726, 404) },
   { sort: 604, draw: (c) => arbol(c, 60, 604) },
   { sort: 604, draw: (c) => arbol(c, 700, 604) }
@@ -668,8 +730,14 @@ export const PROPS: Prop[] = [
  * Lo que se mueve por su cuenta                                      *
  * ------------------------------------------------------------------ */
 
-/** Agua, fuego, pantallas: cositas que parpadean encima del fondo. */
-export function drawAmbient(c: Ctx, t: number): void {
+/**
+ * Agua, fuego, pantallas: lo que se mueve encima del fondo. Cada aparato va
+ * con quien lo usa: el fuego arde si alguien cocina, la tele se enciende con
+ * gente en el sofá y cada pantalla del despacho, con quien se sienta delante.
+ */
+export function drawAmbient(c: Ctx, s: Scene): void {
+  const t = s.t
+
   // olas de la piscina
   const p = POOL
   for (let i = 0; i < 5; i++) {
@@ -679,29 +747,57 @@ export function drawAmbient(c: Ctx, t: number): void {
     R(c, p.x + 96 - off, y + 6, 26, 2, C.aguaLuz)
   }
 
-  // llama de los fogones
+  // fogones y grifo
   const k = roomById('cocina').box
   const suelo = k.y + WALL_H
-  const fuego = Math.sin(t * 7) > 0 ? '#ffab4d' : '#ff7a2e'
-  R(c, k.x + 28, suelo - 11, 8, 2, fuego)
+  if (s.busy.has('w-fogones')) {
+    const fuego = Math.sin(t * 9) > 0.2 ? '#ffab4d' : '#ff7a2e'
+    R(c, k.x + 28, suelo - 11, 8, 2, fuego)
+    if (Math.sin(t * 13) > 0.5) R(c, k.x + 30, suelo - 12, 3, 1, '#ffd27a')
+  }
+  if (s.busy.has('w-fregadero')) {
+    // el chorro, cayendo del grifo a la pila
+    for (let i = 0; i < 4; i++) {
+      if ((Math.floor(t * 10) + i) % 4 !== 0) R(c, k.x + 107, suelo - 16 + i * 2, 1, 2, C.aguaLuz)
+    }
+    R(c, k.x + 96, suelo - 10, 16, 1, 'rgba(159,214,239,0.55)')
+  }
 
   // televisión
-  const s = roomById('salon').box
-  const tv = ['#2e5a86', '#3a6fa0', '#28496d'][Math.floor(t * 3) % 3]
-  R(c, s.x + 17, s.y + 15, 40, 22, tv)
-  R(c, s.x + 19, s.y + 17, 16, 8, '#4a86bd')
+  const sb = roomById('salon').box
+  if (s.busy.has('r-sofa1') || s.busy.has('r-sofa2')) {
+    const tv = ['#2e5a86', '#3a6fa0', '#28496d', '#3d6f5a'][Math.floor(t * 1.3) % 4]
+    R(c, sb.x + 17, sb.y + 15, 40, 22, tv)
+    R(c, sb.x + 19, sb.y + 17, 16, 8, shade(tv, 0.25))
+    R(c, sb.x + 38 + Math.round(Math.sin(t * 2) * 6), sb.y + 27, 6, 6, shade(tv, -0.3))
+  } else {
+    // apagada: negra, con el reflejo de la ventana
+    R(c, sb.x + 17, sb.y + 15, 40, 22, '#191f2b')
+    R(c, sb.x + 20, sb.y + 17, 9, 2, '#283244')
+    R(c, sb.x + 20, sb.y + 19, 4, 2, '#283244')
+  }
 
   // pantallas del despacho
   const o = roomById('despacho').box
+  const tinta = ['#8fd3a0', '#9fd0ef', '#e8d36b', '#e0899f', '#c3cde6']
   for (let i = 0; i < 3; i++) {
     const x = o.x + 24 + i * 48
-    const on = ['#2f5f8f', '#39709f', '#2a5482'][Math.floor(t * 2 + i) % 3]
-    R(c, x + 2, o.y + 16, 24, 15, on)
-    R(c, x + 4, o.y + 18, 9, 5, '#63a2d8')
+    if (s.busy.has('w-mesa' + (i + 1))) {
+      // código que va bajando, con su cursor
+      R(c, x + 2, o.y + 14, 24, 15, '#1c2738')
+      const avance = Math.floor(t * 2.5 + i * 7)
+      for (let j = 0; j < 4; j++) {
+        const h = hash(i + ':' + (avance + j))
+        R(c, x + 4 + (h % 3) * 2, o.y + 16 + j * 3, 6 + (h % 13), 1, tinta[(h >> 4) % tinta.length])
+      }
+      if (Math.floor(t * 2) % 2) R(c, x + 4, o.y + 26, 2, 2, '#f4f7ff')
+    } else {
+      // en reposo: negra y con el piloto naranja
+      R(c, x + 2, o.y + 14, 24, 15, '#161c26')
+      R(c, x + 3, o.y + 15, 6, 1, '#222b3a')
+      R(c, x + 24, o.y + 29, 2, 1, '#e8a23a')
+    }
   }
-
-  // luz de la recreativa
-  if (Math.sin(t * 4) > 0) R(c, 220, 296, 4, 3, '#e8d36b')
 }
 
 /* ------------------------------------------------------------------ *
@@ -765,137 +861,271 @@ export function lookOf(id: string, color: string, kind: 'cli' | 'local' | 'remot
 
 /** Cómo se coloca el cuerpo según lo que esté haciendo. */
 interface Pose {
-  /** 0 de pie, 1 sentado, 2 tumbado, 3 en el agua, 4 agachado. */
-  mode: 0 | 1 | 2 | 3 | 4
+  /** 0 de pie, 1 sentado, 2 tumbado, 4 agachado. */
+  mode: 0 | 1 | 2 | 4
+  /** Cuánto lleva de esa postura: 0 aún de pie, 1 del todo. */
+  k: number
   dir: Dir
-  /** Paso de la caminata: 0 quieto, 1 y 3 pierna adelante. */
-  step: number
-  /** Sube y baja el cuerpo entero. */
+  /** Hacia dónde mira la cabeza, que no siempre es hacia donde mira el cuerpo. */
+  head: Dir
+  /** Fotograma del paso, de 0 a 3; -1 si no anda. */
+  frame: number
+  /** Cadera arriba (negativo) o abajo (positivo), en puntos. */
   bob: number
-  /** Cuánto levanta cada brazo, en puntos. */
+  /** Pies en el aire, para el salto del tiro. */
+  jump: number
+  /** El pecho que sube al tomar aire. */
+  breath: number
+  /** Cuánto levanta cada mano, en puntos. */
   armL: number
   armR: number
   prop?: (c: Ctx, x: number, y: number, dir: Dir, t: number) => void
   bubble?: 'zzz' | 'vapor' | 'nota' | 'chispa'
+  /** El balón: dónde está en el suelo y a qué altura va. */
+  ball?: { x: number; gy: number; h: number }
 }
 
-function poseFor(d: Dweller, t: number): Pose {
-  const p: Pose = { mode: 0, dir: d.dir, step: 0, bob: 0, armL: 0, armR: 0 }
-  const osc = (hz: number): number => Math.sin(t * hz * Math.PI * 2)
+/** Puntos andados por fotograma: cuatro fotogramas son dos pasos. */
+const STRIDE = 5
+
+const suave = (k: number): number => k * k * (3 - 2 * k)
+const lerp = (a: number, b: number, u: number): number => a + (b - a) * u
+
+function poseFor(d: Dweller): Pose {
+  const anda = d.route.length > 0 && d.speed > 3 && !d.rising
+  const p: Pose = {
+    mode: 0,
+    k: 0,
+    dir: d.dir,
+    head: d.clock < d.glanceUntil ? d.glanceDir : d.dir,
+    frame: anda ? Math.floor(d.walked / STRIDE) % 4 : -1,
+    bob: 0,
+    jump: 0,
+    breath: 0,
+    armL: 0,
+    armR: 0
+  }
+  // Cada uno lleva su propio reloj: así nadie hace los gestos a la vez que otro.
+  const clk = d.clock
+  const osc = (hz: number): number => Math.sin(clk * hz * Math.PI * 2)
+
+  // Al andar, la cadera sube cuando una pierna pasa junto a la otra; parado,
+  // lo único que se mueve es el pecho al respirar, cada uno a su ritmo.
+  if (anda) p.bob = p.frame % 2 ? -1 : 0
+  else p.breath = (clk + (hash(d.key) % 40) / 10) % 3.8 < 1.5 ? 1 : 0
+
+  const postura = POSTURE[d.activity]
+  if (postura) {
+    p.mode = postura === 'sentado' ? 1 : 2
+    p.k = suave(d.settle)
+  }
+  // En cada punto de una faena que se hace andando, el gesto va por la pausa.
+  const pausa = clk - d.pauseAt
+  const enFaena = !anda && !d.patrolling
 
   switch (d.activity) {
     case 'andar':
-      p.step = [0, 1, 0, 2][Math.floor(d.walked / 7) % 4]
-      p.bob = p.step ? -1 : 0
       return p
     case 'cocinar':
-      p.armR = 4 + Math.round(osc(1.6) * 2)
-      p.bubble = 'vapor'
-      p.prop = sarten
+      if (d.patrolIdx === 0) {
+        // en la encimera, picando
+        p.armR = enFaena ? 3 + Math.round(Math.abs(osc(3)) * 3) : 2
+        p.armL = 2
+        p.prop = cuchillo
+      } else {
+        p.armR = enFaena ? 4 + Math.round(osc(1.3) * 1.5) : 3
+        // y de vez en cuando, la vuelta a lo que hay en la sartén
+        if (enFaena && clk % 6 < 0.45) p.armR = 8
+        p.prop = sarten
+        if (enFaena) p.bubble = 'vapor'
+      }
       return p
     case 'fregar':
-      p.armR = 3 + Math.round(osc(2.6) * 2)
-      p.armL = 3 - Math.round(osc(2.6) * 2)
+      p.armR = 3 + Math.round(osc(2.4) * 2)
+      p.armL = 3 - Math.round(osc(2.4) * 2)
       p.bubble = 'vapor'
       return p
     case 'barrer':
-      p.armR = 2 + Math.round(osc(1.1) * 2)
+      p.armR = enFaena ? 2 + Math.round(osc(1.1) * 2) : 2
+      p.armL = 1
       p.prop = escoba
       return p
     case 'desempolvar':
-      p.armR = 6 + Math.round(osc(2.2) * 3)
+      p.armR = enFaena ? 7 + Math.round(osc(2.2) * 3) : 2
       p.prop = plumero
       return p
     case 'regar':
-      p.armR = 3
-      p.prop = regadera
+      p.armR = enFaena ? 5 : 1
+      p.prop = enFaena ? regando : regadera
       return p
     case 'teclear':
-      p.mode = 1
-      p.armL = 1 + Math.round(osc(5) * 1)
-      p.armR = 1 - Math.round(osc(5) * 1)
-      p.bubble = 'chispa'
+      if (p.k > 0.9) {
+        p.armL = 1 + Math.round(osc(5))
+        p.armR = 1 - Math.round(osc(5))
+        if (clk % 7 < 2) p.bubble = 'chispa'
+      }
       return p
     case 'hacer-cama':
-      p.armL = 5 + Math.round(osc(0.9) * 3)
-      p.armR = 5 + Math.round(osc(0.9) * 3)
-      p.bob = Math.round(osc(0.9))
+      if (enFaena) {
+        p.armL = 5 + Math.round(osc(0.9) * 3)
+        p.armR = 5 + Math.round(osc(0.9) * 3)
+        p.bob = Math.round(osc(0.9))
+      } else {
+        p.armL = 3
+        p.armR = 3
+      }
       p.prop = sabana
       return p
     case 'recoger': {
-      const abajo = osc(0.6) > 0
-      p.mode = abajo ? 4 : 0
-      p.armL = abajo ? -2 : 3
-      p.armR = abajo ? -2 : 3
-      p.prop = abajo ? undefined : caja
-      return p
-    }
-    case 'limpiar-piscina':
-      p.armR = 2 + Math.round(osc(0.5) * 2)
-      p.prop = red
-      return p
-    case 'sofa':
-      p.mode = 1
-      p.bubble = 'nota'
-      return p
-    case 'leer':
-      p.mode = 1
-      p.armL = 2
-      p.armR = 2
-      p.prop = libro
-      return p
-    case 'cama':
-      p.mode = 2
-      p.bubble = 'zzz'
-      return p
-    case 'tumbona':
-      p.mode = 2
-      return p
-    case 'arcade':
-      p.armL = 3 + Math.round(osc(3.2) * 2)
-      p.armR = 3 - Math.round(osc(3.2) * 2)
-      p.bubble = 'chispa'
-      return p
-    case 'futbolin':
-      p.armL = 3
-      p.armR = 3
-      p.bob = Math.round(osc(2.2))
-      return p
-    case 'flotar':
-      p.mode = 3
-      p.bob = Math.round(osc(0.5))
-      p.armL = 3 + Math.round(osc(1.1) * 2)
-      p.armR = 3 - Math.round(osc(1.1) * 2)
-      return p
-    case 'canasta': {
-      const ciclo = t % 3
-      if (ciclo > 2) {
-        p.armL = 9
-        p.armR = 9
-        p.bob = -3
+      // Se agacha a por el juguete, se levanta y lo lleva a la caja.
+      const baja = !enFaena ? 0 : pausa < 0.3 ? pausa / 0.3 : pausa < 1.2 ? 1 : pausa < 1.5 ? 1 - (pausa - 1.2) / 0.3 : 0
+      if (baja > 0) {
+        p.mode = 4
+        p.k = suave(baja)
+        p.armL = -2
+        p.armR = -2
       } else {
-        p.armR = 1 + Math.round(Math.abs(osc(1.6)) * 3)
-        p.prop = balon
+        p.armL = 3
+        p.armR = 3
+        p.prop = caja
       }
       return p
     }
+    case 'limpiar-piscina':
+      p.armR = enFaena ? 2 + Math.round(osc(0.45) * 2) : 2
+      p.armL = 2
+      p.prop = red
+      return p
+    case 'sofa':
+      if (p.k > 0.9) {
+        if (clk % 11 < 3.5) p.bubble = 'nota'
+        // alguna carcajada
+        if (clk % 17 < 0.7) p.bob = osc(5) > 0 ? -1 : 0
+      }
+      return p
+    case 'leer':
+      p.armL = 2
+      p.armR = 2
+      if (p.k > 0.6) p.prop = libro
+      return p
+    case 'cama':
+      if (p.k > 0.95) p.bubble = 'zzz'
+      return p
+    case 'tumbona':
+      return p
+    case 'arcade':
+      p.armL = 3 + Math.round(osc(3.2) * 2)
+      p.armR = 3 - Math.round(Math.abs(osc(4.1)) * 2)
+      // cuando pasa de pantalla, los brazos arriba
+      if (clk % 9 < 0.5) {
+        p.armL = 8
+        p.armR = 8
+      }
+      return p
+    case 'futbolin':
+      p.armL = 3 + Math.round(osc(2.6))
+      p.armR = 3 - Math.round(osc(2.6))
+      p.bob = osc(1.3) > 0.6 ? 1 : 0
+      return p
+    case 'flotar':
+      p.armL = 3 + Math.round(osc(0.9) * 2)
+      p.armR = 3 - Math.round(osc(0.9) * 2)
+      return p
+    case 'canasta':
+      jugada(p, d, anda || d.patrolling || d.settle < 1)
+      return p
   }
   return p
 }
 
+/**
+ * Una jugada en la cancha: bota, recoge el balón, salta y tira; el balón
+ * dibuja su parábola hasta el aro, cae por la red y vuelve botando hacia quien
+ * tiró. El balón va en coordenadas de suelo más altura, para que su sombra se
+ * quede abajo mientras vuela.
+ */
+function jugada(p: Pose, d: Dweller, soloBotar: boolean): void {
+  const s = d.dir === 'izq' ? -1 : 1
+  const mano = { x: d.x + 8 * s, gy: d.y }
+  const botar = (): void => {
+    const h = 2 + 13 * Math.abs(Math.cos(d.clock * Math.PI * 2.2))
+    p.ball = { x: mano.x, gy: mano.gy, h }
+    p.armR = Math.round((h / 15) * 3)
+  }
+  if (soloBotar) return botar()
+  const f = d.clock - d.pauseAt
+  if (f < 1.3) return botar()
+  if (f < 1.6) {
+    p.bob = 1
+    p.armL = 5
+    p.armR = 5
+    p.ball = { x: d.x + 2 * s, gy: d.y, h: 21 }
+    return
+  }
+  if (f < 1.85) {
+    p.jump = 3
+    p.armL = 10
+    p.armR = 10
+    p.ball = { x: d.x + s, gy: d.y, h: 36 }
+    return
+  }
+  const aro = HOOP.h + 3
+  if (f < 2.65) {
+    const u = (f - 1.85) / 0.8
+    p.jump = u < 0.25 ? 2 : 0
+    p.armL = Math.round(10 - 6 * u)
+    p.armR = p.armL
+    p.ball = { x: lerp(d.x + s, HOOP.x, u), gy: lerp(d.y, HOOP.gy, u), h: lerp(36, aro, u) + 26 * 4 * u * (1 - u) }
+    return
+  }
+  if (f < 2.95) {
+    const v = (f - 2.65) / 0.3
+    p.ball = { x: HOOP.x, gy: HOOP.gy, h: aro * (1 - v * v) }
+    return
+  }
+  if (f < 3.75) {
+    const v = (f - 2.95) / 0.8
+    p.armR = v > 0.7 ? 4 : 0
+    p.ball = {
+      x: lerp(HOOP.x, mano.x, v),
+      gy: lerp(HOOP.gy, mano.gy, v),
+      h: Math.abs(Math.sin(v * Math.PI * 2)) * 10 * (1 - v) + v * v * 12
+    }
+    return
+  }
+  botar()
+}
+
 /* ---- trastos ---- */
+
+/** Como R, pero admite anchos negativos: los trastos se dan la vuelta según hacia dónde mira. */
+function RN(c: Ctx, x: number, y: number, w: number, h: number, col: string): void {
+  if (w < 0) {
+    x += w
+    w = -w
+  }
+  R(c, x, y, w, h, col)
+}
 
 function sarten(c: Ctx, x: number, y: number, dir: Dir): void {
   const s = dir === 'izq' ? -1 : 1
-  R(c, x, y + 1, 7 * s, 2, '#4a5262')
-  R(c, x + 6 * s, y - 2, 10 * s, 7, '#33394a')
-  R(c, x + 7 * s, y - 1, 8 * s, 3, '#454d60')
+  RN(c, x, y + 1, 7 * s, 2, '#4a5262')
+  RN(c, x + 6 * s, y - 2, 10 * s, 7, '#33394a')
+  RN(c, x + 7 * s, y - 1, 8 * s, 3, '#454d60')
 }
-function escoba(c: Ctx, x: number, y: number, dir: Dir): void {
+function cuchillo(c: Ctx, x: number, y: number, dir: Dir): void {
   const s = dir === 'izq' ? -1 : 1
+  RN(c, x, y + 1, 3 * s, 2, C.madera2)
+  RN(c, x + 3 * s, y + 1, 6 * s, 1, C.metal)
+}
+function escoba(c: Ctx, x: number, y: number, dir: Dir, t: number): void {
+  const s = dir === 'izq' ? -1 : 1
+  // el cepillo va y viene por el suelo
+  const va = Math.round(Math.sin(t * 1.1 * Math.PI * 2) * 3)
   R(c, x, y - 4, 2, 18, '#a5763f')
-  R(c, x - 2 + s, y + 14, 7, 6, '#d8a94a')
-  R(c, x - 2 + s, y + 14, 7, 2, '#e8bd62')
+  R(c, x - 2 + s + va, y + 14, 7, 6, '#d8a94a')
+  R(c, x - 2 + s + va, y + 14, 7, 2, '#e8bd62')
+  if (Math.abs(va) === 3) R(c, x + 6 * s + va, y + 18, 2, 1, 'rgba(210,190,150,0.6)')
 }
 function plumero(c: Ctx, x: number, y: number): void {
   R(c, x, y - 2, 2, 9, '#a5763f')
@@ -904,28 +1134,36 @@ function plumero(c: Ctx, x: number, y: number): void {
 }
 function regadera(c: Ctx, x: number, y: number, dir: Dir): void {
   const s = dir === 'izq' ? -1 : 1
-  R(c, x - 3, y - 1, 10, 9, '#6a9fc9')
-  R(c, x - 3, y - 1, 10, 2, '#87b9de')
-  R(c, x + 6 * s, y, 6 * s, 3, '#5a8ab2')
-  R(c, x + 12 * s, y + 4, 2, 3, '#9fd6ef')
-  R(c, x + 13 * s, y + 8, 2, 2, '#9fd6ef')
+  RN(c, x - 3 * s, y - 1, 10 * s, 9, '#6a9fc9')
+  RN(c, x - 3 * s, y - 1, 10 * s, 2, '#87b9de')
+  RN(c, x + 6 * s, y, 6 * s, 3, '#5a8ab2')
 }
-function red(c: Ctx, x: number, y: number, dir: Dir): void {
+/** La regadera inclinada, con el agua cayendo a la maceta. */
+function regando(c: Ctx, x: number, y: number, dir: Dir, t: number): void {
   const s = dir === 'izq' ? -1 : 1
-  R(c, x, y, 22 * s, 2, '#b3bcc9')
-  R(c, x + 20 * s, y - 5, 10, 3, '#9aa3b2')
-  R(c, x + 20 * s, y - 2, 10, 5, 'rgba(210,220,235,0.5)')
+  RN(c, x - 3 * s, y - 3, 10 * s, 8, '#6a9fc9')
+  RN(c, x - 3 * s, y - 3, 10 * s, 2, '#87b9de')
+  RN(c, x + 6 * s, y + 2, 6 * s, 3, '#5a8ab2')
+  for (let i = 0; i < 4; i++) {
+    const cae = (t * 26 + i * 5) % 18
+    R(c, x + 12 * s + (i % 2) * s, y + 5 + cae, 1, 2, '#9fd6ef')
+  }
 }
-function libro(c: Ctx, x: number, y: number): void {
+function red(c: Ctx, x: number, y: number, dir: Dir, t: number): void {
+  const s = dir === 'izq' ? -1 : 1
+  // la red se pasea por el agua, adelante y atrás
+  const va = Math.round(Math.sin(t * 0.45 * Math.PI * 2) * 4)
+  RN(c, x, y, (22 + va) * s, 2, '#b3bcc9')
+  RN(c, x + (20 + va) * s, y - 5, 10 * s, 3, '#9aa3b2')
+  RN(c, x + (20 + va) * s, y - 2, 10 * s, 5, 'rgba(210,220,235,0.5)')
+}
+function libro(c: Ctx, x: number, y: number, _dir: Dir, t: number): void {
   R(c, x - 6, y - 2, 12, 9, '#c4574f')
   R(c, x - 6, y - 2, 12, 2, '#d86f66')
   R(c, x - 1, y - 2, 2, 9, '#e8e2d4')
-}
-function balon(c: Ctx, x: number, y: number, dir: Dir): void {
-  const s = dir === 'izq' ? -1 : 1
-  R(c, x + 2 * s, y - 2, 8, 8, '#d8783f')
-  R(c, x + 4 * s, y - 2, 2, 8, '#a8532a')
-  R(c, x + 2 * s, y + 1, 8, 1, '#a8532a')
+  // pasa página cada tanto
+  const hoja = t % 7
+  if (hoja < 0.45) R(c, x - 1 - Math.round((hoja / 0.45) * 5), y - 3, 5, 8, '#f4f0e4')
 }
 function caja(c: Ctx, x: number, y: number): void {
   R(c, x - 9, y - 4, 16, 12, '#b98b56')
@@ -936,6 +1174,16 @@ function sabana(c: Ctx, x: number, y: number): void {
   R(c, x - 12, y - 2, 22, 10, '#e4e9f5')
   R(c, x - 12, y - 2, 22, 2, '#f4f7ff')
   R(c, x - 12, y + 6, 22, 2, '#c3cde6')
+}
+/** El balón, con su sombra en el suelo cuando va por el aire. */
+function balon(c: Ctx, b: { x: number; gy: number; h: number }): void {
+  const bx = Math.round(b.x)
+  const by = Math.round(b.gy - b.h)
+  if (b.h > 1.5) R(c, bx - 2, Math.round(b.gy) - 1, 5, 2, C.sombra)
+  R(c, bx - 3, by - 3, 6, 6, '#d8783f')
+  R(c, bx - 2, by - 3, 3, 1, '#ec9a5c')
+  R(c, bx, by - 3, 1, 6, '#a8532a')
+  R(c, bx - 3, by, 6, 1, '#a8532a')
 }
 
 /* ---- globitos ---- */
@@ -1037,112 +1285,180 @@ function cara(c: Ctx, x: number, y: number, look: Look, dir: Dir, cerrado: boole
   }
 }
 
+/** Un brazo visto de frente: la manga baja del hombro y la mano sube según el gesto. */
+function brazo(c: Ctx, ax: number, armTop: number, hy: number, look: Look): void {
+  const top = Math.min(armTop, hy)
+  R(c, ax, top, 3, Math.max(3, armTop + 7 - top), look.shirt)
+  R(c, ax, hy, 3, 3, look.skin)
+}
+
+/**
+ * Un brazo visto de lado. El hombro está en medio del cuerpo; al andar la mano
+ * va adelante y atrás, y al levantarla se adelanta, como cuando se coge algo.
+ * Devuelve dónde queda la mano.
+ */
+function brazoLado(c: Ctx, x: number, armTop: number, s: number, raise: number, sw: number, manga: string, piel: string): Pt {
+  const hx = x - 1 + s * (sw + Math.min(5, Math.max(0, raise)))
+  const hy = armTop + 7 - raise
+  R(c, x - 1, armTop, 3, 4, manga)
+  R(c, Math.round((x - 1 + hx) / 2), Math.round((armTop + 2 + hy) / 2), 3, 4, manga)
+  R(c, hx, hy, 3, 3, piel)
+  return { x: hx, y: hy }
+}
+
+/** Ondas que se abren en el agua alrededor de quien se baña. */
+function ondas(c: Ctx, x: number, y: number, clk: number): void {
+  for (let i = 0; i < 2; i++) {
+    const u = (clk * 0.6 + i * 0.5) % 1
+    const r = 7 + u * 12
+    c.fillStyle = `rgba(210,240,250,${(0.45 * (1 - u)).toFixed(3)})`
+    for (let a = 0; a < 22; a++) {
+      const ang = (a / 22) * Math.PI * 2
+      const px = Math.round(x + Math.cos(ang) * r)
+      const py = Math.round(y + 1 + Math.sin(ang) * r * 0.4)
+      // la parte de atrás de la onda no se pinta encima del cuerpo
+      if (py < y + 1 && Math.abs(px - x) < 7) continue
+      c.fillRect(px, py, 1, 1)
+    }
+  }
+}
+
 /**
  * Un vecino, con los pies en (x, y).
  *
  * De pie mide 32 puntos: 10 de cabeza, 11 de tronco y 11 de piernas. Esa
  * proporción —cabeza más o menos un tercio— es la que hace que se lea como
  * una persona adulta y no como un muñeco de niño.
+ *
+ * De frente y de espaldas se ven las dos piernas y los dos brazos; de lado,
+ * una pierna delante de la otra al andar, la de atrás más oscura, y un solo
+ * brazo que se balancea.
  */
 export function drawPerson(c: Ctx, d: Dweller, look: Look, t: number): void {
-  const p = poseFor(d, t)
+  const p = poseFor(d)
   const x = Math.round(d.x)
   const y = Math.round(d.y)
-  const alpha = d.fade
-  if (alpha <= 0.02) return
 
-  c.save()
-  c.globalAlpha = Math.min(1, alpha)
-
-  if (p.mode === 2) {
-    tumbado(c, x, y, look, d.activity === 'cama', t)
+  if (p.mode === 2 && p.k > 0.5) {
+    tumbado(c, x, y, look, d.activity === 'cama', d.clock)
     if (p.bubble) bubble(c, x + 12, y - 14, p.bubble, t)
-    c.restore()
     return
   }
+  // Para tumbarse, primero se sienta en el borde.
+  const mode = p.mode === 2 ? 1 : p.mode
+  const k = p.mode === 2 ? Math.min(1, p.k * 2) : p.k
 
-  // sombra en el suelo
-  if (p.mode !== 3) R(c, x - 6, y - 2, 12, 3, C.sombra)
+  // En el agua el cuerpo baja hasta el fondo y por encima se pinta la superficie.
+  const agua = waterDepth(d.x, d.y)
+  const yb = y + Math.round(agua * 12) - p.jump
 
-  const sentado = p.mode === 1
-  const enAgua = p.mode === 3
-  const agachado = p.mode === 4
-  const bob = p.bob
+  // La sombra se queda en el suelo aunque salte, y se encoge un poco.
+  if (!agua) R(c, x - 6 + (p.jump ? 1 : 0), y - 2, p.jump ? 10 : 12, 3, C.sombra)
 
-  // Sentado y agachado se notan en que el cuerpo baja y las piernas casi no
-  // se ven: de frente, uno sentado es más bajo que uno de pie, y eso es lo
-  // único que hace falta para que se lea.
-  const largoPierna = sentado ? 5 : agachado ? 5 : H_LEG
-  const legTop = y - largoPierna
-  const altoTronco = enAgua ? H_BODY - 3 : agachado ? H_BODY - 3 : H_BODY
-  const bodyTop = legTop - altoTronco + bob
+  const lado = p.dir === 'izq' || p.dir === 'der'
+  const s = p.dir === 'izq' ? -1 : 1
+
+  // Sentarse y agacharse se notan en que las piernas se van acortando.
+  const objetivo = mode === 1 ? 5 : mode === 4 ? 6 : H_LEG
+  const largo = Math.round(lerp(H_LEG, objetivo, k)) - p.bob
+  const legTop = yb - largo
+  const tronco = mode === 4 ? H_BODY - Math.round(3 * k) : H_BODY
+  const bodyTop = legTop - tronco - p.breath
   const headTop = bodyTop - H_HEAD
+  const zapato = '#3a2f28'
 
   // piernas
-  if (!enAgua) {
-    if (sentado) {
-      // rodillas hacia el que mira
-      R(c, x - 6, legTop - 1, 12, 6, look.pants)
-      R(c, x - 6, legTop - 1, 12, 2, shade(look.pants, 0.18))
-      R(c, x - 6, y - 3, 5, 3, '#3a2f28')
-      R(c, x + 2, y - 3, 5, 3, '#3a2f28')
-    } else if (agachado) {
-      R(c, x - 5, legTop, 4, largoPierna, look.pants)
-      R(c, x + 2, legTop, 4, largoPierna, look.pants)
-      R(c, x - 6, y - 2, 5, 2, '#3a2f28')
-      R(c, x + 2, y - 2, 5, 2, '#3a2f28')
-    } else {
-      const a = p.step === 1 ? 1 : 0
-      const b = p.step === 2 ? 1 : 0
-      R(c, x - 4, legTop, 3, H_LEG - a, look.pants)
-      R(c, x + 1, legTop, 3, H_LEG - b, look.pants)
-      R(c, x - 5, y - 2 - a, 4, 2, '#3a2f28')
-      R(c, x + 1, y - 2 - b, 4, 2, '#3a2f28')
+  if (mode === 1 && k > 0.6) {
+    // rodillas hacia el que mira
+    R(c, x - 6, legTop - 1, 12, 6, look.pants)
+    R(c, x - 6, legTop - 1, 12, 2, shade(look.pants, 0.18))
+    R(c, x - 6, yb - 3, 5, 3, zapato)
+    R(c, x + 2, yb - 3, 5, 3, zapato)
+  } else if (mode === 4 && k > 0.5) {
+    R(c, x - 5, legTop, 4, largo, look.pants)
+    R(c, x + 2, legTop, 4, largo, look.pants)
+    R(c, x - 6, yb - 2, 5, 2, zapato)
+    R(c, x + 2, yb - 2, 5, 2, zapato)
+  } else if (!lado) {
+    // De frente, el pie que va atrás se ve más arriba.
+    const alza = p.frame < 0 ? [0, 0] : [[0, 2], [0, 1], [2, 0], [1, 0]][p.frame]
+    R(c, x - 4, legTop, 3, largo - alza[0], look.pants)
+    R(c, x + 1, legTop, 3, largo - alza[1], look.pants)
+    R(c, x - 5, yb - 2 - alza[0], 4, 2, zapato)
+    R(c, x + 1, yb - 2 - alza[1], 4, 2, zapato)
+  } else {
+    const abre = p.frame === 0 ? 2 : p.frame === 2 ? -2 : 0
+    const piernas = [
+      { dx: p.frame < 0 ? -s : -abre * s, alza: p.frame === 1 ? 1 : 0, col: shade(look.pants, -0.22) },
+      { dx: abre * s, alza: p.frame === 3 ? 1 : 0, col: look.pants }
+    ]
+    for (const pi of piernas) {
+      const lx = x - 1 + pi.dx
+      R(c, lx, legTop, 3, largo - pi.alza, pi.col)
+      R(c, lx + (s > 0 ? 0 : -1), yb - 2 - pi.alza, 4, 2, zapato)
     }
   }
 
-  // tronco
-  R(c, x - 5, bodyTop, 10, altoTronco, look.shirt)
-  R(c, x - 5, bodyTop, 10, 2, shade(look.shirt, 0.16))
-  R(c, x - 5, bodyTop + altoTronco - 2, 10, 2, look.shirtDark)
-  if (p.dir === 'abajo') R(c, x - 1, bodyTop + 3, 2, altoTronco - 5, look.shirtDark)
-
-  // brazos: el hombro está fijo y la mano sube según el gesto
   const armTop = bodyTop + 2
-  const manoLY = armTop + 7 - p.armL
-  const manoRY = armTop + 7 - p.armR
-  R(c, x - 8, Math.min(armTop, manoLY), 3, Math.max(3, armTop + 7 - Math.min(armTop, manoLY)), look.shirt)
-  R(c, x + 6, Math.min(armTop, manoRY), 3, Math.max(3, armTop + 7 - Math.min(armTop, manoRY)), look.shirt)
-  R(c, x - 8, manoLY, 3, 3, look.skin)
-  R(c, x + 6, manoRY, 3, 3, look.skin)
+  const vaiven = p.frame < 0 ? 0 : [1, 0, -1, 0][p.frame]
+  let mano: Pt
+
+  // de lado, el brazo de atrás asoma por detrás del cuerpo
+  if (lado) brazoLado(c, x, armTop, s, p.armL, p.armL ? 0 : -vaiven * 2, shade(look.shirt, -0.4), look.skinDark)
+
+  // tronco
+  const ancho = lado ? 8 : 10
+  const tx = x - ancho / 2
+  const alto = legTop - bodyTop
+  R(c, tx, bodyTop, ancho, alto, look.shirt)
+  R(c, tx, bodyTop, ancho, 2, shade(look.shirt, 0.16))
+  R(c, tx, legTop - 2, ancho, 2, look.shirtDark)
+  if (p.dir === 'abajo') R(c, x - 1, bodyTop + 3, 2, alto - 5, look.shirtDark)
+  if (lado) R(c, s > 0 ? tx : tx + ancho - 1, bodyTop + 2, 1, alto - 3, look.shirtDark)
+
+  // brazos
+  if (lado) {
+    // la manga, un poco más oscura que la camiseta para que se lea encima del cuerpo
+    mano = brazoLado(c, x, armTop, s, p.armR, p.armR ? 0 : vaiven * 2, shade(look.shirt, -0.16), look.skin)
+    mano = { x: mano.x + (s > 0 ? 2 : 0), y: mano.y + 1 }
+  } else {
+    // al andar, cada mano va con la pierna contraria
+    const ly = armTop + 7 - p.armL + (p.armL ? 0 : vaiven)
+    const ry = armTop + 7 - p.armR - (p.armR ? 0 : vaiven)
+    brazo(c, x - 8, armTop, ly, look)
+    brazo(c, x + 5, armTop, ry, look)
+    mano = { x: x + 7, y: ry + 1 }
+  }
 
   // cuello y cabeza
   R(c, x - 2, headTop + H_HEAD - 1, 4, 2, look.skinDark)
   R(c, x - 5, headTop + 2, 10, H_HEAD - 2, look.skin)
   R(c, x + 3, headTop + 2, 2, H_HEAD - 2, look.skinDark)
-  pelo(c, x, headTop, look, p.dir)
-  cara(c, x, headTop, look, p.dir, d.activity === 'cama' || (t * 1.7 + hash(d.key)) % 5 < 0.12)
+  pelo(c, x, headTop, look, p.head)
+  cara(c, x, headTop, look, p.head, d.activity === 'cama' || (d.clock * 1.7 + hash(d.key)) % 5 < 0.12)
 
-  // agua por la cintura
-  if (enAgua) {
-    R(c, x - 8, y - 4, 16, 3, 'rgba(63,159,196,0.75)')
-    R(c, x - 9, y - 2, 18, 2, C.aguaLuz)
+  // El agua tapa lo que queda por debajo de la superficie.
+  if (agua > 0) {
+    const sup = y - 3
+    R(c, x - 9, sup, 18, yb - sup + 2, 'rgba(63,159,196,0.88)')
+    R(c, x - 8 + Math.round(Math.sin(d.clock * 3)), sup, 16, 1, C.aguaLuz)
+    if (agua > 0.6) ondas(c, x, sup, d.clock)
   }
 
   // El trasto va en la mano de delante, así que va después del brazo.
-  if (p.prop) p.prop(c, p.dir === 'izq' ? x - 9 : x + 8, manoRY + 1, p.dir, t)
+  if (p.prop) p.prop(c, mano.x, mano.y, p.dir, d.clock)
+  if (p.ball) balon(c, p.ball)
   if (p.bubble) bubble(c, x + 5, headTop, p.bubble, t)
-
-  c.restore()
 }
 
 /** Tumbado: en la cama o en la tumbona, con la cabeza a la izquierda. */
-function tumbado(c: Ctx, x: number, y: number, look: Look, enCama: boolean, t: number): void {
+function tumbado(c: Ctx, x: number, y: number, look: Look, enCama: boolean, clk: number): void {
   const w = 32
   const izq = x - w / 2
-  // manta o toalla
-  R(c, izq, y - 13, w, 13, enCama ? '#5f7fb5' : look.shirt)
-  R(c, izq, y - 13, w, 2, enCama ? '#7b9acd' : shade(look.shirt, 0.16))
+  // la manta sube y baja con la respiración, despacio
+  const aire = clk % 4.2 < 1.8 ? 1 : 0
+  R(c, izq, y - 13 - aire, w, 13 + aire, enCama ? '#5f7fb5' : look.shirt)
+  R(c, izq, y - 13 - aire, w, 2, enCama ? '#7b9acd' : shade(look.shirt, 0.16))
   R(c, izq + 6, y - 6, w - 12, 1, enCama ? '#4e6b9b' : look.shirtDark)
 
   // cabeza asomando, de perfil
@@ -1155,13 +1471,16 @@ function tumbado(c: Ctx, x: number, y: number, look: Look, enCama: boolean, t: n
   if (look.badge === 'gafas' && !enCama) R(c, hx + 4, y - 10, 5, 3, '#2f3648')
 
   if (!enCama) {
-    // pies asomando y el vaso al lado de la tumbona
+    // pies asomando, y el vaso, que de vez en cuando se lleva a la boca
     R(c, x + w / 2, y - 9, 5, 6, look.skin)
-    R(c, x + 2, y - 21, 6, 8, '#f0c860')
-    R(c, x + 2, y - 21, 6, 2, '#fff0c4')
+    const bebe = clk % 14 < 1.4
+    const vx = bebe ? hx + 11 : x + 2
+    const vy = bebe ? y - 17 : y - 21
+    R(c, vx, vy, 6, 8, '#f0c860')
+    R(c, vx, vy, 6, 2, '#fff0c4')
+    if (bebe) R(c, hx + 9, y - 10, 3, 3, look.skin)
   } else {
     // almohada
     R(c, hx - 4, y - 15, 6, 12, '#e4e9f5')
   }
-  void t
 }
