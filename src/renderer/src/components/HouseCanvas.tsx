@@ -1,7 +1,7 @@
 /**
  * El lienzo de La Casa.
  *
- * Se dibuja el mundo en pequeño —896 por 512 puntos— y se agranda por un
+ * Se dibuja el mundo en pequeño —768 por 640 puntos— y se agranda por un
  * número entero, con el suavizado apagado: así los píxeles salen cuadrados y
  * limpios en vez de emborronados. El decorado fijo se pinta una sola vez en un
  * lienzo aparte y luego sólo se copia; encima van las cositas que parpadean,
@@ -13,11 +13,11 @@
  */
 import React, { useEffect, useRef, useState } from 'react'
 import {
-  ROOMS, WORLD, doingLabel, emptyHouse, stepHouse,
+  ROOMS, WORLD, busySpots, doingLabel, emptyHouse, makeDweller, stepHouse,
   type Dweller, type HouseState, type Job, type Resident
 } from '../lib/house'
 import { useT } from '../lib/i18n'
-import { PROPS, drawAmbient, drawPerson, drawWorld, lookOf, type Look } from '../lib/pixelArt'
+import { PROPS, drawAmbient, drawPerson, drawWorld, lookOf, type Look, type Scene } from '../lib/pixelArt'
 
 /** Fotogramas por segundo: con esto se mueve suave y no calienta el portátil. */
 const FPS = 30
@@ -143,12 +143,14 @@ export function HouseCanvas({
       c2.setTransform(s, 0, 0, s, 0, 0)
       c2.imageSmoothingEnabled = false
       const t = performance.now() / 1000
-      drawAmbient(c2, t)
+      // Lo que cada mueble necesita saber: si hay alguien usándolo y cómo va la puerta.
+      const escena: Scene = { t, busy: busySpots(estado), door: estado.door }
+      drawAmbient(c2, escena)
 
       // Muebles y gente, mezclados y ordenados por su línea de apoyo: eso es
       // lo que hace que unos tapen a otros y la escena tenga fondo.
       const capas: { sort: number; draw: () => void }[] = []
-      for (const p of PROPS) capas.push({ sort: p.sort, draw: () => p.draw(c2, t) })
+      for (const p of PROPS) capas.push({ sort: p.sort, draw: () => p.draw(c2, escena) })
       for (const d of estado.dwellers) {
         const look = looks.current.get(d.residentId)
         if (!look) continue
@@ -194,9 +196,10 @@ export function HouseCanvas({
         puestos.push({ x: d.x * s, fila })
 
         const resaltado = datos.current.hovered === d.residentId
-        c2.globalAlpha = Math.min(1, d.fade) * (resaltado ? 1 : 0.7)
+        c2.globalAlpha = resaltado ? 1 : 0.7
         const px = d.x * s
-        const py = (d.y + 4) * s + fila * (fs + 2)
+        // Quien juega al fondo de la pista tenía el nombre cortado por el borde.
+        const py = Math.min((d.y + 4) * s + fila * (fs + 2), cv2.height - (resaltado ? 2 * fs + 6 : fs + 3))
         c2.lineWidth = Math.max(2, Math.round(s * 0.9))
         c2.strokeStyle = 'rgba(8,10,16,0.95)'
         c2.fillStyle = resaltado ? '#ffffff' : '#dfe5f0'
@@ -267,24 +270,7 @@ export function DollChip({ look, working }: { look: Look; working: boolean }): R
     c.clearRect(0, 0, 24 * 2, 40 * 2)
     c.setTransform(2, 0, 0, 2, 0, 0)
     c.imageSmoothingEnabled = false
-    const falso: Dweller = {
-      key: 'chip',
-      residentId: 'chip',
-      clone: false,
-      x: 12,
-      y: 38,
-      dir: 'abajo',
-      clock: 0,
-      walked: 0,
-      state: 'quieto',
-      route: [],
-      activity: working ? 'andar' : 'andar',
-      fade: 1,
-      shift: 0,
-      doing: '',
-      wanderAt: 0,
-      placed: true
-    }
+    const falso: Dweller = makeDweller('chip', { x: 12, y: 38, dir: 'abajo', state: 'quieto', clock: 0, doing: '' })
     drawPerson(c, falso, look, 0)
   }, [look, working])
   return <canvas ref={cv} width={48} height={80} style={{ width: 24, height: 40, imageRendering: 'pixelated' }} />
