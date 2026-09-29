@@ -146,6 +146,23 @@ fs.writeFileSync('previo.txt', 'pisado por el agente\\n')
 process.stdout.write('hecho')
 `
 
+/** Un agente que cambia cosas y, si le llega una revisión, la corrige y repite lo que recibió. */
+const REVIEW_FIXTURE = `
+const fs = require('node:fs')
+let prompt = ''
+process.stdin.on('data', (c) => (prompt += c))
+process.stdin.on('end', () => {
+  if (prompt.includes('He revisado')) {
+    fs.appendFileSync('app.js', 'corregido\\n')
+    process.stdout.write('revision recibida:\\n' + prompt)
+  } else {
+    fs.writeFileSync('app.js', 'uno\\nDOS\\ntres\\ncuatro\\n')
+    fs.writeFileSync('extra.txt', 'nuevo\\n')
+    process.stdout.write('hecho')
+  }
+})
+`
+
 function setupFixtures() {
   fs.mkdirSync(FIXTURES, { recursive: true })
   fs.mkdirSync(HOME, { recursive: true })
@@ -155,12 +172,14 @@ function setupFixtures() {
   fs.writeFileSync(path.join(FIXTURES, 'opencode.js'), OPENCODE_FIXTURE, 'utf8')
   fs.writeFileSync(path.join(FIXTURES, 'plain.js'), PLAIN_FIXTURE, 'utf8')
   fs.writeFileSync(path.join(FIXTURES, 'editor.js'), EDITOR_FIXTURE, 'utf8')
+  fs.writeFileSync(path.join(FIXTURES, 'review.js'), REVIEW_FIXTURE, 'utf8')
   BINS.claude = makeBin('claude', 'claude.js')
   BINS.codex = makeBin('codex', 'codex.js')
   BINS.gemini = makeBin('gemini', 'gemini.js')
   BINS.opencode = makeBin('opencode', 'opencode.js')
   BINS.plain = makeBin('otro-cli', 'plain.js')
   BINS.editor = makeBin('editor-cli', 'editor.js')
+  BINS.review = makeBin('revisor-cli', 'review.js')
 }
 
 /* ------------------------------------------------------------------ *
@@ -943,6 +962,109 @@ app.whenReady().then(async () => {
     await window.api.agents.removeCli('editor-wt')
     await window.api.projects.remove('proyecto-wt')
   })()`)
+
+  /* -------------------------------------------------------------- *
+   * B4 · Revisar el diff de un turno y devolver comentarios         *
+   * -------------------------------------------------------------- */
+  git(['reset', '-q', '--hard', headB2])
+  git(['clean', '-qfd'])
+  const b4a = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${bins}
+    const api = window.api
+    const engine = window.__accEngine
+    await api.projects.save({ id: 'proyecto-rev', name: 'Repo rev', path: repo, color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'revisor', name: 'Revisor', type: 'cli', command: bins.review, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    const sid = await engine.newSession('cli', { cliAgentId: 'revisor', projectId: 'proyecto-rev' })
+    const run = await engine.sendCli(sid, { prompt: 'cambia app.js', agentId: 'revisor', projectPath: repo, projectId: 'proyecto-rev' })
+    const diff = run?.checkpoint ? (await api.checkpoints.diff(run.checkpoint.root, run.id)).data : null
+    engine.focusChat(sid)
+    return { sid, run, diff }
+  })()`)
+  log(
+    b4a.diff?.until === 'now' && b4a.diff.diff.includes('+DOS') && b4a.diff.diff.includes('-dos') && b4a.diff.diff.includes('+++ b/extra.txt'),
+    'EL DIFF DE UN TURNO SALE DE SU PUNTO DE CONTROL, CON LO NUEVO',
+    b4a.diff ? b4a.diff.diff.split('\n').length + ' líneas' : 'sin diff'
+  )
+  log(git(['status', '--porcelain']).includes('extra.txt') && git(['diff', '--cached', '--name-only']) === '', 'leer el diff no toca el índice')
+
+  // Por la interfaz: abrir la revisión, comentar una línea, cerrar y volver (el borrador sigue), y enviar.
+  const ui = await js(`(async () => {
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(100) } return null }
+    const byText = (sel, text, scope = document) => [...scope.querySelectorAll(sel)].find((x) => x.textContent.trim() === text)
+    const modal = () => document.querySelector('div.fixed.inset-0')
+    const type = (el, value) => {
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+      set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const out = {}
+    const revisar = await until(() => byText('button', 'Revisar'))
+    if (!revisar) return { error: 'no aparece el botón Revisar' }
+    revisar.click()
+    const line = await until(() => [...document.querySelectorAll('[title="Comentar esta línea"]')].find((x) => x.textContent.includes('DOS')))
+    if (!line) return { error: 'no aparece la línea en el diff' }
+    out.lines = document.querySelectorAll('[title="Comentar esta línea"]').length
+    line.click()
+    const ta = await until(() => document.querySelector('textarea[placeholder="Qué hay que cambiar aquí…"]'))
+    type(ta, 'en minúsculas, como estaba')
+    await sleep(50)
+    byText('button', 'Guardar comentario', modal()).click()
+    await sleep(150)
+    out.count1 = document.body.textContent.includes('1 comentario')
+    byText('button', 'Cerrar', modal()).click()
+    await sleep(200)
+    byText('button', 'Revisar').click()
+    out.draftKept = Boolean(await until(() => document.body.textContent.includes('en minúsculas, como estaba')))
+    const general = await until(() => document.querySelector('textarea[placeholder^="Lo que no va sobre"]'))
+    type(general, 'añade una prueba')
+    await sleep(50)
+    const enviar = [...modal().querySelectorAll('button')].find((x) => x.textContent.includes('Enviar al agente'))
+    out.canSend = !enviar.disabled
+    enviar.click()
+    const sid = ${JSON.stringify(b4a.sid)}
+    await until(() => { const c = window.__accEngine.peekChat(sid); return c && c.turns.length >= 4 && !c.runningRunId }, 15000)
+    const c = window.__accEngine.peekChat(sid)
+    out.prompt = c.turns[2]?.content ?? ''
+    out.answer = c.turns[3]?.content ?? ''
+    out.run2 = c.turns[3]?.runId
+    out.modalClosed = !document.body.textContent.includes('Revisar este turno')
+    return out
+  })()`)
+  log(!ui.error && ui.lines >= 5 && ui.count1, 'LA REVISIÓN ENSEÑA EL DIFF Y DEJA COMENTAR UNA LÍNEA', ui.error ?? `${ui.lines} líneas`)
+  log(ui.draftKept === true, 'cerrar la revisión sin enviar no tira el comentario')
+  log(
+    ui.prompt?.startsWith('He revisado') && ui.prompt.includes('app.js, línea 2:') && ui.prompt.includes('`+DOS`') &&
+      ui.prompt.includes('en minúsculas, como estaba') && ui.prompt.includes('Además:\nañade una prueba'),
+    'LOS COMENTARIOS VAN AL AGENTE CON SU FICHERO, SU LÍNEA Y EL CÓDIGO',
+    JSON.stringify(ui.prompt ?? '').slice(0, 160)
+  )
+  log(
+    ui.answer?.includes('revision recibida') && ui.answer.includes('en minúsculas, como estaba') && fs.readFileSync(path.join(REPO, 'app.js'), 'utf8').endsWith('corregido\n') && ui.modalClosed,
+    'EL AGENTE LOS RECIBE COMO EL SIGUIENTE TURNO Y CORRIGE',
+    JSON.stringify(ui.answer ?? '').slice(0, 100)
+  )
+  const b4b = await js(`(async () => {
+    const api = window.api
+    const root = ${JSON.stringify(b4a.run?.checkpoint?.root ?? '')}
+    const onlyFirst = (await api.checkpoints.diff(root, ${JSON.stringify(b4a.run?.id ?? '')}, ${JSON.stringify(ui.run2 ?? '')})).data
+    const toNow = (await api.checkpoints.diff(root, ${JSON.stringify(b4a.run?.id ?? '')})).data
+    const bad = await api.checkpoints.diff(root, '../../x')
+    const engine = window.__accEngine
+    await engine.deleteSession(${JSON.stringify(b4a.sid)})
+    await api.agents.removeCli('revisor')
+    await api.projects.remove('proyecto-rev')
+    return { onlyFirst, toNow, bad }
+  })()`)
+  log(
+    b4b.onlyFirst?.until === 'next' && b4b.onlyFirst.diff.includes('+DOS') && !b4b.onlyFirst.diff.includes('corregido') && b4b.toNow?.diff.includes('+corregido'),
+    'EL DIFF DE UN TURNO VIEJO ACABA DONDE EMPEZÓ EL SIGUIENTE',
+    b4b.onlyFirst?.until
+  )
+  log(b4b.bad?.ok === false, 'un id raro tampoco vale para el diff', b4b.bad?.error)
+  git(['reset', '-q', '--hard', headB2])
+  git(['clean', '-qfd'])
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

@@ -36,7 +36,7 @@ import { getConfig, updateSettings } from './config'
 import { quotaReport, pokeQuotas } from './quotas'
 import { statusLineInfo, installStatusLine, uninstallStatusLine } from './quotas/claudeStatusLine'
 import { ADMIN_KEYS, adminKey } from './quotas/remote'
-import { previewUndo, undoCheckpoint } from './checkpoints'
+import { previewUndo, undoCheckpoint, checkpointDiff } from './checkpoints'
 import { listWorktrees, createWorktree, mergeWorktree, removeWorktree, linkWorktree, mainRoot } from './worktrees'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
@@ -278,6 +278,11 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   handle('checkpoints:preview', (root: string, id: string) => {
     const a = ckArgs(root, id)
     return previewUndo(a.root, a.id)
+  })
+  handle('checkpoints:diff', (root: string, id: string, untilId?: string) => {
+    const a = ckArgs(root, id)
+    const until = typeof untilId === 'string' && untilId ? ckArgs(root, untilId).id : undefined
+    return checkpointDiff(a.root, a.id, until)
   })
   handle('checkpoints:undo', async (root: string, id: string) => {
     const a = ckArgs(root, id)

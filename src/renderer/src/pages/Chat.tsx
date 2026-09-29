@@ -12,7 +12,7 @@ import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
   ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw,
-  ArrowRightLeft
+  ArrowRightLeft, FileDiff
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -35,9 +35,10 @@ import {
 } from '../lib/engine'
 import { UndoTurn } from '../components/UndoTurn'
 import { WorktreeBox } from '../components/WorktreeBox'
+import { DiffReview } from '../components/DiffReview'
 import { pickRelayAgent } from '@shared/quotaPick'
 import {
-  API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession
+  API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession, type RunCheckpoint
 } from '@shared/types'
 import { Pane } from '../components/Resizable'
 import { resumeCaps } from '@shared/cliCaps'
@@ -225,7 +226,18 @@ function CliContinuity({ session, command }: { session: StoredSession; command: 
   )
 }
 
-function TurnView({ turn, isCli, sessionId }: { turn: Turn; isCli: boolean; sessionId: string }): React.JSX.Element {
+function TurnView({
+  turn,
+  isCli,
+  sessionId,
+  onReview
+}: {
+  turn: Turn
+  isCli: boolean
+  sessionId: string
+  /** Abrir la revisión del diff de este turno. */
+  onReview?: () => void
+}): React.JSX.Element {
   const t = useT()
   if (turn.role === 'user') {
     return (
@@ -273,6 +285,11 @@ function TurnView({ turn, isCli, sessionId }: { turn: Turn; isCli: boolean; sess
           <UsageLimitView compact limit={turn.streaming ? turn.live?.usageLimit : turn.metrics?.usageLimit} />
           <div className="ml-auto flex items-center gap-1">
             {/* Si el turno cambió ficheros y hay foto de antes, se puede deshacer entero. */}
+            {onReview && !turn.streaming && !turn.metrics?.undone ? (
+              <Button size="sm" variant="ghost" onClick={onReview} title={t('Ver el diff de este turno y comentar líneas para el agente')}>
+                <FileDiff size={12} /> {t('Revisar')}
+              </Button>
+            ) : null}
             {!turn.streaming && turn.runId && turn.metrics?.checkpoint && turn.metrics.filesChanged?.length ? (
               <UndoTurn
                 runId={turn.runId}
@@ -370,6 +387,7 @@ export default function Chat(): React.JSX.Element {
   const [renameText, setRenameText] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<StoredSession | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [review, setReview] = useState<{ runId: string; checkpoint: RunCheckpoint; untilRunId?: string } | null>(null)
 
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -480,9 +498,18 @@ export default function Chat(): React.JSX.Element {
     setAttachments([])
   }, [activeId])
 
-  const send = useCallback(async () => {
-    if (!input.trim() || !session || running) return
-    const prompt = input.trim()
+  // Con `override` se manda ese texto en vez de lo escrito (la revisión de un
+  // diff): lo que tengas a medias en la caja y sus adjuntos se quedan.
+  const send = useCallback(async (override?: string) => {
+    const text = override ?? input
+    if (!text.trim() || !session || running) return
+    const prompt = text.trim()
+    const files = override === undefined && attachments.length ? attachments : undefined
+    const clear = (): void => {
+      if (override !== undefined) return
+      setInput('')
+      setAttachments([])
+    }
 
     if (isCli) {
       if (!session.cliAgentId) {
@@ -493,8 +520,7 @@ export default function Chat(): React.JSX.Element {
         toast('error', t('Un agente de línea de comandos necesita un proyecto donde trabajar'))
         return
       }
-      setInput('')
-      setAttachments([])
+      clear()
       stick.current = true
       const run = await sendCli(session.id, {
         prompt,
@@ -506,7 +532,7 @@ export default function Chat(): React.JSX.Element {
         projectId: project.id,
         projectName: project.name,
         effort,
-        attachments: attachments.length ? attachments : undefined
+        attachments: files
       })
       if (run?.status === 'error') toast('error', run.error ?? t('El agente falló'))
       // Un agente puede haber cambiado de rama o dejado el árbol sucio.
@@ -529,8 +555,7 @@ export default function Chat(): React.JSX.Element {
       if (project.systemPrompt) sys = [project.systemPrompt, sys].filter(Boolean).join('\n\n')
     }
 
-    setInput('')
-    setAttachments([])
+    clear()
     stick.current = true
     const run = await sendChat(session.id, {
       prompt,
@@ -545,7 +570,7 @@ export default function Chat(): React.JSX.Element {
       projectName: project?.name,
       projectPath: project ? (session.worktreePath ?? project.path) : undefined,
       effort,
-      attachments: attachments.length ? attachments : undefined,
+      attachments: files,
       agentMode: agentOn,
       permissionMode: agentOn ? (session.permissionMode ?? 'acceptEdits') : undefined
     })
@@ -768,9 +793,26 @@ export default function Chat(): React.JSX.Element {
                 }
               />
             ) : null}
-            {turns.map((t) => (
-              <TurnView key={t.id} turn={t} isCli={isCli} sessionId={session?.id ?? ''} />
-            ))}
+            {turns.map((t, i) => {
+              const ck = t.metrics?.checkpoint
+              // El diff de un turno llega hasta la foto del siguiente del mismo repositorio (o hasta ahora).
+              const next = ck
+                ? turns.slice(i + 1).find((n) => n.runId && n.metrics?.checkpoint?.root === ck.root)
+                : undefined
+              return (
+                <TurnView
+                  key={t.id}
+                  turn={t}
+                  isCli={isCli}
+                  sessionId={session?.id ?? ''}
+                  onReview={
+                    ck && t.runId && t.metrics?.filesChanged?.length
+                      ? () => setReview({ runId: t.runId!, checkpoint: ck, untilRunId: next?.runId })
+                      : undefined
+                  }
+                />
+              )
+            })}
             {/* Si el último turno se cortó por un cupo o un límite, se ofrece
                 seguir con otra IA sin tener que ir a buscarlo. */}
             {limited ? (
@@ -881,6 +923,21 @@ export default function Chat(): React.JSX.Element {
         onClose={() => setRelayOpen(false)}
         suggestAgentId={relayPick?.agent.id}
       />
+
+      {review ? (
+        <DiffReview
+          open
+          onClose={() => setReview(null)}
+          runId={review.runId}
+          checkpoint={review.checkpoint}
+          untilRunId={review.untilRunId}
+          disabled={running}
+          onSend={(prompt) => {
+            setReview(null)
+            void send(prompt)
+          }}
+        />
+      ) : null}
 
       {/* ------------------------------------------------ Ajustes de la sesión */}
       <Pane paneKey="chat.detail" side="left" className="border-l border-line bg-void overflow-y-auto">

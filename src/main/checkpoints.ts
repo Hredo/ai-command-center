@@ -138,6 +138,39 @@ export async function previewUndo(cwd: string, id: string): Promise<UndoPreview 
   return { restore, remove, headMoved }
 }
 
+export interface CheckpointDiff {
+  /** Parche unificado, como el de `git diff`. */
+  diff: string
+  /** Hasta dónde llega: la foto del turno siguiente o lo que hay ahora en disco. */
+  until: 'next' | 'now'
+  /** Se cortó porque era enorme. */
+  truncated: boolean
+}
+
+const MAX_DIFF = 2 * 1024 * 1024
+
+/**
+ * Lo que cambió desde antes del turno: hasta la foto del turno siguiente si
+ * la hay (así se ve sólo lo de este turno) o hasta lo que hay ahora en disco,
+ * con lo nuevo y lo borrado. No toca tu índice.
+ */
+export async function checkpointDiff(cwd: string, id: string, untilId?: string): Promise<CheckpointDiff | null> {
+  const ck = await resolveCheckpoint(cwd, id)
+  if (!ck) return null
+  const next = untilId ? await resolveCheckpoint(cwd, untilId) : null
+  const to = next ? `${next.commit}^{tree}` : await worktreeTree(ck.root)
+  if (!to) return null
+  const r = await run(
+    ck.root,
+    ['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', '--find-renames', '-U3', `${ck.commit}^{tree}`, to],
+    {},
+    60_000
+  )
+  if (!r.ok) throw new Error(r.err || 'git diff falló')
+  const truncated = r.out.length > MAX_DIFF
+  return { diff: truncated ? r.out.slice(0, MAX_DIFF) : r.out, until: next ? 'next' : 'now', truncated }
+}
+
 function inside(root: string, rel: string): string | null {
   const abs = resolve(root, rel)
   const r = relative(root, abs)

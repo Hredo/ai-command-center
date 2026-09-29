@@ -336,7 +336,10 @@ const api = {
     preview: (root: string, id: string) =>
       call<{ restore: string[]; remove: string[]; headMoved: boolean } | null>('checkpoints:preview', root, id),
     undo: (root: string, id: string) =>
-      call<{ restore: string[]; remove: string[]; headMoved: boolean; safetyId?: string }>('checkpoints:undo', root, id)
+      call<{ restore: string[]; remove: string[]; headMoved: boolean; safetyId?: string }>('checkpoints:undo', root, id),
+    /** Lo que cambió desde antes del turno: hasta el turno siguiente (untilId) o hasta ahora. */
+    diff: (root: string, id: string, untilId?: string) =>
+      call<{ diff: string; until: 'next' | 'now'; truncated: boolean } | null>('checkpoints:diff', root, id, untilId)
   },
   /** Cupos de todas las IAs, presupuestos y avisos. */
   quotas: {
