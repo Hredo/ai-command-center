@@ -12,6 +12,7 @@ import { contextLimitFor } from '../providers/models'
 import { snapshot, changesSince, type GitSnapshot } from '../git'
 import { opencodeLaunch, type OpencodeLaunch } from '../opencode'
 import { killTree } from '../platform'
+import { projectForPath } from '../projectMatch'
 import type {
   AgentStep, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
@@ -642,6 +643,8 @@ function startCliAgent(
     const cfg = getConfig()
     const agent: CliAgent | undefined = cfg.cliAgents.find((a) => a.id === opts.agentId)
     const startedAt = Date.now()
+    // Una ruta sin proyecto (la Arena, un relevo) se apunta al proyecto que la contiene.
+    const owner = opts.projectId ? undefined : projectForPath(opts.projectPath)
 
     const finish = (run: RunRecord): void => {
       running.delete(runId)
@@ -658,8 +661,8 @@ function startCliAgent(
       model: agent?.name ?? 'CLI',
       agentId: opts.agentId,
       agentName: agent?.name,
-      projectId: opts.projectId,
-      projectName: opts.projectName,
+      projectId: opts.projectId ?? owner?.id,
+      projectName: opts.projectName ?? owner?.name,
       arenaId: opts.arenaId,
       conversationId: opts.conversationId,
       prompt: opts.prompt,
@@ -672,7 +675,9 @@ function startCliAgent(
       costIn: 0,
       costOut: 0,
       costTotal: 0,
-      costEstimated: true
+      costEstimated: true,
+      // Aunque el agente no llegue a arrancar, lo que se le pidió queda dicho.
+      effort: opts.effort && opts.effort !== 'auto' ? opts.effort : undefined
     })
 
     if (!agent) {

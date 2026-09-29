@@ -28,6 +28,8 @@ export const paths = {
   get config() { return join(dataDir(), 'config.json') },
   get secrets() { return join(dataDir(), 'secrets.json') },
   get runs() { return join(dataDir(), 'runs.jsonl') },
+  /** Ejecuciones antiguas que salieron del histórico por tamaño: no se cargan. */
+  get runsArchive() { return join(dataDir(), 'runs-archivo.jsonl') },
   get modelCache() { return join(dataDir(), 'models-cache.json') },
   get sessions() { return join(dataDir(), 'sessions.json') },
   get dir() { return dataDir() }

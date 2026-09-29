@@ -11,6 +11,7 @@
  * Uso: pnpm exec electron scripts/test-agents.cjs
  */
 const { app, BrowserWindow } = require('electron')
+const { waitWindow } = require('./window.cjs')
 const http = require('node:http')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -164,8 +165,8 @@ require('../out/main/index.js')
 
 app.whenReady().then(async () => {
   const server = await startMock()
-  const win = BrowserWindow.getAllWindows()[0]
-  await new Promise((r) => setTimeout(r, 3000))
+  const win = await waitWindow()
+  
   const js = (code) => win.webContents.executeJavaScript(code)
 
   const ctx = JSON.stringify({
@@ -187,7 +188,7 @@ app.whenReady().then(async () => {
 
     const agent = {
       id: 'prueba-opencode', name: 'OpenCode de prueba', type: 'cli',
-      command: 'node', args: [fixtures + '\\\\opencode.js', repo, '{{prompt}}'],
+      command: 'node', args: [fixtures + '/opencode.js', repo, '{{prompt}}'],
       parser: 'opencode-json', color: '#22d3ee', createdAt: Date.now()
     }
     await api.agents.saveCli(agent)
@@ -266,7 +267,7 @@ app.whenReady().then(async () => {
     const engine = window.__accEngine
     const agent = {
       id: 'prueba-claude', name: 'Claude de prueba', type: 'cli',
-      command: 'node', args: [fixtures + '\\\\claude.js', repo],
+      command: 'node', args: [fixtures + '/claude.js', repo],
       parser: 'claude-stream-json', color: '#f0b429', createdAt: Date.now()
     }
     await api.agents.saveCli(agent)
@@ -303,12 +304,12 @@ app.whenReady().then(async () => {
     const api = window.api
     const engine = window.__accEngine
 
-    const txt = await api.attach.describe(fixtures + '\\\\adjunto.txt')
-    const bin = await api.attach.describe(fixtures + '\\\\binario.bin')
+    const txt = await api.attach.describe(fixtures + '/adjunto.txt')
+    const bin = await api.attach.describe(fixtures + '/binario.bin')
 
     const agent = {
       id: 'prueba-echo', name: 'Eco', type: 'cli',
-      command: 'node', args: [fixtures + '\\\\echo.js', '{{prompt}}'],
+      command: 'node', args: [fixtures + '/echo.js', '{{prompt}}'],
       parser: 'plain', color: '#8b5cf6', createdAt: Date.now()
     }
     await api.agents.saveCli(agent)
@@ -334,7 +335,10 @@ app.whenReady().then(async () => {
     await api.agents.saveCli(codex)
     const sid2 = await engine.newSession('cli', { cliAgentId: codex.id })
     let meta = ''
-    const off = window.api.cli.onEvent((e) => { if (e.type === 'meta') meta += e.data + '\\n' })
+    // El comando que se arma sale como paso 'cmd' de la línea de tiempo.
+    const off = window.api.cli.onEvent((e) => {
+      if (e.type === 'step' && e.step?.id === 'cmd') meta += (e.step.detail ?? '') + '\\n'
+    })
     const run2 = await engine.sendCli(sid2, {
       prompt: 'hola', agentId: codex.id, projectPath: repo, effort: 'high'
     })
@@ -422,7 +426,7 @@ app.whenReady().then(async () => {
     }]
     await api.config.save(cfg)
 
-    const txt = (await api.attach.describe(fixtures + '\\\\adjunto.txt')).data
+    const txt = (await api.attach.describe(fixtures + '/adjunto.txt')).data
     const sid = await engine.newSession('chat', { providerId: 'vllm', model: 'modelo-de-prueba' })
     const run = await engine.sendChat(sid, {
       providerId: 'vllm', model: 'modelo-de-prueba', prompt: 'hola',

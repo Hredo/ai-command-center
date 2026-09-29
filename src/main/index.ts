@@ -18,6 +18,7 @@ import { applyCsp, hardenApp, lockDownNavigation, lockDownPermissions, RENDERER_
 import { IS_LINUX, IS_MAC } from './platform'
 import { ensureUtf8Locale, loadShellEnv } from './shellEnv'
 import { runSelfTest } from './selftest'
+import { startMaintenance, stopMaintenance } from './maintenance'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
@@ -230,6 +231,9 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send('detect:localChanged', servers)
   })
 
+  // La poda del histórico: sin frenar el arranque y de vez en cuando.
+  if (!SELFTEST) startMaintenance()
+
   // El catálogo de modelos se refresca en segundo plano: la app abre igual
   // aunque no haya red.
   const cfg = getConfig()
@@ -257,6 +261,7 @@ app.on('before-quit', () => {
   stopWatchingLocalServers()
   stopWatchingClaude()
   stopAllWatches()
+  stopMaintenance()
   closeAllTerms()
 })
 

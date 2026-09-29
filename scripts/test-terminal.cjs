@@ -14,6 +14,7 @@
  * Uso: pnpm exec electron scripts/test-terminal.cjs
  */
 const { app, BrowserWindow } = require('electron')
+const { waitWindow } = require('./window.cjs')
 
 require('../out/main/index.js')
 
@@ -22,8 +23,8 @@ const log = (ok, name, detail = '') =>
   results.push(`${ok ? 'PASA ' : 'FALLA'}  ${name}${detail ? ' — ' + detail : ''}`)
 
 app.whenReady().then(async () => {
-  const win = BrowserWindow.getAllWindows()[0]
-  await new Promise((r) => setTimeout(r, 2600))
+  const win = await waitWindow()
+  
 
   const out = await win.webContents.executeJavaScript(`(async () => {
     const api = window.api

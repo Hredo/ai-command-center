@@ -12,7 +12,9 @@
  * worst case is one untranslated label, which is visible and a one-line fix.
  */
 
-export const en: Record<string, string> = {
+import { enV08 } from './i18n.en.v08'
+
+const base: Record<string, string> = {
   /* ---------------------------------------------------------- Generic */
   'common.cancel': 'Cancel',
   'common.save': 'Save',
@@ -1097,3 +1099,6 @@ export const en: Record<string, string> = {
   'ollama.unified': '{gb} GB of unified memory for the GPU (approx.)',
   'ollama.noGpuUse': 'Ollama does not use this GPU on Intel Macs'
 }
+
+/** Lo de la 0.8 va en su propio fichero y se suma aquí. */
+export const en: Record<string, string> = { ...base, ...enV08 }

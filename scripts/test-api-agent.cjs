@@ -14,6 +14,7 @@
  * Uso: pnpm exec electron scripts/test-api-agent.cjs [modelo]
  */
 const { app, BrowserWindow } = require('electron')
+const { waitWindow } = require('./window.cjs')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -75,8 +76,8 @@ function describeSteps(run) {
 
 app.whenReady().then(async () => {
   setupRepo()
-  const win = BrowserWindow.getAllWindows()[0]
-  await new Promise((r) => setTimeout(r, 3000))
+  const win = await waitWindow()
+  
   const js = (code) => win.webContents.executeJavaScript(code)
 
   /** Lanza una petición en modo agente y contesta a los permisos con `decide`. */

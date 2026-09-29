@@ -12,6 +12,7 @@
  * Uso: pnpm exec electron scripts/test-workspace.cjs
  */
 const { app, BrowserWindow } = require('electron')
+const { waitWindow } = require('./window.cjs')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -50,8 +51,8 @@ setup()
 require('../out/main/index.js')
 
 app.whenReady().then(async () => {
-  const win = BrowserWindow.getAllWindows()[0]
-  await new Promise((r) => setTimeout(r, 3000))
+  const win = await waitWindow()
+  
   const js = (code) => win.webContents.executeJavaScript(code)
   const ctx = JSON.stringify({ repo: REPO, tmp: TMP })
 

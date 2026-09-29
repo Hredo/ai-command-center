@@ -118,15 +118,34 @@ function Detail({ run, onClose, onDelete }: { run: RunRecord | null; onClose: ()
   )
 }
 
+/** Desde cuándo cuenta cada periodo del filtro. */
+function periodStart(period: string): number {
+  const d = new Date()
+  if (period === 'today') {
+    d.setHours(0, 0, 0, 0)
+    return d.getTime()
+  }
+  if (period === 'month') {
+    d.setDate(1)
+    d.setHours(0, 0, 0, 0)
+    return d.getTime()
+  }
+  const days = Number(period)
+  return Date.now() - (Number.isFinite(days) ? days : 0) * 86_400_000
+}
+
 export default function History(): React.JSX.Element {
   const t = useT()
-  const { toast, defs } = useStore()
+  const { toast, defs, config } = useStore()
   const [rows, setRows] = useState<RunRecord[]>([])
   const [total, setTotal] = useState(0)
   const [search, setSearch] = useState('')
   const [kind, setKind] = useState('')
   const [status, setStatus] = useState('')
   const [providerId, setProviderId] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [period, setPeriod] = useState('')
+  const [sums, setSums] = useState({ cost: 0, tokens: 0 })
   const [selected, setSelected] = useState<RunRecord | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const version = useRunsVersion()
@@ -137,13 +156,16 @@ export default function History(): React.JSX.Element {
       kind: kind || undefined,
       status: status || undefined,
       providerId: providerId || undefined,
+      projectId: projectId || undefined,
+      from: period ? periodStart(period) : undefined,
       limit: 400
     })
     if (r.ok && r.data) {
       setRows(r.data.rows)
       setTotal(r.data.total)
+      setSums({ cost: r.data.cost ?? 0, tokens: r.data.tokens ?? 0 })
     }
-  }, [search, kind, status, providerId])
+  }, [search, kind, status, providerId, projectId, period])
 
   // Se recarga al escribir en el buscador y también cuando termina una
   // ejecución nueva, para no tener que volver a entrar en la pantalla.
@@ -165,8 +187,9 @@ export default function History(): React.JSX.Element {
   }
 
   const providersInView = [...new Set(rows.map((r) => r.providerId))].sort()
-  const sumCost = rows.reduce((s, r) => s + r.costTotal, 0)
-  const sumTok = rows.reduce((s, r) => s + r.totalTokens, 0)
+  const sumCost = sums.cost
+  const sumTok = sums.tokens
+  const projects = (config?.projects ?? []).slice().sort((a, b) => a.name.localeCompare(b.name))
 
   return (
     <div className="h-full flex flex-col">
@@ -212,6 +235,22 @@ export default function History(): React.JSX.Element {
             <option value="ok">{t('Correctas')}</option>
             <option value="error">{t('Con error')}</option>
             <option value="aborted">{t('Canceladas')}</option>
+          </Select>
+          <Select value={period} onChange={(e) => setPeriod(e.target.value)} className="w-[130px]">
+            <option value="">{t('Desde siempre')}</option>
+            <option value="today">{t('Hoy')}</option>
+            <option value="7">{t('Últimos 7 días')}</option>
+            <option value="30">{t('Últimos 30 días')}</option>
+            <option value="month">{t('Este mes')}</option>
+            <option value="90">{t('Últimos 90 días')}</option>
+          </Select>
+          <Select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-[170px]">
+            <option value="">{t('Todo proyecto')}</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
           </Select>
           <Select value={providerId} onChange={(e) => setProviderId(e.target.value)} className="w-[170px]">
             <option value="">{t('Todo proveedor')}</option>

@@ -5,6 +5,7 @@
  * Ejemplo: pnpm exec electron scripts/shot.cjs Terminal Consola Ajustes
  */
 const { app, BrowserWindow } = require('electron')
+const { waitWindow } = require('./window.cjs')
 const { writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
 
@@ -15,9 +16,9 @@ const args = process.argv.slice(2).filter((a) => !a.startsWith('-'))
 const wanted = args.length ? args : ['Panel', 'Consola', 'Terminal', 'Ajustes']
 
 app.whenReady().then(async () => {
-  const win = BrowserWindow.getAllWindows()[0]
+  const win = await waitWindow()
   mkdirSync(OUT, { recursive: true })
-  await new Promise((r) => setTimeout(r, 3200))
+  
 
   const js = (code) => win.webContents.executeJavaScript(code)
 

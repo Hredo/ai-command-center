@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
+import { writeFileAtomic } from '../atomic'
 import { paths } from '../paths'
 import { PROVIDERS, providerById, effectiveBaseUrl } from './catalog'
 import { resolveKey } from '../secrets'
@@ -207,7 +208,7 @@ export async function refreshCatalog(): Promise<{ count: number; sources: string
   })
 
   catalogMemo = { fetchedAt: Date.now(), models }
-  writeFileSync(paths.modelCache, JSON.stringify(catalogMemo), 'utf8')
+  writeFileAtomic(paths.modelCache, JSON.stringify(catalogMemo))
   return { count: models.length, sources, errors }
 }
 

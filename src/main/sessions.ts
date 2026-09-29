@@ -6,8 +6,9 @@
  * detalle de cada ejecución vive en runs.jsonl y se referencia por runId.
  * Lo que se guarda es la conversación y los ajustes con los que retomarla.
  */
-import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { paths } from './paths'
+import { writeFileAtomic } from './atomic'
 import type { StoredSession } from '@shared/types'
 
 /** Tope de sesiones guardadas: las más viejas se descartan al pasarlo. */
@@ -40,9 +41,7 @@ function persist(rows: StoredSession[]): void {
     .slice(0, MAX_SESSIONS)
   cache = trimmed
   // Escritura atómica: un corte de corriente no deja el fichero a medias.
-  const tmp = paths.sessions + '.tmp'
-  writeFileSync(tmp, JSON.stringify(trimmed), 'utf8')
-  renameSync(tmp, paths.sessions)
+  writeFileAtomic(paths.sessions, JSON.stringify(trimmed))
 }
 
 export function listSessions(): StoredSession[] {

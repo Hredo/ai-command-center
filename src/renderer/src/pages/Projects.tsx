@@ -153,6 +153,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
   const [showClosed, setShowClosed] = useState(false)
   const [showGithub, setShowGithub] = useState(false)
   const [projectRuns, setProjectRuns] = useState<RunRecord[]>([])
+  const [totals, setTotals] = useState<{ runs: number; cost: number; tokens: number } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Project | null>(null)
   // Al terminar una ejecución se vuelven a pedir las del proyecto.
   const runsVersion = useRunsVersion()
@@ -263,6 +264,11 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
       void scan(project.path)
       void window.api.runs.query({ projectId: project.id, limit: 30 }).then((r) => {
         if (r.ok && r.data) setProjectRuns(r.data.rows)
+      })
+      // Los totales se cuentan en el proceso principal sobre todo el
+      // histórico: la lista de arriba sólo trae las últimas 30.
+      void window.api.runs.projectTotals(project.id).then((r) => {
+        if (r.ok && r.data) setTotals(r.data)
       })
     } else {
       setInfo(null)
@@ -464,7 +470,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
     : isOc && cliModel.startsWith('ollama/')
       ? oc.models.find((m) => m.id === cliModel)?.context
       : undefined
-  const spend = projectRuns.reduce((s, r) => s + r.costTotal, 0)
+  const spend = totals?.cost ?? projectRuns.reduce((s, r) => s + r.costTotal, 0)
 
   return (
     <div className="h-full flex">
@@ -641,7 +647,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                   </Panel>
                   <Panel className="px-4 py-3">
                     <div className="text-[11px] uppercase tracking-wider text-dim mb-1.5">{t('Ejecuciones')}</div>
-                    <div className="num text-[19px] font-semibold">{projectRuns.length}</div>
+                    <div className="num text-[19px] font-semibold">{totals?.runs ?? projectRuns.length}</div>
                     <div className="text-[11px] text-dim mt-1">{t('en este proyecto')}</div>
                   </Panel>
                   <Panel className="px-4 py-3">

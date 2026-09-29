@@ -127,13 +127,22 @@ const api = {
     openTerminal: (path: string) => call<{ ok: boolean; error?: string }>('projects:openTerminal', path)
   },
   runs: {
-    query: (q?: any) => call<{ rows: RunRecord[]; total: number }>('runs:query', q),
+    query: (q?: any) => call<{ rows: RunRecord[]; total: number; cost: number; tokens: number }>('runs:query', q),
     overview: (days?: number) => call<any>('runs:overview', days),
     update: (id: string, patch: Partial<RunRecord>) => call<RunRecord>('runs:update', id, patch),
     remove: (id: string) => call<void>('runs:delete', id),
     clear: () => call<void>('runs:clear'),
     arena: () => call<{ arenaId: string; createdAt: number; prompt: string; runs: RunRecord[] }[]>('runs:arena'),
+    /** Quita el detalle a las ejecuciones viejas y archiva el exceso; las métricas se quedan. */
+    compact: () =>
+      call<{ compacted: number; archived: number; bytesBefore: number; bytesAfter: number }>('runs:compact'),
     compare: (ids: string[]) => call<RunRecord[]>('runs:compare', ids),
+    /** Lo gastado en un proyecto desde siempre, con el reparto por agente. */
+    projectTotals: (projectId: string) =>
+      call<{ runs: number; cost: number; tokens: number; errors: number; lastAt?: number; byAgent: StatsBucket[] }>(
+        'runs:projectTotals',
+        projectId
+      ),
     buckets: (field: string, days?: number) => call<StatsBucket[]>('runs:buckets', field, days),
     export: (format: 'json' | 'csv') => call<{ path: string; rows: number } | null>('runs:export', format)
   },

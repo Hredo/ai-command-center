@@ -7,7 +7,7 @@ import { OllamaPanel } from '../components/OllamaPanel'
 import { Panel, PanelHeader, Button, Badge, Input, Field, Select, Toggle, cx, Dot, Tabs, Empty } from '../components/ui'
 import { AppearanceTab, EditorTab, SecurityTab } from './Appearance'
 import { useStore } from '../lib/store'
-import { relTime } from '../lib/format'
+import { relTime, bytes } from '../lib/format'
 import type { DetectionResult, ProviderStatus } from '@shared/types'
 
 import { useT } from '../lib/i18n'
@@ -209,6 +209,29 @@ export default function Settings(): React.JSX.Element {
   const setSetting = async (patch: any): Promise<void> => {
     await window.api.config.settings(patch)
     await reload()
+  }
+
+  const { toast } = useStore()
+  const [compacting, setCompacting] = useState(false)
+  const compactNow = async (): Promise<void> => {
+    setCompacting(true)
+    const r = await window.api.runs.compact()
+    setCompacting(false)
+    if (!r.ok || !r.data) {
+      toast('error', r.error ?? t('No se pudo compactar el histórico'))
+      return
+    }
+    const d = r.data
+    toast(
+      'ok',
+      d.compacted || d.archived
+        ? t('Histórico compactado: {n} ejecuciones, de {from} a {to}', {
+            n: d.compacted + d.archived,
+            from: bytes(d.bytesBefore),
+            to: bytes(d.bytesAfter)
+          })
+        : t('No había nada que compactar ({size})', { size: bytes(d.bytesBefore) })
+    )
   }
 
   const shown = status.filter((p) => {
@@ -542,6 +565,24 @@ export default function Settings(): React.JSX.Element {
                       <span className="num text-muted">{String(v ?? '—')}</span>
                     </div>
                   ))}
+                </div>
+                <div className="pt-3 border-t border-line grid grid-cols-2 gap-4 items-end">
+                  <Field
+                    label={t('Detalle completo del histórico (días)')}
+                    hint={t('Pasado ese tiempo, cada ejecución se queda con sus métricas y pierde el paso a paso y la respuesta entera. 0: nunca.')}
+                  >
+                    <Input
+                      type="number" min={0} max={3650} step={1}
+                      defaultValue={s.historyDetailDays ?? 180}
+                      onBlur={(e) => void setSetting({ historyDetailDays: Math.max(0, Number(e.target.value) || 0) })}
+                      className="num"
+                    />
+                  </Field>
+                  <div>
+                    <Button size="sm" variant="ghost" loading={compacting} onClick={() => void compactNow()}>
+                      <HardDrive size={13} /> {t('Compactar ahora')}
+                    </Button>
+                  </div>
                 </div>
                 <div className="pt-2 border-t border-line flex items-center gap-2">
                   <Button size="sm" onClick={() => void window.api.app.openDataDir()}>

@@ -1,6 +1,7 @@
 import { safeStorage } from 'electron'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { paths } from './paths'
+import { writeFileAtomic } from './atomic'
 import { PROVIDERS } from './providers/catalog'
 import type { KeySource } from '@shared/types'
 
@@ -16,7 +17,7 @@ function read(): Store {
 }
 
 function write(s: Store): void {
-  writeFileSync(paths.secrets, JSON.stringify(s, null, 2), 'utf8')
+  writeFileAtomic(paths.secrets, JSON.stringify(s, null, 2), { encoding: 'utf8', mode: 0o600 })
 }
 
 /**

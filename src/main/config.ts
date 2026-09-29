@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { paths } from './paths'
+import { writeFileAtomic } from './atomic'
 import { notifyChange } from './live'
 import { defaultTerminalCommand } from './platform'
 import { DEFAULT_APPEARANCE, DEFAULT_EDITOR } from '@shared/defaults'
@@ -17,7 +18,6 @@ const defaultSettings: Settings = {
   currency: 'USD',
   eurRate: 0.92,
   arenaDefaults: [],
-  streamChunkMs: 33,
   notifyOnFinish: true,
   notifyOnlyWhenUnfocused: true,
   localPollSeconds: 8
@@ -60,7 +60,7 @@ function migrateDetectedClis(cfg: AppConfig): void {
   }
   if (changed) {
     try {
-      writeFileSync(paths.config, JSON.stringify(cfg, null, 2), 'utf8')
+      writeFileAtomic(paths.config, JSON.stringify(cfg, null, 2))
     } catch {
       /* si no se puede escribir, la mejora vale sólo para esta sesión */
     }
@@ -90,7 +90,7 @@ export function getConfig(): AppConfig {
 
 export function saveConfig(cfg: AppConfig): AppConfig {
   cache = cfg
-  writeFileSync(paths.config, JSON.stringify(cfg, null, 2), 'utf8')
+  writeFileAtomic(paths.config, JSON.stringify(cfg, null, 2))
   notifyChange('config')
   return cfg
 }

@@ -12,6 +12,7 @@
  * Uso: pnpm exec electron scripts/test-features.cjs
  */
 const { app, BrowserWindow } = require('electron')
+const { waitWindow } = require('./window.cjs')
 const http = require('node:http')
 
 const PORT = 8124
@@ -65,8 +66,8 @@ const log = (ok, name, detail = '') =>
 
 app.whenReady().then(async () => {
   const server = await startMock()
-  const win = BrowserWindow.getAllWindows()[0]
-  await new Promise((r) => setTimeout(r, 3000))
+  const win = await waitWindow()
+  
 
   const js = (code) => win.webContents.executeJavaScript(code)
 

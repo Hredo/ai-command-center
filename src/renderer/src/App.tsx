@@ -263,12 +263,18 @@ function Shell(): React.JSX.Element {
     setVisited((v) => (v.has(p) ? v : new Set(v).add(p)))
   }, [])
 
-  // Atajos: Ctrl+1..9 salta de sección (Cmd+1..9 en macOS).
+  // Atajos: Ctrl+1..9 salta de sección (Cmd+1..9 en macOS) y Ctrl+, abre
+  // Ajustes, que es el décimo y no tenía número.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (!modKey(e) || e.shiftKey || e.altKey) return
+      if (e.key === ',') {
+        e.preventDefault()
+        nav('settings')
+        return
+      }
       const n = Number(e.key)
-      if (n >= 1 && n <= NAV.length) {
+      if (n >= 1 && n <= Math.min(9, NAV.length)) {
         e.preventDefault()
         nav(NAV[n - 1].id)
       }

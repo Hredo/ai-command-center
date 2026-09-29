@@ -19,7 +19,9 @@
  * reinicia la ventana, no cuánto te queda; así que se enseña el gasto real y
  * la hora del reinicio, y ahí se para.
  */
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { writeFileAtomic } from './atomic'
+import { projectForPath } from './projectMatch'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { paths } from './paths'
@@ -96,7 +98,7 @@ function load(): void {
 
 function save(): void {
   try {
-    writeFileSync(INDEX(), JSON.stringify(index), 'utf8')
+    writeFileAtomic(INDEX(), JSON.stringify(index))
   } catch (err) {
     console.error('[claude] no se pudo guardar el índice:', err)
   }
@@ -433,7 +435,9 @@ export function importClaudeSessions(): number {
       providerId: 'cli:claude',
       model: st.model ?? 'claude',
       agentName: 'Claude Code',
-      projectName: projectOf(st.cwd),
+      // Si la carpeta es (o está dentro de) un proyecto tuyo, cuenta en él.
+      projectId: projectForPath(st.cwd)?.id,
+      projectName: projectForPath(st.cwd)?.name ?? projectOf(st.cwd),
       prompt: st.firstPrompt ?? '(sesión de Claude Code)',
       response: '',
       status: 'ok',

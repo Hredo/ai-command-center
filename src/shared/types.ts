@@ -74,12 +74,9 @@ export interface Agent {
   systemPrompt: string
   temperature: number
   maxTokens: number
-  topP?: number
   color: string
   icon?: string
   createdAt: number
-  /** Contexto extra: rutas relativas dentro del proyecto que se adjuntan. */
-  contextGlobs?: string[]
   /** Cuánto piensa por omisión. */
   effort?: Effort
   /** Qué puede hacer sin preguntar. Ver API_PERMISSION_MODES. */
@@ -214,6 +211,8 @@ export interface RunRecord {
   permissionMode?: string
   /** De dónde salió: de la app o de una sesión suelta en la terminal. */
   source?: 'app' | 'terminal'
+  /** Ya pasó por la poda: le falta el detalle, pero no las métricas. */
+  compacted?: boolean
 }
 
 export interface StreamDelta {
@@ -340,7 +339,6 @@ export interface Settings {
   /** Presupuesto mensual en USD para el panel de gasto. */
   monthlyBudget?: number
   arenaDefaults: string[]
-  streamChunkMs: number
   /** Avisar con una notificación del sistema al terminar una tarea. */
   notifyOnFinish: boolean
   /** Sólo notificar si la ventana no está en primer plano. */
@@ -349,6 +347,11 @@ export interface Settings {
   shellPath?: string
   /** Segundos entre sondeos automáticos de motores locales. 0 lo desactiva. */
   localPollSeconds: number
+  /**
+   * Días que una ejecución conserva todo su detalle (pasos, respuesta
+   * entera). Después se compacta y se queda con las métricas. 0: nunca.
+   */
+  historyDetailDays?: number
 }
 
 export interface AppConfig {
