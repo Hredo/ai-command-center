@@ -7,7 +7,7 @@ import { ModelPicker, type Pick } from '../components/ModelPicker'
 import { EFFORT_LABEL, EffortPicker } from '../components/AgentPanel'
 import { useStore } from '../lib/store'
 import { uid, shortModel } from '../lib/format'
-import { API_PERMISSION_MODES, type Agent, type CliAgent, type DetectedCli, type Effort } from '@shared/types'
+import { API_PERMISSION_MODES, type Agent, type CliAgent, type CliParser, type DetectedCli, type Effort } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 const PALETTE = ['#22d3ee', '#a78bfa', '#34d399', '#f59e0b', '#fb7185', '#60a5fa', '#f472b6', '#4ade80']
@@ -248,7 +248,7 @@ function CliEditor({
   const [name, setName] = useState('')
   const [command, setCommand] = useState('')
   const [args, setArgs] = useState('')
-  const [parser, setParser] = useState<'claude-stream-json' | 'opencode-json' | 'plain'>('plain')
+  const [parser, setParser] = useState<CliParser>('plain')
 
   useEffect(() => {
     if (!open) return
@@ -313,6 +313,8 @@ function CliEditor({
             <option value="plain">{t('Texto plano')}</option>
             <option value="claude-stream-json">Claude Code (stream-json)</option>
             <option value="opencode-json">OpenCode (--format json)</option>
+            <option value="codex-json">Codex (exec --json)</option>
+            <option value="gemini-stream-json">Gemini CLI (stream-json)</option>
           </Select>
         </Field>
       </div>

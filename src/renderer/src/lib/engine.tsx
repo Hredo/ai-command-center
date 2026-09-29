@@ -1158,6 +1158,19 @@ export async function sendCli(
 
   const runId = uid()
   const first = state.turns.length === 0
+  // Seguir en la sesión del propio agente: la de otro agente no vale, y si
+  // has pedido empezar de cero (o bifurcar) se respeta.
+  const sess = state.session
+  const resumeSessionId =
+    sess.cliContinue !== false && sess.cliSessionAgentId === opts.agentId ? sess.cliSessionId : undefined
+  const fork = Boolean(resumeSessionId && sess.cliForkNext)
+  // Por si el CLI no sabe retomar: la conversación hasta ahora.
+  const history =
+    sess.cliContinue !== false
+      ? state.turns
+          .filter((t) => !t.error && t.content.trim())
+          .map((t) => ({ role: t.role, content: t.content }))
+      : []
   chats.update((all) => {
     const st = all[sessionId]
     if (!st) return all
@@ -1198,13 +1211,28 @@ export async function sendCli(
       model: opts.model,
       permissionMode: opts.permissionMode,
       conversationId: sessionId,
-      kind: 'cli'
+      kind: 'cli',
+      resumeSessionId,
+      fork,
+      history: history.length ? history : undefined
     },
     runId
   )
 
   finishTurn(sessionId, runId, res.data)
-  return res.data
+  // La sesión del agente se guarda para retomarla en el turno siguiente. Si
+  // bifurcó, a partir de ahora se sigue en la nueva.
+  const run = res.data
+  if (run?.cliSessionId) {
+    patchSessionConfig(sessionId, {
+      cliSessionId: run.cliSessionId,
+      cliSessionAgentId: opts.agentId,
+      cliForkNext: false
+    })
+  } else if (fork) {
+    patchSessionConfig(sessionId, { cliForkNext: false })
+  }
+  return run
 }
 
 export function stopSession(sessionId: string): void {

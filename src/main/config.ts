@@ -57,6 +57,27 @@ function migrateDetectedClis(cfg: AppConfig): void {
       agent.parser = 'opencode-json'
       changed = true
     }
+    // 0.8: Codex, Gemini CLI y Cursor pasan a hablar en JSON, que trae su
+    // sesión (para retomarla), sus pasos y sus tokens.
+    const plainAs = (command: string, args: string[]): boolean =>
+      agent.detected === true &&
+      agent.command === command &&
+      agent.parser === 'plain' &&
+      agent.args.length === args.length &&
+      agent.args.every((a, i) => a === args[i])
+    if (plainAs('codex', ['exec', '{{prompt}}'])) {
+      agent.args = ['exec', '--json', '{{prompt}}']
+      agent.parser = 'codex-json'
+      changed = true
+    } else if (plainAs('gemini', ['-p', '{{prompt}}'])) {
+      agent.args = ['--output-format', 'stream-json', '-p', '{{prompt}}']
+      agent.parser = 'gemini-stream-json'
+      changed = true
+    } else if (plainAs('cursor-agent', ['-p', '{{prompt}}'])) {
+      agent.args = ['-p', '--output-format', 'stream-json', '{{prompt}}']
+      agent.parser = 'claude-stream-json'
+      changed = true
+    }
   }
   if (changed) {
     try {

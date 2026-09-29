@@ -6,7 +6,7 @@ import { PROVIDERS, effectiveBaseUrl } from './providers/catalog'
 import { resolveKey, mask } from './secrets'
 import { getConfig, saveConfig } from './config'
 import { isContextVariant } from './ollama'
-import type { DetectionResult, DetectedCli, DetectedServer, ProviderStatus } from '@shared/types'
+import type { CliParser, DetectionResult, DetectedCli, DetectedServer, ProviderStatus } from '@shared/types'
 
 /** CLIs de agentes conocidos, con la forma de invocarlos sin interacción. */
 export const KNOWN_CLIS: {
@@ -14,7 +14,7 @@ export const KNOWN_CLIS: {
   name: string
   command: string
   args: string[]
-  parser: 'claude-stream-json' | 'opencode-json' | 'plain'
+  parser: CliParser
 }[] = [
   {
     // Sin {{prompt}}: el prompt entra por stdin y así no hay que escaparlo.
@@ -24,8 +24,16 @@ export const KNOWN_CLIS: {
     args: ['-p', '--output-format', 'stream-json', '--verbose'],
     parser: 'claude-stream-json'
   },
-  { id: 'codex', name: 'OpenAI Codex', command: 'codex', args: ['exec', '{{prompt}}'], parser: 'plain' },
-  { id: 'gemini-cli', name: 'Gemini CLI', command: 'gemini', args: ['-p', '{{prompt}}'], parser: 'plain' },
+  // --json: un evento por línea con su sesión (thread_id), sus pasos y sus tokens.
+  { id: 'codex', name: 'OpenAI Codex', command: 'codex', args: ['exec', '--json', '{{prompt}}'], parser: 'codex-json' },
+  // stream-json: init con session_id, mensajes, herramientas y el resultado con sus tokens.
+  {
+    id: 'gemini-cli',
+    name: 'Gemini CLI',
+    command: 'gemini',
+    args: ['--output-format', 'stream-json', '-p', '{{prompt}}'],
+    parser: 'gemini-stream-json'
+  },
   { id: 'aider', name: 'Aider', command: 'aider', args: ['--message', '{{prompt}}', '--yes'], parser: 'plain' },
   {
     // --format json saca sus eventos uno por línea: de ahí salen el
@@ -40,7 +48,14 @@ export const KNOWN_CLIS: {
   { id: 'crush', name: 'Crush', command: 'crush', args: ['run', '{{prompt}}'], parser: 'plain' },
   { id: 'amp', name: 'Amp', command: 'amp', args: ['-x', '{{prompt}}'], parser: 'plain' },
   { id: 'qwen-code', name: 'Qwen Code', command: 'qwen', args: ['-p', '{{prompt}}'], parser: 'plain' },
-  { id: 'cursor-agent', name: 'Cursor Agent', command: 'cursor-agent', args: ['-p', '{{prompt}}'], parser: 'plain' },
+  // Su stream-json sigue el formato de Claude Code: init con session_id, mensajes y resultado.
+  {
+    id: 'cursor-agent',
+    name: 'Cursor Agent',
+    command: 'cursor-agent',
+    args: ['-p', '--output-format', 'stream-json', '{{prompt}}'],
+    parser: 'claude-stream-json'
+  },
   { id: 'droid', name: 'Factory Droid', command: 'droid', args: ['exec', '{{prompt}}'], parser: 'plain' },
   { id: 'llm', name: 'llm (Datasette)', command: 'llm', args: ['{{prompt}}'], parser: 'plain' }
 ]

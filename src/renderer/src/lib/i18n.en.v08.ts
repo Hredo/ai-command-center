@@ -20,5 +20,24 @@ export const enV08: Record<string, string> = {
   'Últimos 30 días': 'Last 30 days',
   'Este mes': 'This month',
   'Últimos 90 días': 'Last 90 days',
-  'Todo proyecto': 'Any project'
+  'Todo proyecto': 'Any project',
+
+  /* ------------------------------------------ Continuidad de sesión */
+  Continuidad: 'Continuity',
+  'Seguir en la misma sesión del agente': "Keep the agent's own session",
+  'Cada turno empieza de cero: el agente no recuerda los anteriores.':
+    'Each turn starts from scratch: the agent does not remember earlier ones.',
+  'Retoma la sesión {id}: recuerda lo que hizo en los turnos anteriores.':
+    'Resumes session {id}: it remembers what it did in earlier turns.',
+  'Al primer turno el agente abre su sesión; los siguientes la retoman.':
+    'The agent opens its session on the first turn; the next ones resume it.',
+  '{cmd} retoma la conversación que guarda en el proyecto.': '{cmd} resumes the conversation it keeps in the project.',
+  '{cmd} no sabe retomar su sesión: se le pasa la conversación anterior dentro del prompt.':
+    "{cmd} can't resume its session: the earlier conversation is passed inside the prompt.",
+  'El próximo turno sigue desde aquí en una sesión nueva; la original queda como está':
+    'The next turn continues from here in a new session; the original stays as it is',
+  'Bifurcará al enviar': 'Will fork on send',
+  Bifurcar: 'Fork',
+  'El próximo turno abre una sesión nueva del agente': 'The next turn opens a new agent session',
+  'Empezar de cero': 'Start over'
 }

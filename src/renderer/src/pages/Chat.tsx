@@ -11,7 +11,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
-  ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen
+  ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -36,6 +36,7 @@ import {
   API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession
 } from '@shared/types'
 import { Pane } from '../components/Resizable'
+import { resumeCaps } from '@shared/cliCaps'
 
 import { useT } from '../lib/i18n'
 import { withMod } from '../lib/platform'
@@ -162,6 +163,61 @@ const CLI_MODELS: Record<string, { id: string; label: string }[]> = {
     { id: 'sonnet', label: 'Sonnet · equilibrado' },
     { id: 'haiku', label: 'Haiku · rápido y barato' }
   ]
+}
+
+/**
+ * Si el agente sigue en su propia sesión entre turnos. Con eso recuerda lo que
+ * hizo antes sin que haya que repetírselo; se puede bifurcar (seguir desde ahí
+ * en una sesión nueva) o empezar de cero. Si su CLI no sabe retomar, se dice y
+ * la conversación anterior le llega dentro del prompt.
+ */
+function CliContinuity({ session, command }: { session: StoredSession; command: string }): React.JSX.Element {
+  const t = useT()
+  const caps = resumeCaps(command)
+  const on = session.cliContinue !== false
+  const sid = session.cliSessionAgentId === session.cliAgentId ? session.cliSessionId : undefined
+  return (
+    <Field label={t('Continuidad')}>
+      <Toggle
+        checked={on}
+        onChange={(v) => patchSessionConfig(session.id, { cliContinue: v })}
+        label={t('Seguir en la misma sesión del agente')}
+      />
+      <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
+        {!on
+          ? t('Cada turno empieza de cero: el agente no recuerda los anteriores.')
+          : caps.byId
+            ? sid
+              ? t('Retoma la sesión {id}: recuerda lo que hizo en los turnos anteriores.', { id: sid.slice(0, 8) })
+              : t('Al primer turno el agente abre su sesión; los siguientes la retoman.')
+            : caps.byFolder
+              ? t('{cmd} retoma la conversación que guarda en el proyecto.', { cmd: command })
+              : t('{cmd} no sabe retomar su sesión: se le pasa la conversación anterior dentro del prompt.', { cmd: command })}
+      </p>
+      {on && sid ? (
+        <div className="flex items-center gap-1.5 mt-2">
+          {caps.fork ? (
+            <Button
+              size="sm"
+              variant={session.cliForkNext ? 'primary' : 'ghost'}
+              onClick={() => patchSessionConfig(session.id, { cliForkNext: !session.cliForkNext })}
+              title={t('El próximo turno sigue desde aquí en una sesión nueva; la original queda como está')}
+            >
+              <GitFork size={12} /> {session.cliForkNext ? t('Bifurcará al enviar') : t('Bifurcar')}
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => patchSessionConfig(session.id, { cliSessionId: undefined, cliForkNext: false })}
+            title={t('El próximo turno abre una sesión nueva del agente')}
+          >
+            <RotateCcw size={12} /> {t('Empezar de cero')}
+          </Button>
+        </div>
+      ) : null}
+    </Field>
+  )
 }
 
 function TurnView({ turn, isCli }: { turn: Turn; isCli: boolean }): React.JSX.Element {
@@ -755,7 +811,13 @@ export default function Chat(): React.JSX.Element {
                   value={session.cliAgentId ?? ''}
                   onChange={(e) =>
                     // El modelo de un agente no vale para otro.
-                    patchSessionConfig(session.id, { cliAgentId: e.target.value || undefined, cliModel: undefined })
+                    patchSessionConfig(session.id, {
+                      cliAgentId: e.target.value || undefined,
+                      cliModel: undefined,
+                      cliSessionId: undefined,
+                      cliSessionAgentId: undefined,
+                      cliForkNext: false
+                    })
                   }
                 >
                   <option value="">{t('Elige un agente…')}</option>
@@ -821,6 +883,9 @@ export default function Chat(): React.JSX.Element {
                   </p>
                 )
               ) : null}
+
+              {/* ------------------------ Seguir en la misma sesión */}
+              {cliAgent ? <CliContinuity session={session} command={cliAgent.command} /> : null}
 
               {/* ----------------------------- Hasta dónde puede llegar */}
               {cliAgent && cliAgent.command.toLowerCase() === 'claude' ? (

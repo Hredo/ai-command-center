@@ -13,8 +13,9 @@ import { snapshot, changesSince, type GitSnapshot } from '../git'
 import { opencodeLaunch, type OpencodeLaunch } from '../opencode'
 import { killTree } from '../platform'
 import { projectForPath } from '../projectMatch'
+import { resumeArgs, resumeCaps } from '@shared/cliCaps'
 import type {
-  AgentStep, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
+  AgentStep, AgentTodo, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
 
 export type CliEventFn = (e: {
@@ -124,6 +125,35 @@ interface ClaudeCtx {
   sessionId?: string
   cwd?: string
   pending: Map<string, { step: AgentStep; tool: string; input: any }>
+  /** Texto del asistente ya recibido, para no duplicar si llega entero otra vez. */
+  said?: string
+  /** Ids de los mensajes completos ya volcados (Codex los manda al terminar cada uno). */
+  seen?: Set<string>
+}
+
+/**
+ * La lista de tareas del agente, venga de la herramienta que venga:
+ * TodoWrite de Claude Code, todowrite de OpenCode, write_todos de Gemini CLI o
+ * el todo_list de Codex. Es lo que dice el agente que le queda por hacer, y lo
+ * que se le pasa al siguiente si hay relevo.
+ */
+export function todosFrom(tool: string, input: any): AgentTodo[] | null {
+  const t = tool.toLowerCase().replace(/[^a-z]/g, '')
+  if (!['todowrite', 'writetodos', 'todolist', 'updatetodos'].includes(t)) return null
+  const list = Array.isArray(input?.todos) ? input.todos : Array.isArray(input?.items) ? input.items : null
+  if (!list) return null
+  const out: AgentTodo[] = []
+  for (const it of list) {
+    const text = String(it?.content ?? it?.text ?? it?.description ?? it?.title ?? '').trim()
+    if (!text) continue
+    const status = String(it?.status ?? '').toLowerCase()
+    out.push({
+      text: text.slice(0, 300),
+      done: it?.completed === true || status === 'completed' || status === 'done',
+      active: status === 'in_progress' || status === 'in-progress'
+    })
+  }
+  return out
 }
 
 /**
@@ -296,6 +326,8 @@ interface ParseSink {
   onStep: (step: AgentStep) => void
   onLimit: (limit: CliLimit) => void
   onSession: (id: string) => void
+  /** La lista de tareas del agente cambió. */
+  onTodos: (todos: AgentTodo[]) => void
 }
 
 function parseClaudeLine(line: string, meta: AgentMeta, sink: ParseSink, ctx: ClaudeCtx): void {
@@ -400,6 +432,8 @@ function parseClaudeLine(line: string, meta: AgentMeta, sink: ParseSink, ctx: Cl
         }
         ctx.pending.set(step.id, { step, tool, input: block.input })
         sink.onStep(step)
+        const todos = todosFrom(tool, block.input)
+        if (todos) sink.onTodos(todos)
       }
     }
     const u = evt.message.usage
@@ -473,7 +507,7 @@ function parseClaudeLine(line: string, meta: AgentMeta, sink: ParseSink, ctx: Cl
  * dentro de `part`, y de ahí salen texto, razonamiento, herramientas y —en
  * step-finish— los tokens y el coste reales del proveedor.
  */
-function parseOpencodeLine(line: string, meta: AgentMeta, sink: ParseSink): void {
+function parseOpencodeLine(line: string, meta: AgentMeta, sink: ParseSink, ctx: ClaudeCtx): void {
   let evt: any
   try {
     evt = JSON.parse(line)
@@ -482,6 +516,13 @@ function parseOpencodeLine(line: string, meta: AgentMeta, sink: ParseSink): void
   }
   const part = evt.part ?? evt
   const kind = String(part.type ?? evt.type ?? '')
+
+  // Cada evento lleva la sesión: es lo que permite retomarla con --session.
+  const sid = evt.sessionID ?? evt.sessionId ?? part.sessionID
+  if (sid && !ctx.sessionId) {
+    ctx.sessionId = String(sid)
+    sink.onSession(ctx.sessionId)
+  }
 
   // Cuando OpenCode se rinde (sin red, sin saldo, una clave mala…) lo cuenta
   // en un evento de error y sale. Sin leerlo sólo quedaba el código de salida.
@@ -512,6 +553,8 @@ function parseOpencodeLine(line: string, meta: AgentMeta, sink: ParseSink): void
     // del part identifica el paso, así que la fila se actualiza en su sitio.
     const state = String(part.state?.status ?? part.status ?? '')
     const counts = editCounts(tool, input)
+    const todos = todosFrom(tool, input)
+    if (todos) sink.onTodos(todos)
     sink.onStep({
       id: String(part.id ?? part.callID ?? tool + ':' + (path ?? '')),
       at: Date.now(),
@@ -541,6 +584,250 @@ function parseOpencodeLine(line: string, meta: AgentMeta, sink: ParseSink): void
     meta.numTurns = (meta.numTurns ?? 0) + 1
     sink.onUsage()
   }
+}
+
+/**
+ * Codex con `exec --json`: un evento por línea. `thread.started` trae la
+ * sesión; cada acción es un `item` (mensaje, razonamiento, comando, cambio de
+ * archivos, herramienta MCP, búsqueda web o lista de tareas) que empieza y
+ * termina; `turn.completed` trae los tokens del turno.
+ */
+function parseCodexLine(line: string, meta: AgentMeta, sink: ParseSink, ctx: ClaudeCtx): void {
+  let evt: any
+  try {
+    evt = JSON.parse(line)
+  } catch {
+    return
+  }
+  const type = String(evt.type ?? '')
+  if (type === 'thread.started' && evt.thread_id) {
+    if (!ctx.sessionId) {
+      ctx.sessionId = String(evt.thread_id)
+      sink.onSession(ctx.sessionId)
+    }
+    return
+  }
+  if (type === 'turn.completed' && evt.usage) {
+    const u = evt.usage
+    meta.inputTokens = (meta.inputTokens ?? 0) + (u.input_tokens ?? 0)
+    meta.outputTokens = (meta.outputTokens ?? 0) + (u.output_tokens ?? 0)
+    meta.cachedTokens = (meta.cachedTokens ?? 0) + (u.cached_input_tokens ?? 0)
+    meta.reasoningTokens = (meta.reasoningTokens ?? 0) + (u.reasoning_output_tokens ?? 0)
+    // La entrada de un turno ya incluye toda la conversación: es lo que ocupa.
+    const used = (u.input_tokens ?? 0) + (u.output_tokens ?? 0)
+    if (used > (meta.contextUsed ?? 0)) meta.contextUsed = used
+    meta.numTurns = (meta.numTurns ?? 0) + 1
+    sink.onUsage()
+    return
+  }
+  if (type === 'turn.failed' || type === 'error') {
+    const message = String(evt.error?.message ?? evt.message ?? 'error sin detalle')
+    // Codex avisa de reconexiones como «error» y sigue: sólo cuenta si no hay respuesta.
+    meta.error = message
+    sink.onStep({ id: 'error-' + randomUUID(), at: Date.now(), kind: 'note', status: 'error', detail: message })
+    return
+  }
+  if (!type.startsWith('item.') || !evt.item) return
+  const item = evt.item
+  const id = String(item.id ?? randomUUID())
+  const done = type === 'item.completed'
+  const failed = item.status === 'failed' || item.status === 'declined'
+  const status: AgentStep['status'] = failed ? 'error' : done ? 'ok' : 'running'
+
+  switch (item.type) {
+    case 'agent_message':
+      if (done && typeof item.text === 'string' && !(ctx.seen ??= new Set()).has(id)) {
+        ctx.seen.add(id)
+        sink.onText((ctx.said ? '\n\n' : '') + item.text)
+        ctx.said = (ctx.said ?? '') + item.text
+      }
+      return
+    case 'reasoning':
+      if (done && typeof item.text === 'string' && item.text.trim()) {
+        sink.onThink(item.text)
+        sink.onStep({ id, at: Date.now(), kind: 'thinking', detail: item.text, status: 'ok' })
+      }
+      return
+    case 'command_execution':
+      sink.onTouch(String(item.command ?? ''), 'run')
+      sink.onStep({
+        id,
+        at: Date.now(),
+        kind: 'tool',
+        tool: 'Bash',
+        target: oneLine(String(item.command ?? '')),
+        status: done && typeof item.exit_code === 'number' && item.exit_code !== 0 ? 'error' : status,
+        detail:
+          typeof item.aggregated_output === 'string' && item.aggregated_output.trim()
+            ? oneLine(item.aggregated_output, 160)
+            : undefined
+      })
+      return
+    case 'file_change': {
+      const changes: any[] = Array.isArray(item.changes) ? item.changes : []
+      for (const c of changes) if (c?.path) sink.onTouch(String(c.path), c.kind === 'add' ? 'write' : 'edit')
+      sink.onStep({
+        id,
+        at: Date.now(),
+        kind: 'tool',
+        tool: 'Edit',
+        target: changes
+          .map((c) => shortPath(String(c?.path ?? ''), ctx.cwd))
+          .filter(Boolean)
+          .join(', '),
+        status
+      })
+      return
+    }
+    case 'mcp_tool_call':
+      sink.onStep({
+        id,
+        at: Date.now(),
+        kind: 'tool',
+        tool: `${item.tool ?? 'herramienta'} (${item.server ?? 'mcp'})`,
+        status
+      })
+      return
+    case 'web_search':
+      sink.onStep({ id, at: Date.now(), kind: 'tool', tool: 'WebSearch', target: oneLine(String(item.query ?? '')), status })
+      return
+    case 'todo_list': {
+      const todos = todosFrom('todo_list', item)
+      if (todos) sink.onTodos(todos)
+      return
+    }
+    case 'error':
+      sink.onStep({ id, at: Date.now(), kind: 'note', status: 'error', detail: String(item.message ?? 'error') })
+      return
+    default:
+      return
+  }
+}
+
+/**
+ * Gemini CLI con `--output-format stream-json`. `init` trae la sesión y el
+ * modelo; los mensajes del asistente llegan a trozos; cada herramienta es un
+ * `tool_use` que cierra su `tool_result`; `result` trae los tokens.
+ */
+function parseGeminiLine(line: string, meta: AgentMeta, sink: ParseSink, ctx: ClaudeCtx): void {
+  let evt: any
+  try {
+    evt = JSON.parse(line)
+  } catch {
+    return
+  }
+  const type = String(evt.type ?? '')
+  if (type === 'init') {
+    if (evt.model) meta.model = String(evt.model)
+    if (evt.session_id && !ctx.sessionId) {
+      ctx.sessionId = String(evt.session_id)
+      sink.onSession(ctx.sessionId)
+    }
+    return
+  }
+  if (type === 'message' && evt.role === 'assistant' && typeof evt.content === 'string') {
+    const said = ctx.said ?? ''
+    // Normalmente llega a trozos (delta). Si alguna versión manda el texto
+    // entero acumulado, sólo se añade lo que falta.
+    const add = evt.delta === false && evt.content.startsWith(said) ? evt.content.slice(said.length) : evt.content
+    if (add) {
+      ctx.said = said + add
+      sink.onText(add)
+    }
+    return
+  }
+  if (type === 'tool_use') {
+    const tool = String(evt.tool_name ?? evt.name ?? '')
+    const input = evt.parameters ?? evt.input
+    const plain = tool.replace(/_/g, '')
+    const k = touchKind(plain)
+    const path = pathFromToolInput(input) ?? (typeof input?.absolute_path === 'string' ? input.absolute_path : undefined)
+    if (k && path) sink.onTouch(path, k)
+    const step: AgentStep = {
+      id: String(evt.tool_id ?? randomUUID()),
+      at: Date.now(),
+      kind: 'tool',
+      tool: toolLabel(tool),
+      target: describeTool(plain, input, ctx.cwd) || (path ? shortPath(path, ctx.cwd) : ''),
+      status: 'running'
+    }
+    ctx.pending.set(step.id, { step, tool, input })
+    sink.onStep(step)
+    const todos = todosFrom(tool, input)
+    if (todos) sink.onTodos(todos)
+    return
+  }
+  if (type === 'tool_result') {
+    const open = ctx.pending.get(String(evt.tool_id))
+    if (!open) return
+    ctx.pending.delete(String(evt.tool_id))
+    // write_file y replace son sus Write y Edit.
+    const asClaude = /^write/.test(open.tool) ? 'write' : /^(replace|edit)/.test(open.tool) ? 'edit' : open.tool
+    const counts = editCounts(asClaude, {
+      ...open.input,
+      new_string: open.input?.new_string ?? open.input?.newString,
+      old_string: open.input?.old_string ?? open.input?.oldString
+    })
+    sink.onStep({
+      ...open.step,
+      status: evt.status === 'error' ? 'error' : 'ok',
+      durationMs: Date.now() - open.step.at,
+      added: counts?.added || undefined,
+      removed: counts?.removed || undefined,
+      detail:
+        typeof evt.output === 'string' && evt.output.trim()
+          ? oneLine(evt.output, 160)
+          : typeof evt.error?.message === 'string'
+            ? oneLine(evt.error.message, 160)
+            : undefined
+    })
+    return
+  }
+  if (type === 'error') {
+    const message = String(evt.message ?? evt.error?.message ?? 'error sin detalle')
+    meta.error = message
+    sink.onStep({ id: 'error-' + randomUUID(), at: Date.now(), kind: 'note', status: 'error', detail: message })
+    return
+  }
+  if (type === 'result') {
+    const st = evt.stats ?? {}
+    if (typeof st.input_tokens === 'number') meta.inputTokens = st.input_tokens
+    if (typeof st.output_tokens === 'number') meta.outputTokens = st.output_tokens
+    const cached = st.cached ?? st.cached_tokens
+    if (typeof cached === 'number') meta.cachedTokens = cached
+    if (typeof st.duration_ms === 'number') meta.durationMs = st.duration_ms
+    if (typeof st.total_cost_usd === 'number') meta.costUsd = st.total_cost_usd
+    const total = typeof st.total_tokens === 'number' ? st.total_tokens : (st.input_tokens ?? 0) + (st.output_tokens ?? 0)
+    if (total > (meta.contextUsed ?? 0)) meta.contextUsed = total
+    if (evt.status && evt.status !== 'success' && !meta.error) meta.error = String(evt.error?.message ?? evt.status)
+    for (const [id, open] of ctx.pending) {
+      sink.onStep({ ...open.step, status: 'ok', durationMs: Date.now() - open.step.at })
+      ctx.pending.delete(id)
+    }
+    sink.onUsage()
+  }
+}
+
+/**
+ * Cuando el CLI no sabe retomar su sesión, la conversación anterior va dentro
+ * del prompt. Se recorta a los últimos turnos y cada uno hasta un tope: lo
+ * justo para que no empiece de cero sin inflar la petición.
+ */
+function withHistory(prompt: string, history: CliRunOptions['history']): string {
+  const turns = (history ?? []).filter((t) => t.content?.trim()).slice(-8)
+  if (!turns.length) return prompt
+  const body = turns
+    .map((t) => {
+      const text = t.content.length > 1500 ? t.content.slice(0, 1500) + '…' : t.content
+      return `${t.role === 'user' ? 'Usuario' : 'Tú'}: ${text}`
+    })
+    .join('\n\n')
+  return (
+    'Conversación anterior en esta sesión (tu CLI no puede retomarla por sí solo, así que va aquí):\n\n' +
+    body +
+    '\n\n---\n\nPetición nueva:\n' +
+    prompt
+  )
 }
 
 /** Lo que puede tardar la comprobación de DNS antes de darla por perdida. */
@@ -700,7 +987,17 @@ function startCliAgent(
 
     // A un agente de línea de comandos se le pasan las rutas de los adjuntos:
     // tiene herramientas para abrirlos y así el prompt no se infla.
-    const prompt = composePrompt(opts.prompt, opts.attachments, 'cli')
+    const composed = composePrompt(opts.prompt, opts.attachments, 'cli')
+
+    // Retomar la sesión del propio agente, para que recuerde el turno anterior.
+    // Si su CLI no sabe, la conversación va dentro del prompt: nunca empieza
+    // de cero sin decirlo.
+    const resume =
+      opts.resumeSessionId || (opts.history?.length && resumeCaps(agent.command).byFolder)
+        ? resumeArgs(agent.command, opts.resumeSessionId, opts.fork)
+        : null
+    const fallbackHistory = !resume && Boolean(opts.history?.length)
+    const prompt = fallbackHistory ? withHistory(composed, opts.history) : composed
 
     // OpenCode llega con modelo y esfuerzo ya resueltos; el resto, por su tabla.
     const effortArgs = prep ? [] : cliEffortArgs(agent.command, opts.effort)
@@ -708,12 +1005,23 @@ function startCliAgent(
     // tenga guardados el agente.
     const modelArgs = prep ? prep.args : cliModelArgs(agent.command, opts.model ?? agent.model)
     const permissionArgs = cliPermissionArgs(agent.command, opts.permissionMode ?? agent.permissionMode)
-    const extra = [...(effortArgs ?? []), ...(modelArgs ?? []), ...(permissionArgs ?? [])]
+    const extra = [
+      ...(resume && !resume.beforePrompt ? resume.args : []),
+      ...(effortArgs ?? []),
+      ...(modelArgs ?? []),
+      ...(permissionArgs ?? [])
+    ]
 
     const usesArgPrompt = agent.args.some((a) => a.includes('{{prompt}}'))
-    const args = injectArgs(agent.args, extra).map((a) =>
-      a.replace('{{prompt}}', prompt).replace('{{projectPath}}', opts.projectPath)
-    )
+    let template = injectArgs(agent.args, extra)
+    // Codex retoma con un subcomando (`exec … resume <id> "prompt"`) que va
+    // detrás de las opciones y justo delante del prompt.
+    if (resume?.beforePrompt) {
+      const at = template.findIndex((a) => a.includes('{{prompt}}'))
+      template = at === -1 ? [...template, ...resume.args] : [...template.slice(0, at), ...resume.args, ...template.slice(at)]
+    }
+    // Con función: un prompt con «$&» o «$'» no debe interpretarse como patrón de sustitución.
+    const args = template.map((a) => a.replace('{{prompt}}', () => prompt).replace('{{projectPath}}', () => opts.projectPath))
 
     // En la Arena se puede lanzar un CLI sin proyecto: entonces trabaja en el
     // directorio del usuario en vez de fallar por un cwd que no existe.
@@ -808,6 +1116,27 @@ function startCliAgent(
       status: 'ok',
       detail: `$ ${agent.command} ${args.join(' ')}`
     })
+    if (resume) {
+      onStep({
+        id: 'resume',
+        at: Date.now(),
+        kind: 'note',
+        status: 'ok',
+        detail: opts.resumeSessionId
+          ? opts.fork
+            ? `Bifurca la sesión ${opts.resumeSessionId.slice(0, 8)}: sigue desde ella en una nueva`
+            : `Retoma su sesión ${opts.resumeSessionId.slice(0, 8)}: recuerda lo anterior`
+          : 'Retoma la conversación que guarda en el proyecto'
+      })
+    } else if (fallbackHistory) {
+      onStep({
+        id: 'resume',
+        at: Date.now(),
+        kind: 'note',
+        status: 'ok',
+        detail: `${agent.command} no puede retomar su sesión: se le pasa la conversación anterior en el prompt`
+      })
+    }
     prep?.notes.forEach((detail, i) =>
       onStep({ id: `opencode-${i}`, at: Date.now(), kind: 'note', status: 'ok', detail })
     )
@@ -852,7 +1181,12 @@ function startCliAgent(
       // Lo que dice el propio agente manda; el catálogo es el respaldo.
       if (meta.contextLimit) contextLimit = meta.contextLimit
       if (contextLimit === undefined && meta.model) {
-        contextLimit = contextLimitFor(agent.parser === 'claude-stream-json' ? 'anthropic' : '', meta.model)
+        const family =
+          agent.parser === 'claude-stream-json' ? 'anthropic'
+            : agent.parser === 'codex-json' ? 'openai'
+              : agent.parser === 'gemini-stream-json' ? 'google'
+                : ''
+        contextLimit = contextLimitFor(family, meta.model)
       }
       onEvent({ type: 'usage', contextUsed: meta.contextUsed, contextLimit })
       // El agente de línea de comandos también cuenta como «lo que estoy
@@ -866,7 +1200,12 @@ function startCliAgent(
       })
     }
 
-    const sink: ParseSink = { onText, onThink, onTouch, onUsage, onStep, onLimit, onSession }
+    let todos: AgentTodo[] | undefined
+    const onTodos = (list: AgentTodo[]): void => {
+      todos = list
+    }
+
+    const sink: ParseSink = { onText, onThink, onTouch, onUsage, onStep, onLimit, onSession, onTodos }
 
     // Mientras trabaja se va mirando qué archivos cambian, para que no haya
     // que esperar al final para ver dónde está tocando.
@@ -890,7 +1229,7 @@ function startCliAgent(
     child.stdout?.on('data', (chunk: Buffer) => {
       const s = chunk.toString('utf8')
       rawOut += s
-      if (agent.parser === 'claude-stream-json' || agent.parser === 'opencode-json') {
+      if (agent.parser !== 'plain') {
         stdoutBuf += s
         let nl: number
         while ((nl = stdoutBuf.indexOf('\n')) !== -1) {
@@ -899,7 +1238,9 @@ function startCliAgent(
           if (line) {
             const before = text.length
             if (agent.parser === 'claude-stream-json') parseClaudeLine(line, meta, sink, claudeCtx)
-            else parseOpencodeLine(line, meta, sink)
+            else if (agent.parser === 'codex-json') parseCodexLine(line, meta, sink, claudeCtx)
+            else if (agent.parser === 'gemini-stream-json') parseGeminiLine(line, meta, sink, claudeCtx)
+            else parseOpencodeLine(line, meta, sink, claudeCtx)
             if (text.length > before) onEvent({ type: 'stdout', data: text.slice(before) })
           }
         }
@@ -968,7 +1309,11 @@ function startCliAgent(
         filesTouched: touches.size ? touches.list() : undefined,
         steps: steps.length ? steps : undefined,
         cliLimit,
-        cliSessionId: claudeCtx.sessionId,
+        // Si el agente no dijo su sesión pero se retomó una, es esa misma.
+        cliSessionId: claudeCtx.sessionId ?? (resume && !opts.fork ? opts.resumeSessionId : undefined),
+        resumedFrom: resume ? opts.resumeSessionId : undefined,
+        forked: resume && opts.fork ? true : undefined,
+        todos,
         permissionMode: meta.permissionMode ?? opts.permissionMode ?? agent.permissionMode,
         source: 'app'
       }

@@ -83,6 +83,12 @@ export interface Agent {
   permissionMode?: string
 }
 
+/**
+ * Cómo se lee la salida de un agente de línea de comandos. Los que hablan en
+ * JSON dan pasos, tokens y el id de su sesión; `plain` es sólo texto.
+ */
+export type CliParser = 'claude-stream-json' | 'opencode-json' | 'codex-json' | 'gemini-stream-json' | 'plain'
+
 /** Definición de un agente de línea de comandos (claude, codex, aider...). */
 export interface CliAgent {
   id: string
@@ -93,7 +99,7 @@ export interface CliAgent {
   /** Plantilla de argumentos. {{prompt}} se sustituye por el prompt. */
   args: string[]
   /** Formato de salida para extraer métricas. */
-  parser: 'claude-stream-json' | 'opencode-json' | 'plain'
+  parser: CliParser
   color: string
   detected?: boolean
   path?: string
@@ -207,6 +213,12 @@ export interface RunRecord {
   cliLimit?: CliLimit
   /** Id de la sesión del CLI, para casar con su transcripción en disco. */
   cliSessionId?: string
+  /** Sesión del agente que retomó, si continuaba una anterior. */
+  resumedFrom?: string
+  /** Retomó en una sesión nueva (bifurcación). */
+  forked?: boolean
+  /** La última lista de tareas que llevaba el agente. */
+  todos?: AgentTodo[]
   /** Qué podía hacer sin preguntar. */
   permissionMode?: string
   /** De dónde salió: de la app o de una sesión suelta en la terminal. */
@@ -504,6 +516,14 @@ export interface AgentStep {
   approval?: 'pending' | 'approved' | 'denied'
 }
 
+/** Una tarea de la lista que lleva el propio agente (TodoWrite y compañía). */
+export interface AgentTodo {
+  text: string
+  done: boolean
+  /** La que tiene entre manos ahora. */
+  active?: boolean
+}
+
 /**
  * Ventana de uso del plan, tal como la anuncia el propio CLI. Claude Code
  * manda un `rate_limit_event` con el tipo de ventana y cuándo se reinicia.
@@ -752,6 +772,15 @@ export interface CliRunOptions {
   model?: string
   /** Qué puede hacer sin preguntar. Ver CLI_PERMISSION_MODES. */
   permissionMode?: string
+  /** Sesión del propio agente que se retoma, para que recuerde lo anterior. */
+  resumeSessionId?: string
+  /** Retomar en una sesión nueva, dejando la original como estaba. */
+  fork?: boolean
+  /**
+   * La conversación hasta ahora. Sólo se usa si el CLI no sabe retomar su
+   * sesión: entonces va dentro del prompt para que no empiece de cero.
+   */
+  history?: { role: 'user' | 'assistant'; content: string }[]
 }
 
 export interface CliEvent {
@@ -947,6 +976,14 @@ export interface StoredSession {
   agentMode?: boolean
   /** Sesión de la pestaña Agente de un proyecto que trabaja con un modelo por API. */
   projectTab?: boolean
+  /** Sesión propia del agente de línea de comandos, para retomarla en el turno siguiente. */
+  cliSessionId?: string
+  /** De qué agente es esa sesión: la de uno no vale para otro. */
+  cliSessionAgentId?: string
+  /** Seguir en la sesión del agente entre turnos. Sin valor cuenta como sí. */
+  cliContinue?: boolean
+  /** El próximo turno retoma en una sesión nueva (bifurca). */
+  cliForkNext?: boolean
   turns: SessionTurn[]
   pinned?: boolean
   /** Cerrada: sigue guardada y se puede reabrir. */
