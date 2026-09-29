@@ -134,6 +134,18 @@ function makeBin(name, script) {
 
 const BINS = {}
 
+/** Un agente que toca el repositorio: edita, crea, borra y cambia lo que ya estaba sin confirmar. */
+const EDITOR_FIXTURE = `
+const fs = require('node:fs')
+const path = require('node:path')
+fs.appendFileSync('app.js', 'del-agente\\n')
+fs.mkdirSync('nuevo', { recursive: true })
+fs.writeFileSync(path.join('nuevo', 'creado.txt'), 'lo creó el agente\\n')
+fs.rmSync(path.join('sub', 'nota.txt'))
+fs.writeFileSync('previo.txt', 'pisado por el agente\\n')
+process.stdout.write('hecho')
+`
+
 function setupFixtures() {
   fs.mkdirSync(FIXTURES, { recursive: true })
   fs.mkdirSync(HOME, { recursive: true })
@@ -142,11 +154,13 @@ function setupFixtures() {
   fs.writeFileSync(path.join(FIXTURES, 'gemini.js'), GEMINI_FIXTURE, 'utf8')
   fs.writeFileSync(path.join(FIXTURES, 'opencode.js'), OPENCODE_FIXTURE, 'utf8')
   fs.writeFileSync(path.join(FIXTURES, 'plain.js'), PLAIN_FIXTURE, 'utf8')
+  fs.writeFileSync(path.join(FIXTURES, 'editor.js'), EDITOR_FIXTURE, 'utf8')
   BINS.claude = makeBin('claude', 'claude.js')
   BINS.codex = makeBin('codex', 'codex.js')
   BINS.gemini = makeBin('gemini', 'gemini.js')
   BINS.opencode = makeBin('opencode', 'opencode.js')
   BINS.plain = makeBin('otro-cli', 'plain.js')
+  BINS.editor = makeBin('editor-cli', 'editor.js')
 }
 
 /* ------------------------------------------------------------------ *
@@ -751,6 +765,70 @@ app.whenReady().then(async () => {
   const ua = cm.usage?.find((u) => u.providerId === cm.a?.providerId && u.model === cm.a?.model)
   log(ua?.runs === 2 && ua?.elo === 1531 && Math.abs((ua?.cost ?? 0) - 0.02) < 1e-9, 'LO MEDIDO DE CADA MODELO LLEVA SU ELO', ua ? `${ua.runs} ejecuciones, ${ua.cost} $, Elo ${ua.elo}` : 'no aparece')
   log(cm.favOn?.includes('openrouter:otro-modelo') && cm.cfgOn?.includes('openrouter:otro-modelo') && !cm.favOff?.includes('openrouter:otro-modelo'), 'los favoritos se guardan y se quitan')
+
+  /* -------------------------------------------------------------- *
+   * B1 · Puntos de control y deshacer un turno                      *
+   * -------------------------------------------------------------- */
+  // Antes del turno: un cambio sin confirmar, un fichero nuevo y algo preparado en el índice.
+  fs.writeFileSync(path.join(REPO, 'app.js'), 'uno\ndos\ntres\nsin-confirmar\n', 'utf8')
+  fs.writeFileSync(path.join(REPO, 'previo.txt'), 'mío, sin seguir\n', 'utf8')
+  fs.writeFileSync(path.join(REPO, 'preparado.txt'), 'en el índice\n', 'utf8')
+  git(['add', 'preparado.txt'])
+  const indexBefore = git(['diff', '--cached', '--name-only'])
+  const headBefore = git(['rev-parse', 'HEAD'])
+
+  const b1 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${bins}
+    const api = window.api
+    const engine = window.__accEngine
+    await api.agents.saveCli({ id: 'editor', name: 'Editor', type: 'cli', command: bins.editor, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    const sid = await engine.newSession('cli', { cliAgentId: 'editor' })
+    const run = await engine.sendCli(sid, { prompt: 'cambia cosas', agentId: 'editor', projectPath: repo })
+    const preview = run.checkpoint ? (await api.checkpoints.preview(run.checkpoint.root, run.id)).data : null
+    await engine.deleteSession(sid)
+    await api.agents.removeCli('editor')
+    return { run, preview }
+  })()`)
+  const read = (rel) => (fs.existsSync(path.join(REPO, rel)) ? fs.readFileSync(path.join(REPO, rel), 'utf8') : null)
+  const afterAgent = { app: read('app.js'), creado: read('nuevo/creado.txt'), nota: read('sub/nota.txt') }
+  log(Boolean(b1.run?.checkpoint?.commit) && afterAgent.app?.includes('del-agente') && afterAgent.creado && afterAgent.nota === null, 'ANTES DEL TURNO SE GUARDA UN PUNTO DE CONTROL', b1.run?.checkpoint?.commit?.slice(0, 10))
+  log(
+    git(['diff', '--cached', '--name-only']) === indexBefore && git(['stash', 'list']) === '' && git(['rev-parse', 'HEAD']) === headBefore,
+    'la foto no toca el índice, el stash ni la rama'
+  )
+  const ckCommit = b1.run?.checkpoint?.commit ?? 'HEAD'
+  log(
+    !git(['log', '--oneline']).includes('acc:') && git(['branch', '--contains', ckCommit]) === '',
+    'el punto de control vive fuera de las ramas',
+    git(['for-each-ref', '--format=%(refname)', 'refs/acc/checkpoints']).split('\n').length + ' refs'
+  )
+  const pv = b1.preview
+  log(
+    pv && ['app.js', 'previo.txt', 'sub/nota.txt'].every((f) => pv.restore.includes(f)) && pv.remove.includes('nuevo/creado.txt') && pv.headMoved === false,
+    'LA VISTA PREVIA DICE QUÉ VUELVE Y QUÉ SE BORRA',
+    pv ? `vuelven ${pv.restore.join(', ')} · se borran ${pv.remove.join(', ')}` : 'sin vista previa'
+  )
+
+  const undo = await js(`window.api.checkpoints.undo(${JSON.stringify(b1.run?.checkpoint?.root ?? '')}, ${JSON.stringify(b1.run?.id ?? '')}).then((r) => r)`)
+  log(
+    undo?.ok && read('app.js') === 'uno\ndos\ntres\nsin-confirmar\n' && read('sub/nota.txt') === 'hola\n' &&
+      read('previo.txt') === 'mío, sin seguir\n' && read('nuevo/creado.txt') === null && !fs.existsSync(path.join(REPO, 'nuevo')),
+    'DESHACER DEVUELVE EL ÁRBOL A COMO ESTABA, CON LO SIN CONFIRMAR',
+    undo?.error ?? `app.js: ${JSON.stringify(read('app.js'))}`
+  )
+  log(git(['diff', '--cached', '--name-only']) === indexBefore, 'deshacer tampoco toca lo preparado en el índice', git(['diff', '--cached', '--name-only']))
+  const redo = await js(`window.api.checkpoints.undo(${JSON.stringify(b1.run?.checkpoint?.root ?? '')}, ${JSON.stringify(undo?.data?.safetyId ?? '')}).then((r) => r)`)
+  log(
+    redo?.ok && read('app.js')?.includes('del-agente') && read('nuevo/creado.txt') === 'lo creó el agente\n' && read('sub/nota.txt') === null,
+    'Y EL DESHACER TAMBIÉN SE DESHACE',
+    redo?.error ?? ''
+  )
+  const bad = await js(`window.api.checkpoints.undo(${JSON.stringify(REPO)}, '../../etc').then((r) => r)`)
+  log(bad?.ok === false, 'un id de punto de control raro se rechaza', bad?.error)
+  // Se deja el repositorio como al principio para lo que venga detrás.
+  git(['reset', '-q', '--hard'])
+  git(['clean', '-qfd'])
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

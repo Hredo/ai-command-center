@@ -396,6 +396,22 @@ export async function saveSessionNow(id: string): Promise<void> {
   await window.api.sessions.save({ ...state.session, turns: state.turns.map(toStoredTurn), updatedAt: Date.now() })
 }
 
+/** Marca un turno como deshecho (su punto de control ya se aplicó), o lo desmarca al rehacer. */
+export function markTurnUndone(sessionId: string, turnId: string, undone = true): void {
+  chats.update((all) => {
+    const st = all[sessionId]
+    if (!st) return all
+    return {
+      ...all,
+      [sessionId]: {
+        ...st,
+        turns: st.turns.map((x) => (x.id === turnId && x.metrics ? { ...x, metrics: { ...x.metrics, undone } } : x))
+      }
+    }
+  })
+  schedulePersist(sessionId)
+}
+
 /** Fuerza el guardado inmediato de todo lo pendiente. */
 export function flushPersist(): void {
   for (const [id, timer] of saveTimers) {
@@ -1023,7 +1039,8 @@ function metricsOf(run: RunRecord): TurnMetrics {
     effort: run.effort,
     branch: run.branch,
     cliLimit: run.cliLimit,
-    permissionMode: run.permissionMode
+    permissionMode: run.permissionMode,
+    checkpoint: run.checkpoint
   }
 }
 

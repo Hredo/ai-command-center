@@ -321,6 +321,13 @@ const api = {
       }
     }
   },
+  /** Puntos de control: deshacer lo que hizo un turno de un agente. */
+  checkpoints: {
+    preview: (root: string, id: string) =>
+      call<{ restore: string[]; remove: string[]; headMoved: boolean } | null>('checkpoints:preview', root, id),
+    undo: (root: string, id: string) =>
+      call<{ restore: string[]; remove: string[]; headMoved: boolean; safetyId?: string }>('checkpoints:undo', root, id)
+  },
   /** Cupos de todas las IAs, presupuestos y avisos. */
   quotas: {
     get: (force?: boolean) => call<QuotaReport>('quotas:get', force),

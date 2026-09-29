@@ -36,6 +36,7 @@ import { getConfig, updateSettings } from './config'
 import { quotaReport, pokeQuotas } from './quotas'
 import { statusLineInfo, installStatusLine, uninstallStatusLine } from './quotas/claudeStatusLine'
 import { ADMIN_KEYS, adminKey } from './quotas/remote'
+import { previewUndo, undoCheckpoint } from './checkpoints'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource
@@ -264,6 +265,25 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   /* ------------------------- Sesiones de otras herramientas ------------------- */
 
   handle('external:refresh', () => refreshExternal(true))
+
+  /* ---------------------------- Puntos de control ----------------------------- */
+
+  const ckArgs = (root: unknown, id: unknown): { root: string; id: string } => {
+    if (typeof root !== 'string' || !root || typeof id !== 'string' || !/^[\w.-]{1,120}$/.test(id)) {
+      throw new Error('punto de control no válido')
+    }
+    return { root, id }
+  }
+  handle('checkpoints:preview', (root: string, id: string) => {
+    const a = ckArgs(root, id)
+    return previewUndo(a.root, a.id)
+  })
+  handle('checkpoints:undo', async (root: string, id: string) => {
+    const a = ckArgs(root, id)
+    const r = await undoCheckpoint(a.root, a.id)
+    pokeRepo(a.root)
+    return r
+  })
 
   /* ---------------------------------- Cupos ----------------------------------- */
 

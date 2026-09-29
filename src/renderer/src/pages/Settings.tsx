@@ -504,6 +504,24 @@ export default function Settings(): React.JSX.Element {
             </Panel>
 
             <Panel>
+              <PanelHeader
+                title={t('Puntos de control')}
+                icon={<HardDrive size={14} />}
+                subtitle={t('deshacer lo que hizo un agente en un turno')}
+              />
+              <div className="p-4 space-y-2">
+                <Toggle
+                  checked={s.checkpoints !== false}
+                  onChange={(v) => void setSetting({ checkpoints: v })}
+                  label={t('Guardar una foto del repositorio antes de cada turno de un agente')}
+                />
+                <p className="text-[11.5px] text-dim leading-relaxed">
+                  {t('Es un commit suelto en refs/acc/checkpoints: no toca tus ramas, tu índice ni tu stash, y no sale en git log. Se quedan los de los últimos 30 días. En repositorios enormes cuesta unos segundos por turno.')}
+                </p>
+              </div>
+            </Panel>
+
+            <Panel>
               <PanelHeader title={t('Herramientas externas')} icon={<Terminal size={14} />} />
               <div className="p-4 grid grid-cols-2 gap-4">
                 <Field label="Editor" hint={t('Comando para «Abrir en VS Code» desde un proyecto')}>

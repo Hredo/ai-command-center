@@ -6,6 +6,7 @@
  */
 import { getConfig } from './config'
 import { compactRuns, type CompactResult } from './runs'
+import { pruneCheckpoints } from './checkpoints'
 
 /** Días de detalle completo si el usuario no ha dicho otra cosa. */
 export const DEFAULT_DETAIL_DAYS = 180
@@ -30,6 +31,16 @@ function safeRun(): void {
   } catch (err) {
     console.error('[mantenimiento] no se pudo podar el histórico:', err)
   }
+  // Los puntos de control de más de un mes, o de sobra, se quitan.
+  void (async () => {
+    for (const p of getConfig().projects) {
+      try {
+        await pruneCheckpoints(p.path)
+      } catch {
+        /* un proyecto que ya no está */
+      }
+    }
+  })()
 }
 
 export function startMaintenance(): void {

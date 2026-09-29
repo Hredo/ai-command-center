@@ -359,5 +359,32 @@ export const enV08: Record<string, string> = {
   Errores: 'Errors',
   'y {n} más': 'and {n} more',
   '{n} resultados': '{n} results',
-  imagen: 'image'
+  imagen: 'image',
+
+  /* ------------------------------------------------ Puntos de control */
+  'Este turno ya no tiene punto de control': 'This turn no longer has a checkpoint',
+  'No se pudo deshacer': "Couldn't undo",
+  'Turno deshecho: {restored} ficheros restaurados y {removed} borrados.': 'Turn undone: {restored} files restored and {removed} removed.',
+  Rehacer: 'Redo',
+  'Todo vuelve a estar como antes de deshacer': 'Everything is back to how it was before undoing',
+  'No se pudo rehacer': "Couldn't redo",
+  'Se deshizo este turno; lo de antes de deshacer quedó guardado': 'This turn was undone; the state before undoing was saved',
+  deshecho: 'undone',
+  'Devolver el repositorio a como estaba antes de este turno': 'Put the repository back to how it was before this turn',
+  'Deshacer este turno': 'Undo this turn',
+  Deshacer: 'Undo',
+  'Comparando con la foto de antes del turno…': 'Comparing with the snapshot from before the turn…',
+  'No hay nada que deshacer: el repositorio está como antes del turno.': 'Nothing to undo: the repository is as it was before the turn.',
+  'Los ficheros vuelven a como estaban antes de que el agente empezara, incluido lo que tuvieras sin confirmar. Antes se guarda una foto de cómo está todo ahora, por si quieres volver.':
+    'Files go back to how they were before the agent started, including anything you had uncommitted. A snapshot of how everything is now is saved first, in case you want to go back.',
+  'Vuelven a como estaban ({n})': 'Restored ({n})',
+  'Se borran: los creó el turno ({n})': 'Removed: the turn created them ({n})',
+  'El agente hizo commits durante el turno. Esos commits no se tocan: los ficheros vuelven, pero la historia se queda como está.':
+    "The agent made commits during the turn. Those commits aren't touched: the files go back, but the history stays as it is.",
+  'Lo que esté en .gitignore no entra en la foto, así que no se restaura.': "Anything in .gitignore isn't in the snapshot, so it isn't restored.",
+  'Puntos de control': 'Checkpoints',
+  'deshacer lo que hizo un agente en un turno': 'undo what an agent did in a turn',
+  'Guardar una foto del repositorio antes de cada turno de un agente': "Save a snapshot of the repository before each agent turn",
+  'Es un commit suelto en refs/acc/checkpoints: no toca tus ramas, tu índice ni tu stash, y no sale en git log. Se quedan los de los últimos 30 días. En repositorios enormes cuesta unos segundos por turno.':
+    "It's a loose commit under refs/acc/checkpoints: it doesn't touch your branches, index or stash, and doesn't show in git log. The last 30 days are kept. In huge repositories it costs a few seconds per turn."
 }

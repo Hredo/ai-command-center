@@ -15,6 +15,7 @@ import { killTree } from '../platform'
 import { projectForPath } from '../projectMatch'
 import { resumeArgs, resumeCaps } from '@shared/cliCaps'
 import { budgetBlock } from '../quotas/budgets'
+import { createCheckpoint, type Checkpoint } from '../checkpoints'
 import type {
   AgentStep, AgentTodo, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
@@ -904,6 +905,11 @@ export async function runCliAgent(
       gitSnap = null
     }
   }
+  // Foto completa del árbol de trabajo para poder deshacer el turno.
+  const checkpoint =
+    gitSnap && getConfig().settings.checkpoints !== false
+      ? await createCheckpoint(gitSnap.cwd, runId).catch(() => null)
+      : null
   // OpenCode tiene que saber antes de arrancar con qué modelo va: si es de
   // Ollama hay que encenderlo y pasarle su configuración (ver opencode.ts).
   const agent = getConfig().cliAgents.find((a) => a.id === opts.agentId)
@@ -913,7 +919,7 @@ export async function runCliAgent(
       e instanceof Error ? e : new Error(String(e))
     )
   }
-  return startCliAgent(opts, onEvent, runId, gitSnap, prep)
+  return startCliAgent(opts, onEvent, runId, gitSnap, prep, checkpoint)
 }
 
 function isOpencode(command: string): boolean {
@@ -925,7 +931,8 @@ function startCliAgent(
   onEvent: CliEventFn,
   runId: string,
   gitSnap: GitSnapshot | null,
-  prep?: OpencodeLaunch | Error
+  prep?: OpencodeLaunch | Error,
+  checkpoint?: Checkpoint | null
 ): Promise<RunRecord> {
   return new Promise((resolve) => {
     const cfg = getConfig()
@@ -965,7 +972,8 @@ function startCliAgent(
       costTotal: 0,
       costEstimated: true,
       // Aunque el agente no llegue a arrancar, lo que se le pidió queda dicho.
-      effort: opts.effort && opts.effort !== 'auto' ? opts.effort : undefined
+      effort: opts.effort && opts.effort !== 'auto' ? opts.effort : undefined,
+      checkpoint: checkpoint ?? undefined
     })
 
     if (!agent) {

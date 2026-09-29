@@ -278,6 +278,14 @@ export interface RunRecord {
   source?: 'app' | 'terminal'
   /** Ya pasó por la poda: le falta el detalle, pero no las métricas. */
   compacted?: boolean
+  /** Foto del árbol de trabajo antes del turno, para poder deshacerlo. */
+  checkpoint?: RunCheckpoint
+}
+
+/** Dónde está la foto de antes de un turno: el repositorio y el commit suelto. */
+export interface RunCheckpoint {
+  root: string
+  commit: string
 }
 
 export interface StreamDelta {
@@ -421,6 +429,8 @@ export interface Settings {
   quotas?: QuotaSettings
   /** Presupuestos de gasto. Sustituyen al antiguo `monthlyBudget`, que se migra. */
   budgets?: Budget[]
+  /** Guardar una foto del repositorio antes de cada turno de un agente. Sí por omisión. */
+  checkpoints?: boolean
 }
 
 export interface AppConfig {
@@ -981,6 +991,9 @@ export interface TurnMetrics {
   /** Ventana de uso del plan anunciada por el agente. */
   cliLimit?: CliLimit
   permissionMode?: string
+  checkpoint?: RunCheckpoint
+  /** Ya se deshizo este turno. */
+  undone?: boolean
 }
 
 export interface SessionTurn {

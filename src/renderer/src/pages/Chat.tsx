@@ -31,8 +31,9 @@ import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
   unarchiveSession, deleteSession, sendChat, sendCli, stopSession, loadSessions, approveStep,
-  useChatFocus, useQuotas, type Turn
+  useChatFocus, useQuotas, markTurnUndone, type Turn
 } from '../lib/engine'
+import { UndoTurn } from '../components/UndoTurn'
 import { pickRelayAgent } from '@shared/quotaPick'
 import {
   API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession
@@ -223,7 +224,7 @@ function CliContinuity({ session, command }: { session: StoredSession; command: 
   )
 }
 
-function TurnView({ turn, isCli }: { turn: Turn; isCli: boolean }): React.JSX.Element {
+function TurnView({ turn, isCli, sessionId }: { turn: Turn; isCli: boolean; sessionId: string }): React.JSX.Element {
   const t = useT()
   if (turn.role === 'user') {
     return (
@@ -269,7 +270,18 @@ function TurnView({ turn, isCli }: { turn: Turn; isCli: boolean }): React.JSX.El
             limit={turn.streaming ? turn.live?.contextLimit : turn.metrics?.contextLimit}
           />
           <UsageLimitView compact limit={turn.streaming ? turn.live?.usageLimit : turn.metrics?.usageLimit} />
-          <div className="ml-auto">{!turn.streaming && turn.content ? <CopyBtn text={turn.content} /> : null}</div>
+          <div className="ml-auto flex items-center gap-1">
+            {/* Si el turno cambió ficheros y hay foto de antes, se puede deshacer entero. */}
+            {!turn.streaming && turn.runId && turn.metrics?.checkpoint && turn.metrics.filesChanged?.length ? (
+              <UndoTurn
+                runId={turn.runId}
+                checkpoint={turn.metrics.checkpoint}
+                undone={turn.metrics.undone}
+                onUndone={(v) => markTurnUndone(sessionId, turn.id, v)}
+              />
+            ) : null}
+            {!turn.streaming && turn.content ? <CopyBtn text={turn.content} /> : null}
+          </div>
         </div>
 
         {turn.error ? (
@@ -754,7 +766,7 @@ export default function Chat(): React.JSX.Element {
               />
             ) : null}
             {turns.map((t) => (
-              <TurnView key={t.id} turn={t} isCli={isCli} />
+              <TurnView key={t.id} turn={t} isCli={isCli} sessionId={session?.id ?? ''} />
             ))}
             {/* Si el último turno se cortó por un cupo o un límite, se ofrece
                 seguir con otra IA sin tener que ir a buscarlo. */}
