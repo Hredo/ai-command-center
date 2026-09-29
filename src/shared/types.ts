@@ -178,6 +178,44 @@ export interface Project {
   tags?: string[]
   /** Cerrado: sigue dado de alta pero fuera de la lista principal. */
   closed?: boolean
+  /** Qué ejecutar en cada worktree nuevo para dejarlo listo: «pnpm install». */
+  worktreeSetup?: string
+  /** Ficheros sin seguir que se copian a cada worktree nuevo: «.env». */
+  worktreeCopy?: string[]
+}
+
+/** Cómo fue la preparación de un worktree nuevo. */
+export interface WorktreeSetup {
+  command: string
+  ok: boolean
+  at: number
+  ms: number
+  /** El final de lo que escribió. */
+  output: string
+}
+
+/** Un worktree del repositorio, con lo que la app sabe de él. */
+export interface WorktreeInfo {
+  path: string
+  branch?: string
+  head?: string
+  /** La carpeta principal del repositorio. */
+  main: boolean
+  locked?: boolean
+  prunable?: boolean
+  /** Para qué se creó. */
+  label?: string
+  projectId?: string
+  /** De qué rama salió. */
+  base?: string
+  createdAt?: number
+  /** Conversación que trabaja en él. */
+  sessionId?: string
+  setup?: WorktreeSetup
+  /** Ficheros sin confirmar. */
+  dirty?: number
+  /** Commits que lleva por delante de la rama de la que salió. */
+  ahead?: number
 }
 
 /** Información escaneada de un proyecto en disco. */
@@ -1054,6 +1092,8 @@ export interface StoredSession {
   cliContinue?: boolean
   /** El próximo turno retoma en una sesión nueva (bifurca). */
   cliForkNext?: boolean
+  /** Trabaja en un worktree aparte (su carpeta) en vez de en la del proyecto. */
+  worktreePath?: string
   turns: SessionTurn[]
   pinned?: boolean
   /** Cerrada: sigue guardada y se puede reabrir. */

@@ -6,7 +6,7 @@ import type {
   StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks, OpencodeModel,
   GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
   GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage,
-  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow
+  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow, WorktreeInfo
 } from '@shared/types'
 
 /** Estado del statusLine de la app en la configuración de Claude Code. */
@@ -320,6 +320,16 @@ const api = {
         ipcRenderer.removeListener('external:updated', listener)
       }
     }
+  },
+  /** Un worktree por tarea: crear, listar, fusionar y quitar. */
+  worktrees: {
+    list: (cwd: string) => call<WorktreeInfo[]>('worktrees:list', cwd),
+    create: (cwd: string, opts: { label: string; projectId?: string; base?: string; sessionId?: string }) =>
+      call<WorktreeInfo>('worktrees:create', cwd, opts),
+    merge: (path: string, opts?: { message?: string }) =>
+      call<{ ok: boolean; committed: boolean; output: string; conflicts?: string[] }>('worktrees:merge', path, opts),
+    remove: (path: string, opts?: { force?: boolean; deleteBranch?: boolean }) => call<boolean>('worktrees:remove', path, opts),
+    link: (path: string, sessionId?: string) => call<boolean>('worktrees:link', path, sessionId)
   },
   /** Puntos de control: deshacer lo que hizo un turno de un agente. */
   checkpoints: {

@@ -269,6 +269,7 @@ function flushPendingText(): void {
 }
 
 function applyText(batch: Map<string, { text: string; reasoning: string; firstAt: number }>): void {
+  const late = new Set<string>()
   // Chats
   chats.update((all) => {
     let changed = false
@@ -277,7 +278,17 @@ function applyText(batch: Map<string, { text: string; reasoning: string; firstAt
       let touched = false
       const turns = state.turns.map((t) => {
         const add = t.runId ? batch.get(t.runId) : undefined
-        if (!add || !t.streaming) return t
+        if (!add) return t
+        if (!t.streaming) {
+          // La respuesta del proceso principal y sus eventos van por canales
+          // distintos: el último trozo de razonamiento puede llegar con el
+          // turno ya cerrado. El texto lo trae entero el registro; el
+          // razonamiento no, así que se añade igual.
+          if (!add.reasoning) return t
+          touched = true
+          late.add(sid)
+          return { ...t, reasoning: (t.reasoning ?? '') + add.reasoning }
+        }
         touched = true
         const content = t.content + add.text
         return {
@@ -301,6 +312,7 @@ function applyText(batch: Map<string, { text: string; reasoning: string; firstAt
     }
     return changed ? next : all
   })
+  for (const sid of late) schedulePersist(sid)
 
   // Arena
   arena.update((a) => {

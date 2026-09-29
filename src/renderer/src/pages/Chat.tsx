@@ -34,6 +34,7 @@ import {
   useChatFocus, useQuotas, markTurnUndone, type Turn
 } from '../lib/engine'
 import { UndoTurn } from '../components/UndoTurn'
+import { WorktreeBox } from '../components/WorktreeBox'
 import { pickRelayAgent } from '@shared/quotaPick'
 import {
   API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession
@@ -452,7 +453,9 @@ export default function Chat(): React.JSX.Element {
   const cliAgent = config?.cliAgents.find((a) => a.id === session?.cliAgentId)
 
   // Rama y estado del repositorio del proyecto de la sesión.
-  const { info: git, reload: reloadGit } = useGit(project?.path)
+  // Con worktree, el agente trabaja allí: la carpeta, la rama y el estado de git son los suyos.
+  const workPath = project ? (session?.worktreePath ?? project.path) : undefined
+  const { info: git, reload: reloadGit } = useGit(workPath)
 
   // El esfuerzo se guarda en la sesión: al reabrirla sigue como lo dejaste.
   const effort: Effort = session?.effort ?? 'auto'
@@ -499,7 +502,7 @@ export default function Chat(): React.JSX.Element {
         agentName: cliAgent?.name,
         model: session.cliModel,
         permissionMode: session.permissionMode,
-        projectPath: project.path,
+        projectPath: session.worktreePath ?? project.path,
         projectId: project.id,
         projectName: project.name,
         effort,
@@ -540,7 +543,7 @@ export default function Chat(): React.JSX.Element {
       agentName: apiAgent?.name,
       projectId: project?.id,
       projectName: project?.name,
-      projectPath: project?.path,
+      projectPath: project ? (session.worktreePath ?? project.path) : undefined,
       effort,
       attachments: attachments.length ? attachments : undefined,
       agentMode: agentOn,
@@ -1027,6 +1030,8 @@ export default function Chat(): React.JSX.Element {
                 ))}
               </Select>
             </Field>
+
+            {project && (isCli || agentOn) ? <WorktreeBox session={session} project={project} onChanged={reloadGit} /> : null}
 
             {/* Con proyecto, un modelo por API trabaja como agente: lee, busca y
                 edita sus archivos. Se puede apagar para sólo conversar. */}

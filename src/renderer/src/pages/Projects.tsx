@@ -11,6 +11,7 @@ import { GitPanel } from '../components/GitPanel'
 import { GitGraph } from '../components/GitGraph'
 import { AgentActivity } from '../components/AgentActivity'
 import { GithubPanel } from '../components/GithubPanel'
+import { ProjectWorktrees } from '../components/ProjectWorktrees'
 import { Metrics, LiveMetrics } from '../components/Stats'
 import {
   AttachButton, AttachmentList, BranchPicker, ContextGauge, EffortPicker,
@@ -1083,6 +1084,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                     className="text-[12.5px]"
                   />
                 </Field>
+                <ProjectWorktrees key={project.id} project={project} onPatch={(patch) => void patchProject(patch)} />
                 <div className="pt-2 border-t border-line">
                   <Button variant="danger" onClick={() => setConfirmDelete(project)}>
                     <Trash2 size={13} /> {t('Quitar de la lista')}

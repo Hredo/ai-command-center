@@ -831,6 +831,120 @@ app.whenReady().then(async () => {
   git(['clean', '-qfd'])
 
   /* -------------------------------------------------------------- *
+   * B2 · Un worktree por tarea                                      *
+   * -------------------------------------------------------------- */
+  // El .env y lo que deja la preparación no van a git (como node_modules).
+  fs.appendFileSync(path.join(REPO, '.git', 'info', 'exclude'), '\n.env\nsetup-hecho.txt\n', 'utf8')
+  fs.writeFileSync(path.join(REPO, '.env'), 'SECRETO_DE_PRUEBA=1\n', 'utf8')
+  fs.writeFileSync(path.join(TMP, 'fuera.txt'), 'fuera del repositorio\n', 'utf8')
+  const headB2 = git(['rev-parse', 'HEAD'])
+  const setupCmd = `node -e "require('fs').writeFileSync('setup-hecho.txt', 'ok')"`
+  const wt = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${bins}
+    const api = window.api
+    const engine = window.__accEngine
+    const project = { id: 'proyecto-wt', name: 'Repo wt', path: repo, color: '#fff', createdAt: Date.now(),
+      worktreeSetup: ${JSON.stringify(setupCmd)}, worktreeCopy: ['.env', '../fuera.txt'] }
+    await api.projects.save(project)
+    await api.agents.saveCli({ id: 'editor-wt', name: 'Editor', type: 'cli', command: bins.editor, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    const sid = await engine.newSession('cli', { cliAgentId: 'editor-wt', projectId: project.id })
+    const created = await api.worktrees.create(repo, { label: 'Arreglo del login', projectId: project.id, sessionId: sid })
+    const info = created.data
+    let run = null
+    if (info) {
+      engine.patchSessionConfig(sid, { worktreePath: info.path })
+      run = await engine.sendCli(sid, { prompt: 'cambia cosas', agentId: 'editor-wt', projectPath: info.path, projectId: project.id })
+    }
+    const listed = (await api.worktrees.list(repo)).data ?? []
+    return { created, info, run, listed, sid }
+  })()`)
+  const wtPath = wt.info?.path ?? ''
+  const inWt = (rel) => (wtPath && fs.existsSync(path.join(wtPath, rel)) ? fs.readFileSync(path.join(wtPath, rel), 'utf8') : null)
+  log(
+    wt.created?.ok && wt.info?.branch === 'acc/arreglo-del-login' && path.basename(path.dirname(wtPath)) === 'repo.worktrees',
+    'UN WORKTREE CON SU CARPETA Y SU RAMA acc/ AL LADO DEL REPOSITORIO',
+    wt.created?.error ?? `${wt.info?.branch} · ${wtPath}`
+  )
+  log(
+    inWt('.env') === 'SECRETO_DE_PRUEBA=1\n' && !fs.existsSync(path.join(TMP, 'repo.worktrees', 'fuera.txt')) && !fs.existsSync(path.join(wtPath, '..', 'fuera.txt')),
+    'se copia el .env y nada de fuera del repositorio'
+  )
+  log(wt.info?.setup?.ok === true && inWt('setup-hecho.txt') === 'ok', 'LA PREPARACIÓN DEL PROYECTO CORRE DENTRO DEL WORKTREE', wt.info?.setup?.output?.slice(-120))
+  log(
+    inWt('app.js')?.includes('del-agente') && inWt('nuevo/creado.txt') && !fs.readFileSync(path.join(REPO, 'app.js'), 'utf8').includes('del-agente') &&
+      !fs.existsSync(path.join(REPO, 'nuevo')) && git(['rev-parse', 'HEAD']) === headB2,
+    'EL AGENTE TRABAJA EN EL WORKTREE Y TU CARPETA NO SE TOCA',
+    wt.run?.error ?? ''
+  )
+  log(Boolean(wt.run?.checkpoint?.commit), 'el turno en el worktree también tiene punto de control')
+  const lw = wt.listed.find((w) => !w.main)
+  log(
+    wt.listed.length === 2 && wt.listed[0].main && lw?.label === 'Arreglo del login' && lw?.projectId === 'proyecto-wt' && lw?.sessionId === wt.sid && lw?.dirty >= 4 && lw?.ahead === 0,
+    'LA LISTA DICE DE QUIÉN ES Y CUÁNTO LLEVA SIN CONFIRMAR',
+    lw ? `${lw.dirty} sin confirmar, ${lw.ahead} por delante` : 'no aparece'
+  )
+
+  const wt2 = await js(`(async () => {
+    const api = window.api
+    const path = ${JSON.stringify(wtPath)}
+    const removeDirty = await api.worktrees.remove(path, { deleteBranch: true })
+    const mergeNoMsg = await api.worktrees.merge(path, {})
+    const merged = await api.worktrees.merge(path, { message: 'Arreglo del login' })
+    const after = ((await api.worktrees.list(path)).data ?? []).find((w) => !w.main)
+    const removed = await api.worktrees.remove(path, { deleteBranch: true })
+    return { removeDirty, mergeNoMsg, merged, after, removed }
+  })()`)
+  log(wt2.removeDirty?.ok === false && wt2.merged?.data?.ok === true, 'CON CAMBIOS SIN CONFIRMAR NO SE QUITA SIN FORZAR', wt2.removeDirty?.error)
+  log(wt2.mergeNoMsg?.ok === false, 'y no se fusiona sin decir con qué mensaje confirmarlos', wt2.mergeNoMsg?.error)
+  const mainApp = fs.readFileSync(path.join(REPO, 'app.js'), 'utf8')
+  log(
+    wt2.merged?.ok && wt2.merged.data?.ok && wt2.merged.data?.committed && mainApp.includes('del-agente') && fs.existsSync(path.join(REPO, 'nuevo', 'creado.txt')) &&
+      git(['log', '-1', '--format=%s']).startsWith('Fusiona acc/arreglo-del-login') && git(['rev-list', '--parents', '-n', '1', 'HEAD']).split(' ').length === 3,
+    'FUSIONAR CONFIRMA LO PENDIENTE Y HACE UN MERGE EN TU RAMA',
+    wt2.merged?.error ?? wt2.merged?.data?.output?.slice(0, 120)
+  )
+  log(wt2.after?.dirty === 0 && wt2.after?.ahead === 0, 'después de fusionar no queda nada pendiente', wt2.after ? `${wt2.after.dirty} / ${wt2.after.ahead}` : '')
+  log(
+    wt2.removed?.ok && !fs.existsSync(wtPath) && git(['branch', '--list', 'acc/*']) === '',
+    'QUITARLO BORRA LA CARPETA Y LA RAMA',
+    wt2.removed?.error ?? git(['branch', '--list', 'acc/*'])
+  )
+
+  const wt3 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const made = (await api.worktrees.create(repo, { label: 'Arreglo del login', projectId: 'proyecto-wt' })).data
+    return { made }
+  })()`)
+  const wt3Path = wt3.made?.path ?? ''
+  if (wt3Path) fs.writeFileSync(path.join(wt3Path, 'a-medias.txt'), 'sin confirmar\n', 'utf8')
+  const wt4 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const path = ${JSON.stringify(wt3Path)}
+    const soft = await api.worktrees.remove(path, { deleteBranch: true })
+    const forced = await api.worktrees.remove(path, { force: true, deleteBranch: true })
+    const notWt = await api.worktrees.remove(repo, { force: true })
+    const notRepo = await api.worktrees.merge(${JSON.stringify(TMP.replace(/\\/g, '/'))}, { message: 'x' })
+    return { soft, forced, notWt, notRepo }
+  })()`)
+  log(wt3.made?.branch === 'acc/arreglo-del-login', 'el mismo nombre otra vez vuelve a servir cuando el anterior ya no está', wt3.made?.branch)
+  log(
+    wt4.soft?.ok === false && wt4.forced?.ok && !fs.existsSync(wt3Path) && git(['branch', '--list', 'acc/*']) === '',
+    'A SABIENDAS, SÍ: SE QUITA CON LO QUE TENGA Y SU RAMA',
+    wt4.forced?.error ?? ''
+  )
+  log(wt4.notWt?.ok === false && fs.existsSync(path.join(REPO, 'app.js')), 'LA CARPETA PRINCIPAL NO SE PUEDE QUITAR COMO SI FUERA UN WORKTREE', wt4.notWt?.error)
+  log(wt4.notRepo?.ok === false, 'ni se fusiona algo que no es un worktree', wt4.notRepo?.error)
+  await js(`(async () => {
+    const engine = window.__accEngine
+    await engine.deleteSession(${JSON.stringify(wt.sid ?? '')})
+    await window.api.agents.removeCli('editor-wt')
+    await window.api.projects.remove('proyecto-wt')
+  })()`)
+
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

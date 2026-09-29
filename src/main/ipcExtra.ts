@@ -37,6 +37,7 @@ import { quotaReport, pokeQuotas } from './quotas'
 import { statusLineInfo, installStatusLine, uninstallStatusLine } from './quotas/claudeStatusLine'
 import { ADMIN_KEYS, adminKey } from './quotas/remote'
 import { previewUndo, undoCheckpoint } from './checkpoints'
+import { listWorktrees, createWorktree, mergeWorktree, removeWorktree, linkWorktree, mainRoot } from './worktrees'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource
@@ -283,6 +284,41 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     const r = await undoCheckpoint(a.root, a.id)
     pokeRepo(a.root)
     return r
+  })
+
+  /* -------------------------------- Worktrees --------------------------------- */
+
+  const str = (v: unknown, what: string): string => {
+    if (typeof v !== 'string' || !v.trim()) throw new Error(`${what} no válido`)
+    return v
+  }
+  handle('worktrees:list', (cwd: string) => listWorktrees(str(cwd, 'repositorio')))
+  handle('worktrees:create', async (cwd: string, opts: { label: string; projectId?: string; base?: string; sessionId?: string }) => {
+    const info = await createWorktree(str(cwd, 'repositorio'), {
+      label: str(opts?.label, 'nombre'),
+      projectId: typeof opts?.projectId === 'string' ? opts.projectId : undefined,
+      base: typeof opts?.base === 'string' ? opts.base : undefined,
+      sessionId: typeof opts?.sessionId === 'string' ? opts.sessionId : undefined
+    })
+    pokeRepo(cwd)
+    return info
+  })
+  handle('worktrees:merge', async (path: string, opts?: { message?: string }) => {
+    const root = await mainRoot(str(path, 'worktree'))
+    const r = await mergeWorktree(path, { message: typeof opts?.message === 'string' ? opts.message : undefined })
+    if (root) pokeRepo(root)
+    pokeRepo(path)
+    return r
+  })
+  handle('worktrees:remove', async (path: string, opts?: { force?: boolean; deleteBranch?: boolean }) => {
+    const root = await mainRoot(str(path, 'worktree'))
+    await removeWorktree(path, { force: opts?.force === true, deleteBranch: opts?.deleteBranch === true })
+    if (root) pokeRepo(root)
+    return true
+  })
+  handle('worktrees:link', (path: string, sessionId?: string) => {
+    linkWorktree(str(path, 'worktree'), typeof sessionId === 'string' ? sessionId : undefined)
+    return true
   })
 
   /* ---------------------------------- Cupos ----------------------------------- */
