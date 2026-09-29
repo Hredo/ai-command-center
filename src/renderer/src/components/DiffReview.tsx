@@ -31,7 +31,9 @@ export function DiffReview({
   checkpoint,
   untilRunId,
   disabled,
-  onSend
+  onSend,
+  readOnly,
+  title
 }: {
   open: boolean
   onClose: () => void
@@ -41,7 +43,10 @@ export function DiffReview({
   untilRunId?: string
   /** El agente está trabajando: se puede comentar, pero no enviar todavía. */
   disabled?: boolean
-  onSend: (prompt: string) => void
+  onSend?: (prompt: string) => void
+  /** Sólo mirar: sin comentarios ni envío (la Arena, para comparar). */
+  readOnly?: boolean
+  title?: string
 }): React.JSX.Element {
   const t = useT()
   const [files, setFiles] = useState<DiffFile[] | null>(null)
@@ -129,7 +134,7 @@ export function DiffReview({
     })
     drafts.delete(runId)
     setDraft({ comments: [], general: '' })
-    onSend(prompt)
+    onSend?.(prompt)
   }
 
   const editor = (
@@ -186,9 +191,14 @@ export function DiffReview({
     <Modal
       open={open}
       onClose={onClose}
-      title={t('Revisar este turno')}
+      title={title ?? t('Revisar este turno')}
       width="max-w-5xl"
       footer={
+        readOnly ? (
+          <Button variant="ghost" onClick={onClose}>
+            {t('Cerrar')}
+          </Button>
+        ) : (
         <>
           <span className="text-[11.5px] text-dim mr-auto">
             {draft.comments.length === 1
@@ -209,6 +219,7 @@ export function DiffReview({
             <Send size={13} /> {t('Enviar al agente')}
           </Button>
         </>
+        )
       }
     >
       <div className="space-y-3">
@@ -311,12 +322,13 @@ export function DiffReview({
                           return (
                             <div key={k}>
                               <div
-                                role="button"
+                                role={readOnly ? undefined : 'button'}
                                 tabIndex={-1}
-                                title={t('Comentar esta línea')}
-                                onClick={() => setEditing({ key: k, file: f.path, line: l, text: '' })}
+                                title={readOnly ? undefined : t('Comentar esta línea')}
+                                onClick={readOnly ? undefined : () => setEditing({ key: k, file: f.path, line: l, text: '' })}
                                 className={cx(
-                                  'group grid grid-cols-[42px_42px_14px_1fr] cursor-pointer hover:bg-[#12202a]',
+                                  'group grid grid-cols-[42px_42px_14px_1fr]',
+                                  !readOnly && 'cursor-pointer hover:bg-[#12202a]',
                                   l.kind === 'add' && 'bg-[#0b1a12]',
                                   l.kind === 'del' && 'bg-[#1c0e12]',
                                   here.length > 0 && 'shadow-[inset_2px_0_0_var(--color-accent)]'
@@ -339,10 +351,12 @@ export function DiffReview({
                                   )}
                                 >
                                   {l.text || ' '}
-                                  <MessageSquarePlus
-                                    size={11}
-                                    className="hidden group-hover:inline-block ml-2 text-accent align-[-1px]"
-                                  />
+                                  {readOnly ? null : (
+                                    <MessageSquarePlus
+                                      size={11}
+                                      className="hidden group-hover:inline-block ml-2 text-accent align-[-1px]"
+                                    />
+                                  )}
                                 </span>
                               </div>
                               {here.map(commentBox)}
@@ -366,7 +380,7 @@ export function DiffReview({
           )
         })}
 
-        {files && files.length ? (
+        {files && files.length && !readOnly ? (
           <div>
             <div className="text-[11px] uppercase tracking-wider text-dim mb-1">{t('Comentario general (opcional)')}</div>
             <Textarea

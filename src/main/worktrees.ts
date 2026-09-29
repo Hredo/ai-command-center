@@ -313,6 +313,18 @@ export async function removeWorktree(path: string, opts: { force?: boolean; dele
   patchMeta(info.path, null)
 }
 
+/**
+ * Ejecuta una orden (las pruebas del proyecto) dentro de un worktree. Sólo en
+ * worktrees del repositorio, nunca en la carpeta principal ni en otra
+ * cualquiera: es para comparar lo que hizo cada contendiente de la Arena.
+ */
+export async function execInWorktree(path: string, command: string): Promise<WorktreeSetup> {
+  const { info } = await ownWorktree(path)
+  const cmd = command.trim()
+  if (!cmd) throw new Error('No hay orden que ejecutar')
+  return runSetup(info.path, cmd)
+}
+
 /** Relaciona un worktree con una conversación (o lo suelta). */
 export function linkWorktree(path: string, sessionId?: string): void {
   if (!readMeta()[key(path)]) return

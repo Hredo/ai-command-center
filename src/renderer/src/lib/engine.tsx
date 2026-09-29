@@ -18,7 +18,7 @@ import React, { useEffect, useSyncExternalStore } from 'react'
 import type {
   RunRecord, StoredSession, SessionTurn, TurnMetrics, TermInfo, TermEvent,
   ChatMessage, SessionKind, UsageLimit, FileChange, FileTouch, Attachment, Effort,
-  AgentStep, CliLimit, QuotaReport
+  AgentStep, CliLimit, QuotaReport, WorktreeSetup
 } from '@shared/types'
 import { useStore } from './store'
 import { navigate } from './nav'
@@ -156,6 +156,25 @@ export interface Contender {
   streaming: boolean
   error?: string
   live?: LiveMetrics
+  /** Lo que va haciendo como agente, con los permisos que pide. */
+  steps?: AgentStep[]
+  /** Arena de código: su worktree y su rama. */
+  worktreePath?: string
+  worktreeBranch?: string
+  /** La preparación de su worktree (pnpm install…), si el proyecto tiene. */
+  setup?: WorktreeSetup
+  /** En qué anda cuando no está generando: creando su worktree o pasando las pruebas. */
+  phase?: 'worktree' | 'tests'
+  /** Las pruebas del proyecto pasadas en su worktree al acabar. */
+  tests?: WorktreeSetup
+  /** Qué fue de su worktree: fusionado en tu rama o quitado. */
+  outcome?: 'merged' | 'removed'
+}
+
+export interface ArenaProject {
+  id: string
+  name: string
+  path: string
 }
 
 export interface ArenaState {
@@ -164,6 +183,16 @@ export interface ArenaState {
   system: string
   arenaId?: string
   running: boolean
+  /**
+   * Arena de código: cada contendiente trabaja en su propio worktree de este
+   * proyecto (los de API, como agentes), así no se pisan entre ellos ni tocan
+   * tu carpeta.
+   */
+  project?: ArenaProject
+  /** Orden que pasa las pruebas en cada worktree al acabar. */
+  testCommand?: string
+  /** Hasta dónde llegan sin preguntar. Los de API piden aquí los comandos. */
+  permissionMode?: string
 }
 
 /* ------------------------------------------------------------------ *
@@ -492,8 +521,8 @@ function patchRunningTurn(runId: string, patch: (t: Turn) => Turn): void {
     const contenders = a.contenders.map((c) => {
       if (c.runId !== runId) return c
       changed = true
-      const asTurn = patch({ id: c.key, role: 'assistant', content: c.content, live: c.live } as Turn)
-      return { ...c, live: asTurn.live }
+      const asTurn = patch({ id: c.key, role: 'assistant', content: c.content, live: c.live, steps: c.steps } as Turn)
+      return { ...c, live: asTurn.live, steps: asTurn.steps }
     })
     return changed ? { ...a, contenders } : a
   })
@@ -1325,14 +1354,22 @@ export function emptyContender(mode: 'api' | 'cli' = 'api'): Contender {
  * Lanza la comparativa. Los contendientes pueden ser modelos por API o
  * agentes de línea de comandos: cada uno sale por su canal pero comparten
  * arenaId, así que las métricas se comparan en la misma tabla.
+ *
+ * Con proyecto es la Arena de código: antes de nada cada contendiente recibe
+ * su propio worktree (carpeta y rama acc/arena-…), los de API trabajan como
+ * agentes y, al acabar cada uno, se pasan las pruebas en su worktree. Así se
+ * comparan diff, pruebas, coste y tiempo, y se fusiona el que gane.
+ *
+ * `names` da nombre a cada worktree (por la clave del contendiente).
  */
-export async function launchArena(): Promise<void> {
+export async function launchArena(names: Record<string, string> = {}): Promise<void> {
   const state = arena.get()
   const ready = state.contenders.filter((c) => (c.mode === 'api' ? c.providerId && c.model : c.cliAgentId))
   if (!state.prompt.trim() || !ready.length || state.running) return
 
   const arenaId = uid()
-  const withIds = state.contenders.map((c) => {
+  const project = state.project
+  const withIds = state.contenders.map((c): Contender => {
     const usable = c.mode === 'api' ? c.providerId && c.model : c.cliAgentId
     if (!usable) return c
     return {
@@ -1341,6 +1378,13 @@ export async function launchArena(): Promise<void> {
       content: '',
       run: undefined,
       error: undefined,
+      steps: undefined,
+      worktreePath: undefined,
+      worktreeBranch: undefined,
+      setup: undefined,
+      tests: undefined,
+      outcome: undefined,
+      phase: project ? 'worktree' : undefined,
       streaming: true,
       live: { startedAt: Date.now(), chars: 0, approxTokens: 0 }
     }
@@ -1348,7 +1392,10 @@ export async function launchArena(): Promise<void> {
   arena.update((a) => ({ ...a, arenaId, running: true, contenders: withIds }))
   ensureTicker()
 
-  const settle = (runId: string, run?: RunRecord): void => {
+  const patchOne = (runId: string, p: Partial<Contender>): void =>
+    arena.update((a) => ({ ...a, contenders: a.contenders.map((x) => (x.runId === runId ? { ...x, ...p } : x)) }))
+
+  const settle = (runId: string, run?: RunRecord, error?: string): void => {
     arena.update((a) => ({
       ...a,
       contenders: a.contenders.map((x) =>
@@ -1358,7 +1405,8 @@ export async function launchArena(): Promise<void> {
               streaming: false,
               run,
               content: run?.response || x.content,
-              error: run?.status === 'error' ? run.error : undefined,
+              steps: run?.steps?.length ? run.steps : x.steps,
+              error: run?.status === 'error' ? run.error : run ? undefined : error,
               live: undefined
             }
           : x
@@ -1368,9 +1416,37 @@ export async function launchArena(): Promise<void> {
 
   const launched = withIds.filter((c) => c.runId && c.streaming)
 
+  // Un worktree por contendiente, de uno en uno: git no admite dos
+  // «worktree add» a la vez sobre el mismo repositorio.
+  const where = new Map<string, string>()
+  if (project) {
+    for (const c of launched) {
+      const label = `arena ${names[c.key] ?? (c.mode === 'api' ? c.model : c.cliAgentId) ?? 'contendiente'}`
+      const r = await window.api.worktrees.create(project.path, { label, projectId: project.id })
+      if (!r.ok || !r.data) {
+        patchOne(c.runId!, { streaming: false, phase: undefined, live: undefined, error: r.error ?? 'No se pudo crear el worktree' })
+        continue
+      }
+      where.set(c.runId!, r.data.path)
+      patchOne(c.runId!, {
+        worktreePath: r.data.path,
+        worktreeBranch: r.data.branch,
+        setup: r.data.setup,
+        phase: undefined,
+        // El tiempo cuenta desde que empieza a trabajar, no desde la preparación.
+        live: { startedAt: Date.now(), chars: 0, approxTokens: 0 }
+      })
+    }
+  }
+  const mode = state.permissionMode ?? 'acceptEdits'
+  const tests = state.testCommand?.trim()
+
   await Promise.all(
     launched.map(async (c) => {
       if (!c.runId) return
+      const dir = where.get(c.runId)
+      if (project && !dir) return
+      let run: RunRecord | undefined
       if (c.mode === 'api' && c.providerId && c.model) {
         const res = await window.api.run.prompt(
           {
@@ -1379,13 +1455,18 @@ export async function launchArena(): Promise<void> {
             prompt: state.prompt.trim(),
             systemPrompt: state.system || undefined,
             temperature: 0.7,
-            maxTokens: 4096,
+            maxTokens: dir ? 8192 : 4096,
             arenaId,
-            kind: 'arena'
+            kind: 'arena',
+            // En su worktree, como agente: con herramientas para leer, editar y ejecutar.
+            ...(dir && project
+              ? { projectPath: dir, projectId: project.id, projectName: project.name, agentMode: true, permissionMode: mode }
+              : {})
           },
           c.runId
         )
-        settle(c.runId, res.data)
+        run = res.data
+        settle(c.runId, run, res.error)
       } else if (c.mode === 'cli' && c.cliAgentId) {
         // Al CLI se le pasa el prompt de sistema por delante: no tiene un
         // canal aparte para instrucciones permanentes.
@@ -1395,14 +1476,25 @@ export async function launchArena(): Promise<void> {
         const res = await window.api.cli.run(
           {
             agentId: c.cliAgentId,
-            projectPath: c.projectPath ?? '',
+            projectPath: dir ?? c.projectPath ?? '',
             prompt,
             arenaId,
-            kind: 'arena'
+            kind: 'arena',
+            ...(dir && project ? { projectId: project.id, projectName: project.name, permissionMode: mode } : {})
           },
           c.runId
         )
-        settle(c.runId, res.data)
+        run = res.data
+        settle(c.runId, run, res.error)
+      }
+      // Las pruebas, en su worktree, en cuanto acaba ese contendiente.
+      if (dir && tests && run && run.status !== 'error') {
+        patchOne(c.runId, { phase: 'tests' })
+        const r = await window.api.worktrees.exec(dir, tests)
+        patchOne(c.runId, {
+          phase: undefined,
+          tests: r.ok && r.data ? r.data : { command: tests, ok: false, at: Date.now(), ms: 0, output: r.error ?? '' }
+        })
       }
     })
   )

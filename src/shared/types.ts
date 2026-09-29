@@ -182,6 +182,8 @@ export interface Project {
   worktreeSetup?: string
   /** Ficheros sin seguir que se copian a cada worktree nuevo: «.env». */
   worktreeCopy?: string[]
+  /** Orden que pasa las pruebas del proyecto (p. ej. pnpm test): la usa la Arena de código. */
+  testCommand?: string
 }
 
 /** Cómo fue la preparación de un worktree nuevo. */

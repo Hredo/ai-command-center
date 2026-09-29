@@ -14,6 +14,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { execFileSync } = require('node:child_process')
+const http = require('node:http')
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'acc-v08-'))
 const REPO = path.join(TMP, 'repo')
@@ -23,6 +24,12 @@ const HOME = path.join(TMP, 'home')
 const results = []
 const log = (ok, name, detail = '') =>
   results.push(`${ok ? 'PASA ' : 'FALLA'}  ${name}${detail ? ' — ' + detail : ''}`)
+
+/** Líneas añadidas y quitadas de una ejecución. */
+function changes(r) {
+  if (!r?.filesChanged) return null
+  return r.filesChanged.reduce((a, f) => ({ added: a.added + f.added, removed: a.removed + f.removed }), { added: 0, removed: 0 })
+}
 
 function git(args, cwd = REPO) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }).trim()
@@ -162,6 +169,43 @@ process.stdin.on('end', () => {
   }
 })
 `
+
+/**
+ * Un proveedor compatible con OpenAI que hace de agente: la primera vez pide
+ * escribir app.js con write_file y, cuando le llega el resultado, termina.
+ */
+const API_PORT = 18000 + Math.floor(Math.random() * 1000)
+function startAgentMock() {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      if (req.url.endsWith('/models')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: [{ id: 'agente-de-prueba', context_length: 32000 }] }))
+        return
+      }
+      let body = ''
+      req.on('data', (c) => (body += c))
+      req.on('end', () => {
+        let msgs = []
+        try {
+          msgs = JSON.parse(body).messages ?? []
+        } catch {}
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+        const send = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`)
+        if (!msgs.some((m) => m.role === 'tool')) {
+          send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'write_file', arguments: JSON.stringify({ path: 'app.js', content: 'uno\nDOS\ntres\n' }) } }] } }] })
+          send({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 80, completion_tokens: 20 } })
+        } else {
+          send({ choices: [{ delta: { content: 'He puesto DOS en app.js.' } }] })
+          send({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 120, completion_tokens: 8 } })
+        }
+        res.write('data: [DONE]\n\n')
+        res.end()
+      })
+    })
+    server.listen(API_PORT, '127.0.0.1', () => resolve(server))
+  })
+}
 
 function setupFixtures() {
   fs.mkdirSync(FIXTURES, { recursive: true })
@@ -1063,6 +1107,121 @@ app.whenReady().then(async () => {
     b4b.onlyFirst?.until
   )
   log(b4b.bad?.ok === false, 'un id raro tampoco vale para el diff', b4b.bad?.error)
+  git(['reset', '-q', '--hard', headB2])
+  git(['clean', '-qfd'])
+
+  /* -------------------------------------------------------------- *
+   * B5 · Arena de código (y C7: agentes por API en la Arena)        *
+   * -------------------------------------------------------------- */
+  const mock = await startAgentMock()
+  const headB5 = git(['rev-parse', 'HEAD'])
+  const testCmd = `node -e "process.exit(require('fs').readFileSync('app.js','utf8').includes('DOS')?0:1)"`
+  const b5 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${bins}
+    const api = window.api
+    const engine = window.__accEngine
+    const prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.projects.save({ id: 'proyecto-arena', name: 'Repo arena', path: repo, color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'arena-bien', name: 'Bien', type: 'cli', command: bins.review, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'arena-mal', name: 'Mal', type: 'cli', command: bins.editor, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    const c = (p) => ({ ...engine.emptyContender(p.mode), ...p })
+    engine.setArena({
+      prompt: 'pon DOS en app.js',
+      project: { id: 'proyecto-arena', name: 'Repo arena', path: repo },
+      testCommand: ${JSON.stringify(testCmd)},
+      permissionMode: 'acceptEdits',
+      contenders: [
+        c({ mode: 'cli', cliAgentId: 'arena-bien' }),
+        c({ mode: 'cli', cliAgentId: 'arena-mal' }),
+        c({ mode: 'api', providerId: 'vllm', model: 'agente-de-prueba' })
+      ]
+    })
+    await engine.launchArena({})
+    const state = engine.peekArena()
+    const execMain = await api.worktrees.exec(repo, 'echo hola')
+    return { state, prevBase, execMain }
+  })()`)
+  const cs = b5.state?.contenders ?? []
+  const [cBien, cMal, cApi] = cs
+  const wts = cs.map((c) => c.worktreePath).filter(Boolean)
+  log(
+    wts.length === 3 && new Set(wts).size === 3 && wts.every((w) => w.includes('repo.worktrees')) && cs.every((c) => c.worktreeBranch?.startsWith('acc/arena-')),
+    'CADA CONTENDIENTE TRABAJA EN SU PROPIO WORKTREE',
+    cs.map((c) => c.worktreeBranch ?? c.error).join(', ')
+  )
+  log(
+    fs.readFileSync(path.join(REPO, 'app.js'), 'utf8') === 'uno\ndos\ntres\n' && git(['rev-parse', 'HEAD']) === headB5,
+    'MIENTRAS COMPITEN, TU CARPETA NO SE TOCA'
+  )
+  const wtRead = (c, rel) => (c?.worktreePath && fs.existsSync(path.join(c.worktreePath, rel)) ? fs.readFileSync(path.join(c.worktreePath, rel), 'utf8') : null)
+  log(
+    wtRead(cApi, 'app.js') === 'uno\nDOS\ntres\n' && cApi?.run?.status === 'ok' && (cApi?.steps ?? []).some((st) => JSON.stringify(st).includes('write_file')),
+    'UN MODELO POR API COMPITE COMO AGENTE, CON HERRAMIENTAS, EN SU WORKTREE',
+    cApi?.error ?? cApi?.run?.error ?? `${(cApi?.steps ?? []).length} pasos`
+  )
+  log(wtRead(cBien, 'app.js')?.includes('DOS') && wtRead(cMal, 'app.js')?.includes('del-agente') && !wtRead(cMal, 'app.js')?.includes('DOS'), 'cada agente de consola deja lo suyo en su carpeta')
+  log(
+    cBien?.tests?.ok === true && cMal?.tests?.ok === false && cApi?.tests?.ok === true,
+    'LAS PRUEBAS SE PASAN EN EL WORKTREE DE CADA UNO',
+    cs.map((c) => (c.tests ? (c.tests.ok ? 'pasan' : 'fallan') : 'sin pruebas')).join(' / ')
+  )
+  log(
+    cs.every((c) => c.run?.arenaId && c.run.arenaId === b5.state.arenaId && c.run.projectId === 'proyecto-arena') && (changes(cBien?.run)?.added ?? 0) > 0,
+    'las ejecuciones van a la misma comparativa y al proyecto, con sus cambios contados'
+  )
+  log(b5.execMain?.ok === false, 'las pruebas no se pueden lanzar en la carpeta principal', b5.execMain?.error)
+
+  // Fusionar el ganador (el de API) desde la Arena: se fusiona y se quitan todos los worktrees.
+  const merged = await js(`(async () => {
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(100) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    btn('Arena')?.click()
+    const merges = await until(() => { const l = [...document.querySelectorAll('button')].filter((x) => x.textContent.trim() === 'Fusionar este'); return l.length === 3 ? l : null })
+    if (!merges) return { error: 'no salen los tres «Fusionar este»' }
+    merges[2].click()
+    const modal = await until(() => document.querySelector('div.fixed.inset-0'))
+    const msg = modal.querySelector('input')?.value
+    btn('Fusionar', modal).click()
+    await until(() => window.__accEngine.peekArena().contenders.every((c) => c.outcome), 15000)
+    await sleep(300)
+    const defaults = btn('Predeterminados')
+    defaults?.click()
+    await sleep(500)
+    const cfg = (await window.api.config.get()).data
+    return { msg, outcomes: window.__accEngine.peekArena().contenders.map((c) => c.outcome), winner: window.__accEngine.peekArena().contenders.map((c) => c.run?.winner), defaults: cfg.settings.arenaDefaults }
+  })()`)
+  log(
+    !merged.error && merged.outcomes?.join() === 'removed,removed,merged' && fs.readFileSync(path.join(REPO, 'app.js'), 'utf8') === 'uno\nDOS\ntres\n' &&
+      git(['log', '-1', '--format=%s']).startsWith('Fusiona acc/arena-') && git(['log', '-2', '--format=%s']).includes(merged.msg ?? '#'),
+    'FUSIONAR EL GANADOR LO LLEVA A TU RAMA CON SU MENSAJE',
+    merged.error ?? `${merged.outcomes?.join()} · ${git(['log', '-1', '--format=%s'])}`
+  )
+  log(
+    wts.every((w) => !fs.existsSync(w)) && git(['branch', '--list', 'acc/*']) === '' && git(['worktree', 'list']).split('\n').length === 1,
+    'Y SE QUITAN LOS WORKTREES Y LAS RAMAS DE TODOS',
+    git(['branch', '--list', 'acc/*'])
+  )
+  log(merged.winner?.join() === 'false,false,true', 'el fusionado queda como ganador en el histórico')
+  log(
+    merged.defaults?.join() === 'cli:arena-bien,cli:arena-mal,api:vllm:agente-de-prueba',
+    'los contendientes se guardan como predeterminados de la Arena',
+    merged.defaults?.join()
+  )
+  await js(`(async () => {
+    const api = window.api
+    await api.providers.setBaseUrl('vllm', ${JSON.stringify(b5.prevBase ?? '')})
+    await api.config.settings({ arenaDefaults: [] })
+    const rows = (await api.runs.query({ limit: 50 })).data.rows
+    for (const r of rows) if (r.arenaId === ${JSON.stringify(b5.state?.arenaId ?? '-')}) await api.runs.remove(r.id)
+    await api.agents.removeCli('arena-bien')
+    await api.agents.removeCli('arena-mal')
+    await api.projects.remove('proyecto-arena')
+    window.__accEngine.setArena({ project: undefined, testCommand: '', contenders: [] })
+  })()`)
+  mock.close()
   git(['reset', '-q', '--hard', headB2])
   git(['clean', '-qfd'])
 

@@ -37,7 +37,7 @@ import { quotaReport, pokeQuotas } from './quotas'
 import { statusLineInfo, installStatusLine, uninstallStatusLine } from './quotas/claudeStatusLine'
 import { ADMIN_KEYS, adminKey } from './quotas/remote'
 import { previewUndo, undoCheckpoint, checkpointDiff } from './checkpoints'
-import { listWorktrees, createWorktree, mergeWorktree, removeWorktree, linkWorktree, mainRoot } from './worktrees'
+import { listWorktrees, createWorktree, mergeWorktree, removeWorktree, linkWorktree, mainRoot, execInWorktree } from './worktrees'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource
@@ -321,6 +321,7 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     if (root) pokeRepo(root)
     return true
   })
+  handle('worktrees:exec', (path: string, command: string) => execInWorktree(str(path, 'worktree'), str(command, 'orden')))
   handle('worktrees:link', (path: string, sessionId?: string) => {
     linkWorktree(str(path, 'worktree'), typeof sessionId === 'string' ? sessionId : undefined)
     return true

@@ -6,7 +6,7 @@ import type {
   StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks, OpencodeModel,
   GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
   GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage,
-  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow, WorktreeInfo
+  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow, WorktreeInfo, WorktreeSetup
 } from '@shared/types'
 
 /** Estado del statusLine de la app en la configuración de Claude Code. */
@@ -329,7 +329,9 @@ const api = {
     merge: (path: string, opts?: { message?: string }) =>
       call<{ ok: boolean; committed: boolean; output: string; conflicts?: string[] }>('worktrees:merge', path, opts),
     remove: (path: string, opts?: { force?: boolean; deleteBranch?: boolean }) => call<boolean>('worktrees:remove', path, opts),
-    link: (path: string, sessionId?: string) => call<boolean>('worktrees:link', path, sessionId)
+    link: (path: string, sessionId?: string) => call<boolean>('worktrees:link', path, sessionId),
+    /** Ejecuta una orden (las pruebas) dentro de un worktree del repositorio. */
+    exec: (path: string, command: string) => call<WorktreeSetup>('worktrees:exec', path, command)
   },
   /** Puntos de control: deshacer lo que hizo un turno de un agente. */
   checkpoints: {
