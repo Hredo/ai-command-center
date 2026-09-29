@@ -29,7 +29,8 @@ import { computeCost, priceFor } from './providers/models'
 import { allRuns, removeRuns, upsertRuns } from './runs'
 import type { RunRecord, UsageWindow } from '@shared/types'
 
-const ROOT = join(homedir(), '.claude', 'projects')
+// Claude Code guarda todo en CLAUDE_CONFIG_DIR si está definida.
+const ROOT = join(process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude'), 'projects')
 const INDEX = () => join(paths.dir, 'claude-index.json')
 
 /** Sólo interesan las sesiones recientes: la ventana más larga es de 7 días. */

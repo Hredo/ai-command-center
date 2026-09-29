@@ -31,8 +31,9 @@ import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
   unarchiveSession, deleteSession, sendChat, sendCli, stopSession, loadSessions, approveStep,
-  useChatFocus, type Turn
+  useChatFocus, useQuotas, type Turn
 } from '../lib/engine'
+import { pickRelayAgent } from '@shared/quotaPick'
 import {
   API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession
 } from '@shared/types'
@@ -560,6 +561,16 @@ export default function Chat(): React.JSX.Element {
   const [relayOpen, setRelayOpen] = useState(false)
   const relaySource = useMemo(() => (session ? { kind: 'session' as const, id: session.id } : null), [session?.id])
   const lastAssistant = [...turns].reverse().find((x) => x.role === 'assistant')
+  const limited = !running && Boolean(lastAssistant && endedByLimit(lastAssistant))
+
+  // Si se ha quedado sin cupo, a quién pasárselo: al agente de consola con más
+  // margen según los cupos de todas las IAs (nunca al mismo).
+  const quotaReport = useQuotas()
+  const relayPick = useMemo(() => {
+    if (!limited || !quotaReport) return null
+    const candidates = (config?.cliAgents ?? []).map((a) => ({ id: a.id, name: a.name, command: a.command }))
+    return pickRelayAgent(quotaReport.quotas, candidates, { command: cliAgent?.command, agentId: cliAgent?.id })
+  }, [limited, quotaReport, config?.cliAgents, cliAgent?.command, cliAgent?.id])
 
   const totalCost = turns.reduce((s, t) => s + (t.metrics?.costTotal ?? 0), 0)
   const totalTok = turns.reduce((s, t) => s + (t.metrics?.totalTokens ?? 0), 0)
@@ -747,14 +758,26 @@ export default function Chat(): React.JSX.Element {
             ))}
             {/* Si el último turno se cortó por un cupo o un límite, se ofrece
                 seguir con otra IA sin tener que ir a buscarlo. */}
-            {!running && lastAssistant && endedByLimit(lastAssistant) ? (
+            {limited ? (
               <div className="rounded-xl border border-warn/40 bg-warn/5 px-4 py-3 flex items-center gap-3">
                 <AlertTriangle size={15} className="text-warn shrink-0" />
                 <span className="text-[12.5px] flex-1 leading-relaxed">
                   {t('Parece que se ha agotado un cupo o un límite. Puedes seguir con otra IA sin perder lo hecho.')}
+                  {relayPick ? (
+                    <span className="block text-[11.5px] text-dim mt-0.5">
+                      {relayPick.left != null && relayPick.where
+                        ? t('Con más margen: {name} (le queda un {n} % en {where}).', {
+                            name: relayPick.agent.name,
+                            n: relayPick.left,
+                            where: relayPick.where
+                          })
+                        : t('Con más margen: {name} (no tiene ningún cupo conocido agotado).', { name: relayPick.agent.name })}
+                    </span>
+                  ) : null}
                 </span>
                 <Button size="sm" variant="primary" onClick={() => setRelayOpen(true)}>
-                  <ArrowRightLeft size={12} /> {t('Seguir con otra IA')}
+                  <ArrowRightLeft size={12} />{' '}
+                  {relayPick ? t('Seguir con {name}', { name: relayPick.agent.name }) : t('Seguir con otra IA')}
                 </Button>
               </div>
             ) : null}
@@ -837,7 +860,12 @@ export default function Chat(): React.JSX.Element {
         </div>
       </div>
 
-      <RelayModal source={relaySource} open={relayOpen} onClose={() => setRelayOpen(false)} />
+      <RelayModal
+        source={relaySource}
+        open={relayOpen}
+        onClose={() => setRelayOpen(false)}
+        suggestAgentId={relayPick?.agent.id}
+      />
 
       {/* ------------------------------------------------ Ajustes de la sesión */}
       <Pane paneKey="chat.detail" side="left" className="border-l border-line bg-void overflow-y-auto">

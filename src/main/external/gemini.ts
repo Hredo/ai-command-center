@@ -20,9 +20,14 @@ import { computeCost, priceFor } from '../providers/models'
 import { todosFrom } from '../agents/cli'
 import { addBucket, EXTERNAL_DAYS, home, sumBuckets, type ExternalSession, type HourBucket } from './common'
 
+/** La carpeta de Gemini CLI. `GEMINI_CLI_HOME` sustituye a la carpeta personal. */
+export function geminiDir(): string {
+  const h = process.env['GEMINI_CLI_HOME']
+  return h ? join(h, '.gemini') : home('.gemini')
+}
+
 export function geminiRoot(): string {
-  const base = process.env['GEMINI_CLI_HOME'] ?? home('.gemini')
-  return join(base, 'tmp')
+  return join(geminiDir(), 'tmp')
 }
 
 interface FileState {

@@ -15,9 +15,15 @@ const COALESCE_MS = 30
 let sink: (topics: LiveTopic[]) => void = () => {}
 const pending = new Set<LiveTopic>()
 let timer: NodeJS.Timeout | null = null
+/** Lo que dentro de main también depende del histórico o de la configuración. */
+const listeners: ((topics: LiveTopic[]) => void)[] = []
 
 export function initLive(send: (topics: LiveTopic[]) => void): void {
   sink = send
+}
+
+export function onLiveChange(cb: (topics: LiveTopic[]) => void): void {
+  listeners.push(cb)
 }
 
 export function notifyChange(topic: LiveTopic): void {
@@ -31,6 +37,13 @@ export function notifyChange(topic: LiveTopic): void {
       sink(topics)
     } catch (err) {
       console.error('[live] no se pudo avisar a la ventana:', err)
+    }
+    for (const cb of listeners) {
+      try {
+        cb(topics)
+      } catch (err) {
+        console.error('[live] un oyente falló:', err)
+      }
     }
   }, COALESCE_MS)
 }

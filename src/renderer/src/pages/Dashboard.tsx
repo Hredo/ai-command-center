@@ -5,6 +5,8 @@ import {
 import { Panel, PanelHeader, Stat, Button, Tabs, Empty, Meter, Badge, Dot, cx } from '../components/ui'
 import { useStore } from '../lib/store'
 import { ClaudeWindows, UsageRows, useClaudeUsage } from '../components/AgentPanel'
+import { QuotasPanel } from '../components/QuotasPanel'
+import { navigate } from '../lib/nav'
 import { useInFlight, useRunsVersion } from '../lib/engine'
 import { useIsPageActive } from '../lib/pageActive'
 import { cost, tokens, ms, tps, relTime, shortModel, colorFor, pct } from '../lib/format'
@@ -115,6 +117,9 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
             icon={<Zap size={14} />}
           />
         </div>
+
+        {/* ------------------------------------------- Cupos de tus IAs */}
+        <QuotasPanel onSettings={() => navigate({ page: 'settings', tab: 'quotas' })} />
 
         {/* --------------------------------------- Consumo y límites */}
         <div className={cx('grid gap-3', claude ? 'grid-cols-3' : 'grid-cols-1')}>

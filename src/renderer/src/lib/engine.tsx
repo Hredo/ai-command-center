@@ -18,7 +18,7 @@ import React, { useEffect, useSyncExternalStore } from 'react'
 import type {
   RunRecord, StoredSession, SessionTurn, TurnMetrics, TermInfo, TermEvent,
   ChatMessage, SessionKind, UsageLimit, FileChange, FileTouch, Attachment, Effort,
-  AgentStep, CliLimit
+  AgentStep, CliLimit, QuotaReport
 } from '@shared/types'
 import { useStore } from './store'
 import { navigate } from './nav'
@@ -193,6 +193,11 @@ const ticker = new Slice<number>(0)
  * se refrescan solas en cuanto hay algo nuevo que contar.
  */
 const runsVersion = new Slice<number>(0)
+/**
+ * Los cupos de todas las IAs. Main los recalcula en cuanto cambia algo y los
+ * manda; aquí sólo se guarda lo último que llegó.
+ */
+const quotas = new Slice<QuotaReport | null>(null)
 
 export const uid = (): string => crypto.randomUUID()
 
@@ -602,6 +607,11 @@ function wire(): void {
   window.api.live.onChanged((e) => {
     if (e.topics.includes('runs')) runsVersion.update((n) => n + 1)
   })
+
+  void window.api.quotas.get().then((r) => {
+    if (r.ok && r.data) quotas.set(r.data)
+  })
+  window.api.quotas.onUpdated((r) => quotas.set(r))
 }
 
 /* ------------------------------------------------------------------ *
@@ -1521,6 +1531,16 @@ export function useInFlight(): InFlight {
     add(c.providerId, c.model, inTok, c.live?.approxTokens ?? 0)
   }
   return { count, tokens, cost: total }
+}
+
+export function useQuotas(): QuotaReport | null {
+  return useSlice(quotas)
+}
+
+/** Vuelve a preguntar a todas las fuentes, también a las remotas. */
+export async function refreshQuotas(): Promise<void> {
+  const r = await window.api.quotas.get(true)
+  if (r.ok && r.data) quotas.set(r.data)
 }
 
 export function useRunsVersion(): number {

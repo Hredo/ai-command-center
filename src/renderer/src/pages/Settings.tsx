@@ -4,6 +4,8 @@ import {
   ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare
 } from 'lucide-react'
 import { OllamaPanel } from '../components/OllamaPanel'
+import { QuotasSettings } from '../components/QuotasSettings'
+import { lastNavTarget, onNavigate } from '../lib/nav'
 import { Panel, PanelHeader, Button, Badge, Input, Field, Select, Toggle, cx, Dot, Tabs, Empty } from '../components/ui'
 import { AppearanceTab, EditorTab, SecurityTab } from './Appearance'
 import { useStore } from '../lib/store'
@@ -171,11 +173,26 @@ function ProviderRow({
   )
 }
 
+const TABS = ['providers', 'local', 'quotas', 'detection', 'appearance', 'editor', 'security', 'prefs'] as const
+type SettingsTab = (typeof TABS)[number]
+const isTab = (v: unknown): v is SettingsTab => TABS.includes(v as SettingsTab)
+
 export default function Settings(): React.JSX.Element {
   const { config, status, info, reload, reloadStatus, reloadModels } = useStore()
   const t = useT()
-  const [tab, setTab] =
-    useState<'providers' | 'local' | 'detection' | 'appearance' | 'editor' | 'security' | 'prefs'>('providers')
+  const [tab, setTab] = useState<SettingsTab>(() => {
+    const last = lastNavTarget()
+    return last?.page === 'settings' && isTab(last.tab) ? last.tab : 'providers'
+  })
+  // Otras secciones pueden abrir Ajustes en una pestaña concreta (el Panel
+  // lleva a la de cupos).
+  useEffect(
+    () =>
+      onNavigate((target) => {
+        if (target.page === 'settings' && isTab(target.tab)) setTab(target.tab)
+      }),
+    []
+  )
   const [shells, setShells] = useState<{ shells: { path: string; label: string }[]; current: string } | null>(null)
   const [det, setDet] = useState<DetectionResult | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -257,6 +274,7 @@ export default function Settings(): React.JSX.Element {
               items={[
                 { id: 'providers', label: t('settings.tab.providers'), count: status.length },
                 { id: 'local', label: t('settings.tab.local') },
+                { id: 'quotas', label: t('Cupos') },
                 { id: 'detection', label: t('settings.tab.detection') },
                 { id: 'appearance', label: t('settings.tab.appearance') },
                 { id: 'editor', label: t('settings.tab.editor') },
@@ -313,6 +331,9 @@ export default function Settings(): React.JSX.Element {
 
         {/* ------------------------------------------------ Local */}
         {tab === 'local' ? <OllamaPanel /> : null}
+
+        {/* ------------------------------------------ Cupos y presupuestos */}
+        {tab === 'quotas' ? <QuotasSettings /> : null}
 
         {/* --------------------------------- Apariencia, editor y seguridad */}
         {tab === 'appearance' ? <AppearanceTab /> : null}
@@ -516,7 +537,7 @@ export default function Settings(): React.JSX.Element {
             <Panel>
               <PanelHeader title={t('Costes')} icon={<HardDrive size={14} />} />
               <div className="p-4 space-y-4">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-4 items-end">
                   <Field label={t('Moneda')}>
                     <Select
                       value={s.currency}
@@ -533,14 +554,12 @@ export default function Settings(): React.JSX.Element {
                       className="num"
                     />
                   </Field>
-                  <Field label={t('Presupuesto mensual (USD)')} hint={t('Sólo informativo')}>
-                    <Input
-                      type="number" step={1} defaultValue={s.monthlyBudget ?? ''}
-                      onBlur={(e) => void setSetting({ monthlyBudget: Number(e.target.value) || undefined })}
-                      className="num"
-                      placeholder="—"
-                    />
-                  </Field>
+                  <div className="text-[11.5px] text-dim leading-relaxed pb-1.5">
+                    {t('Los presupuestos, con avisos y freno, están en')}{' '}
+                    <button className="text-accent hover:underline" onClick={() => setTab('quotas')}>
+                      {t('Cupos')}
+                    </button>
+                  </div>
                 </div>
                 <Toggle
                   checked={s.autoRefreshCatalog}

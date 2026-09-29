@@ -364,6 +364,10 @@ export interface Settings {
    * entera). Después se compacta y se queda con las métricas. 0: nunca.
    */
   historyDetailDays?: number
+  /** Qué fuentes de cupo se consultan y cuándo avisar. */
+  quotas?: QuotaSettings
+  /** Presupuestos de gasto. Sustituyen al antiguo `monthlyBudget`, que se migra. */
+  budgets?: Budget[]
 }
 
 export interface AppConfig {
@@ -1122,4 +1126,120 @@ export interface RelayPackage {
   diffTruncated: boolean
   /** Por qué se releva, si se sabe: cupo agotado, un error… */
   reason?: string
+}
+
+/* ------------------------------------------------------------------ *
+ * Cupos de todas las IAs y presupuestos                              *
+ * ------------------------------------------------------------------ */
+
+/**
+ * De dónde sale un cupo, que es lo que dice cuánto fiarse de él:
+ *  - `official`: lo dice el propio proveedor (el % de la ventana, un saldo).
+ *  - `measured`: lo cuenta la app con tu uso real contra un tope que el
+ *    proveedor publica en su documentación, pero no por API.
+ *  - `own`: un presupuesto que has puesto tú.
+ */
+export type QuotaOrigin = 'official' | 'measured' | 'own'
+
+export interface Quota {
+  /** Único y estable: 'claude.five_hour', 'codex.primary', 'budget.<id>'… */
+  id: string
+  /** A quién pertenece, legible: «Claude», «ChatGPT · Codex», «OpenRouter»… */
+  provider: string
+  /** Para agrupar y para saber qué agentes dependen de él. */
+  providerKey: string
+  /** Qué ventana o qué saldo es: «Ventana de 5 h», «Semana», «Saldo»… */
+  label: string
+  /** De qué es, si hace falta decirlo: el plan («Pro»), el nombre del presupuesto… */
+  target?: string
+  kind: 'window' | 'balance' | 'rate' | 'budget'
+  /** Unidad de `used`, `limit` y `remaining`. */
+  unit: 'percent' | 'usd' | 'requests' | 'tokens' | 'cny'
+  used?: number
+  limit?: number
+  remaining?: number
+  /** 0–100 cuando se sabe. Sin tope conocido no hay porcentaje. */
+  usedPct?: number
+  resetsAt?: number
+  /** Duración de la ventana, si es una ventana. */
+  windowMs?: number
+  origin: QuotaOrigin
+  /** Cómo se sabe: frases sueltas separadas por saltos de línea (se traducen una a una). */
+  how: string
+  updatedAt: number
+  /** Comandos de agentes que gastan de este cupo: 'claude', 'codex'… */
+  agents?: string[]
+  /**
+   * A este ritmo, cuándo llega al tope. Sin tope o sin ritmo, no hay. El
+   * ritmo va en la unidad de `used` o, si no la hay, en puntos de % por hora.
+   */
+  projection?: { ratePerHour: number; etaAt?: number; hitsBeforeReset?: boolean }
+  /** El dato es de hace demasiado: se enseña, pero diciéndolo. */
+  stale?: boolean
+  error?: string
+}
+
+/** Un proveedor que usas y cuyo cupo no se puede saber desde aquí, y por qué. */
+export interface QuotaGap {
+  provider: string
+  why: string
+  url?: string
+}
+
+export interface QuotaReport {
+  quotas: Quota[]
+  gaps: QuotaGap[]
+  at: number
+}
+
+/** Un cupo ha cruzado un umbral de aviso (o se ha agotado). */
+export interface QuotaAlert {
+  quotaId: string
+  provider: string
+  label: string
+  usedPct: number
+  /** El umbral cruzado: 50, 80, 95… o 100 si se ha agotado. */
+  level: number
+  resetsAt?: number
+  etaAt?: number
+  /** Si se ha agotado: el agente con más margen para seguir. */
+  suggestion?: { agentId: string; agentName: string; reason: string; left?: number; where?: string }
+}
+
+/** Plan de Gemini CLI: de él sale el tope diario que publica Google. */
+export type GeminiPlan = 'auto' | 'free' | 'pro' | 'ultra' | 'standard' | 'enterprise' | 'none'
+
+export interface QuotaSettings {
+  /** Leer el % del plan de Claude con un statusLine propio (encadena el tuyo). */
+  claudeStatusLine?: boolean
+  /** Preguntar a GitHub por el cupo de Copilot con el token de `gh`. */
+  copilot?: boolean
+  geminiPlan?: GeminiPlan
+  /** Tienes el plan Go de OpenCode: se miden sus topes. */
+  opencodeGo?: boolean
+  /** Consultar saldos de las claves (OpenRouter, DeepSeek, Kimi…). Sí por omisión. */
+  balances?: boolean
+  /** Avisos del sistema al cruzar los umbrales. Sí por omisión. */
+  alerts?: boolean
+  /** Umbrales de aviso en %. Por omisión 50, 80 y 95. */
+  thresholds?: number[]
+}
+
+/** Un presupuesto de gasto en dinero, sobre lo que quieras. */
+export interface Budget {
+  id: string
+  label?: string
+  /** Sobre qué se cuenta. */
+  scope: 'total' | 'provider' | 'project' | 'agent'
+  /** providerId, projectId o nombre del agente, según el ámbito. */
+  target?: string
+  period: 'day' | 'week' | 'month'
+  limitUsd: number
+  /** Además de avisar, no deja lanzar nada que cuente en él al llegar al 100 %. */
+  hard?: boolean
+  /**
+   * Contar también lo estimado (lo que costaría a precio de API lo que va por
+   * suscripción). Por omisión no: un presupuesto es dinero de verdad.
+   */
+  includeEstimated?: boolean
 }

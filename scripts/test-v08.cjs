@@ -202,7 +202,7 @@ function setupExternal() {
 
   // Gemini CLI: la carpeta es el SHA-256 de la ruta del proyecto.
   const hash = require('node:crypto').createHash('sha256').update(REPO).digest('hex')
-  const chats = path.join(GEMINI_HOME, 'tmp', hash, 'chats')
+  const chats = path.join(GEMINI_HOME, '.gemini', 'tmp', hash, 'chats')
   fs.mkdirSync(chats, { recursive: true })
   fs.writeFileSync(
     path.join(chats, 'session-gem1.json'),
@@ -249,7 +249,24 @@ function setupExternal() {
   db.prepare('insert into todo values (?,?,?,?,?,?,?)').run('ses_oc1', 'separar rutas', 'completed', 'high', 0, now, now)
   db.prepare('insert into todo values (?,?,?,?,?,?,?)').run('ses_oc1', 'añadir tests', 'pending', 'high', 1, now, now)
   db.close()
+
+  // Gemini CLI entra con cuenta de Google: el plan se supone gratuito.
+  fs.writeFileSync(
+    path.join(GEMINI_HOME, '.gemini', 'settings.json'),
+    JSON.stringify({ security: { auth: { selectedType: 'oauth-personal' } } }),
+    'utf8'
+  )
+
+  // Claude Code con una barra de estado propia y otro ajuste que no se puede perder.
+  fs.mkdirSync(CLAUDE_DIR, { recursive: true })
+  fs.writeFileSync(
+    path.join(CLAUDE_DIR, 'settings.json'),
+    JSON.stringify({ theme: 'dark', statusLine: { type: 'command', command: 'echo mi-barra' } }, null, 2),
+    'utf8'
+  )
 }
+
+const CLAUDE_DIR = path.join(HOME, 'claude')
 
 setupRepo()
 setupFixtures()
@@ -257,6 +274,10 @@ setupExternal()
 process.env.CODEX_HOME = CODEX_HOME
 process.env.GEMINI_CLI_HOME = GEMINI_HOME
 process.env.XDG_DATA_HOME = DATA_HOME
+process.env.CLAUDE_CONFIG_DIR = CLAUDE_DIR
+// Una clave de mentira: sólo para que el freno de presupuesto llegue a mirar
+// (con el freno puesto no sale ninguna petición).
+process.env.GROQ_API_KEY = 'clave-de-prueba'
 
 require('../out/main/index.js')
 
@@ -467,6 +488,202 @@ app.whenReady().then(async () => {
     (ext.prompt ?? '').slice(0, 70)
   )
   log(ext.bad?.ok === false, 'un origen inventado se rechaza', ext.bad?.error)
+
+  /* -------------------------------------------------------------- *
+   * A3 · Cupos de todas las IAs                                     *
+   * A4 · Proyección, avisos y a quién pasar el relevo               *
+   * A5 · Presupuestos                                               *
+   * -------------------------------------------------------------- */
+  const settingsFile = path.join(CLAUDE_DIR, 'settings.json')
+  const readSettings = () => JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
+
+  const sl = await js(`(async () => {
+    const api = window.api
+    window.__alerts = []
+    api.quotas.onAlert((a) => window.__alerts.push(a))
+    const before = (await api.quotas.statusLine()).data
+    const installed = (await api.quotas.installStatusLine()).data
+    const cfg = (await api.config.get()).data
+    return { before, installed, flag: cfg.settings.quotas?.claudeStatusLine }
+  })()`)
+  const withOurs = readSettings()
+  log(sl.before?.foreign === true && sl.before?.installed === false, 'la barra de estado que ya tenías se reconoce como tuya')
+  log(
+    sl.installed?.installed === true && sl.installed?.chained === true && sl.flag === true,
+    'EL STATUSLINE DE LA APP SE PONE Y ENCADENA EL TUYO',
+    withOurs.statusLine?.command
+  )
+  log(withOurs.theme === 'dark', 'el resto de settings.json no se toca')
+  log(
+    fs.readdirSync(path.join(app.getPath('userData'), 'data', 'statusline')).some((f) => f.startsWith('settings.backup-')),
+    'se guarda copia de settings.json antes de escribir'
+  )
+
+  // Claude Code llamaría a la barra así: con su JSON por la entrada estándar.
+  const nowS = Math.floor(Date.now() / 1000)
+  const feed = (five) =>
+    require('node:child_process').execSync(withOurs.statusLine.command, {
+      input: JSON.stringify({
+        model: { display_name: 'Opus' },
+        rate_limits: {
+          five_hour: { used_percentage: five, resets_at: nowS + 7200 },
+          seven_day: { used_percentage: 64, resets_at: nowS + 3 * 86400 }
+        }
+      }),
+      encoding: 'utf8'
+    })
+  const shown = feed(37)
+  log(shown.includes('mi-barra'), 'TU BARRA SE SIGUE VIENDO: LA DE LA APP LA EJECUTA DETRÁS', shown.trim())
+
+  const agentsJson = JSON.stringify({
+    claude: { id: 'claude-cupo', name: 'Claude cupo', type: 'cli', command: BINS.claude, args: ['-p', '--output-format', 'stream-json', '--verbose'], parser: 'claude-stream-json', color: '#fff', createdAt: Date.now() },
+    codex: { id: 'codex-cupo', name: 'Codex cupo', type: 'cli', command: BINS.codex, args: ['exec', '--json', '{{prompt}}'], parser: 'codex-json', color: '#fff', createdAt: Date.now() }
+  })
+  const q = await js(`(async () => {
+    const api = window.api
+    const agents = ${agentsJson}
+    await api.agents.saveCli(agents.claude)
+    await api.agents.saveCli(agents.codex)
+    const first = (await api.quotas.get(true)).data
+    await api.config.settings({ quotas: { claudeStatusLine: true, geminiPlan: 'pro' } })
+    const pro = (await api.quotas.get(true)).data
+    return { first, pro }
+  })()`)
+  const byId = (r, id) => r?.quotas?.find((x) => x.id === id)
+  const five = byId(q.first, 'claude.five_hour')
+  log(five?.usedPct === 37 && five?.origin === 'official' && five?.unit === 'percent', 'CLAUDE: EL % OFICIAL DE LA VENTANA DE 5 H', JSON.stringify({ pct: five?.usedPct, origin: five?.origin }))
+  log(byId(q.first, 'claude.seven_day')?.usedPct === 64, 'Claude: y el de la semana')
+  log(
+    five?.projection && Math.abs(five.projection.ratePerHour - 37 / 3) < 0.2 && five.projection.hitsBeforeReset === false,
+    'A ESTE RITMO: PROYECCIÓN CON LA MEDIA DE LA VENTANA',
+    JSON.stringify(five?.projection)
+  )
+  const cx1 = byId(q.first, 'codex.primary')
+  log(cx1?.usedPct === 42.5 && cx1?.label === 'Ventana de 5 h' && cx1?.origin === 'official', 'CODEX: SU % OFICIAL DE LA VENTANA DE 5 H', JSON.stringify({ pct: cx1?.usedPct, label: cx1?.label }))
+  log(byId(q.first, 'codex.secondary')?.label === 'Semana' && byId(q.first, 'codex.secondary')?.usedPct === 12, 'Codex: y la semanal')
+  const gem = byId(q.first, 'gemini.daily')
+  log(gem?.used === 2 && gem?.limit === 1000 && gem?.target === 'gratuito', 'GEMINI CLI: PETICIONES DE HOY CONTRA EL TOPE DEL PLAN GRATUITO', JSON.stringify({ used: gem?.used, limit: gem?.limit }))
+  log(byId(q.pro, 'gemini.daily')?.limit === 1500, 'con el plan Pro elegido, su tope', String(byId(q.pro, 'gemini.daily')?.limit))
+  const go = byId(q.first, 'opencode-go.5h')
+  log(go && Math.abs(go.used - 0.42) < 1e-9 && go.limit === 12, 'OPENCODE GO: SU GASTO CONTRA 12 $ CADA 5 H, SIN ACTIVARLO', go ? `${go.used} de ${go.limit}` : 'no aparece')
+  log(
+    q.first?.gaps?.some((g) => g.provider === 'ChatGPT (web y app)') && q.first?.gaps?.some((g) => g.provider === 'Gemini (app y web)'),
+    'lo que no se puede saber se dice, con enlace',
+    (q.first?.gaps ?? []).map((g) => g.provider).join(', ')
+  )
+  log(!q.first?.quotas?.some((x) => x.providerKey === 'openrouter' || x.providerKey === 'copilot'), 'sin clave ni permiso no se pregunta a nadie')
+
+  // Se agota la ventana de Claude: aviso al 100 % y relevo al que más margen tiene.
+  feed(100)
+  const ex = await js(`(async () => {
+    const api = window.api
+    const r = (await api.quotas.get(true)).data
+    await new Promise((res) => setTimeout(res, 300))
+    return { r, alerts: window.__alerts.slice() }
+  })()`)
+  const out = ex.alerts.find((a) => a.quotaId === 'claude.five_hour' && a.level === 100)
+  log(Boolean(out), 'AL AGOTARSE UN CUPO LLEGA EL AVISO', out ? `${out.provider} · ${out.label}` : JSON.stringify(ex.alerts.map((a) => a.quotaId + '@' + a.level)))
+  log(
+    // Codex tiene un 42,5 %: le queda un 58 %. Otro agente sólo podría ganarle con más margen aún.
+    Boolean(out?.suggestion) && out.suggestion.agentId !== 'claude-cupo' && (out.suggestion.left ?? 0) >= 57,
+    'Y PROPONE SEGUIR CON LA IA QUE MÁS MARGEN TIENE',
+    JSON.stringify(out?.suggestion)
+  )
+  log(!ex.alerts.some((a) => a.quotaId === 'codex.primary'), 'un cupo por debajo del primer umbral no avisa')
+
+  // Presupuestos: uno sobre el agente contando lo estimado y con freno, y otro
+  // de sólo dinero real, donde lo que va por el plan no cuenta.
+  const b = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+    await api.config.settings({ budgets: [
+      { id: 'b-agente', scope: 'agent', target: 'claude-cupo', period: 'day', limitUsd: 0.015, includeEstimated: true, hard: true },
+      { id: 'b-real', scope: 'agent', target: 'claude-cupo', period: 'day', limitUsd: 0.001, hard: true }
+    ] })
+    await api.quotas.get(true)
+    const sid = await engine.newSession('cli', { cliAgentId: 'claude-cupo' })
+    const r1 = await engine.sendCli(sid, { prompt: 'uno', agentId: 'claude-cupo', projectPath: repo })
+    await wait(1200)
+    const after1 = (await api.quotas.get(true)).data
+    const r2 = await engine.sendCli(sid, { prompt: 'dos', agentId: 'claude-cupo', projectPath: repo })
+    await wait(1200)
+    const r3 = await engine.sendCli(sid, { prompt: 'tres', agentId: 'claude-cupo', projectPath: repo })
+
+    // Una llamada por API (dinero de verdad) cuenta en un presupuesto de proveedor.
+    await api.runs.update(r2.id, { kind: 'chat', providerId: 'openrouter', costTotal: 1.5, agentId: undefined })
+    await api.config.settings({ budgets: [{ id: 'b-or', scope: 'provider', target: 'openrouter', period: 'month', limitUsd: 3 }] })
+    await wait(1200)
+    const api1 = (await api.quotas.get(true)).data
+
+    // Y con el freno puesto, una llamada por API ni sale: se para antes de la red.
+    await api.runs.update(r1.id, { kind: 'chat', providerId: 'groq', costTotal: 1 })
+    await api.config.settings({ budgets: [{ id: 'b-groq', scope: 'provider', target: 'groq', period: 'day', limitUsd: 0.5, hard: true }] })
+    const apiBlocked = (await api.run.prompt({ providerId: 'groq', model: 'llama-de-prueba', prompt: 'hola' }, 'run-freno-api')).data
+    // Lo local no cuesta dinero: un presupuesto «de todo» agotado no lo frena.
+    await api.config.settings({ budgets: [{ id: 'b-todo', scope: 'total', period: 'day', limitUsd: 0.5, hard: true }] })
+    const local = (await api.run.prompt({ providerId: 'ollama', model: 'no-existe', prompt: 'hola' }, 'run-local')).data
+    await api.runs.remove('run-freno-api')
+    await api.runs.remove('run-local')
+
+    await engine.deleteSession(sid)
+    for (const r of [r1, r2, r3]) if (r?.id) await api.runs.remove(r.id)
+    return { r1, r2, r3, after1, api1, apiBlocked, local, alerts: window.__alerts.slice() }
+  })()`)
+  const bAg = byId(b.after1, 'budget.b-agente')
+  log(bAg && Math.abs(bAg.used - 0.01) < 1e-9 && Math.round(bAg.usedPct) === 67 && bAg.origin === 'own', 'PRESUPUESTO: CUENTA LO GASTADO POR EL AGENTE', bAg ? `${bAg.used} de ${bAg.limit}` : 'no aparece')
+  log(byId(b.after1, 'budget.b-real')?.used === 0, 'POR OMISIÓN, LO DEL PLAN DE SUSCRIPCIÓN NO CUENTA COMO DINERO', String(byId(b.after1, 'budget.b-real')?.used))
+  log(b.r2?.status === 'ok', 'el presupuesto de sólo dinero real no frena al agente del plan', b.r2?.error)
+  log(
+    b.r3?.status === 'error' && /Presupuesto agotado/.test(b.r3?.error ?? ''),
+    'CON EL PRESUPUESTO AGOTADO Y EL FRENO PUESTO, NO SE LANZA',
+    (b.r3?.error ?? '').slice(0, 80)
+  )
+  log(
+    b.alerts.some((a) => a.quotaId === 'budget.b-agente' && a.level === 50) && b.alerts.some((a) => a.quotaId === 'budget.b-agente' && a.level === 100),
+    'LOS PRESUPUESTOS AVISAN AL 50 % Y AL AGOTARSE',
+    b.alerts.filter((a) => a.quotaId.startsWith('budget.')).map((a) => a.quotaId + '@' + a.level).join(', ')
+  )
+  const bOr = byId(b.api1, 'budget.b-or')
+  log(bOr?.used === 1.5 && bOr?.usedPct === 50, 'una llamada por API cuenta en el presupuesto de su proveedor', bOr ? `${bOr.used} de ${bOr.limit}` : 'no aparece')
+  log(
+    b.apiBlocked?.status === 'error' && /Presupuesto agotado/.test(b.apiBlocked?.error ?? ''),
+    'EL FRENO TAMBIÉN PARA LAS LLAMADAS POR API, ANTES DE SALIR A LA RED',
+    (b.apiBlocked?.error ?? '').slice(0, 70)
+  )
+  log(!/Presupuesto agotado/.test(b.local?.error ?? ''), 'lo local nunca se frena por dinero', (b.local?.error ?? 'ok').slice(0, 60))
+
+  // Se quita el statusLine: vuelve el tuyo. Si alguien lo ha cambiado, no se toca.
+  const un = await js(`(async () => {
+    const api = window.api
+    const off = (await api.quotas.uninstallStatusLine()).data
+    const cfg = (await api.config.get()).data
+    return { off, flag: cfg.settings.quotas?.claudeStatusLine }
+  })()`)
+  const restored = readSettings()
+  log(
+    restored.statusLine?.command === 'echo mi-barra' && restored.theme === 'dark' && un.off?.installed === false && un.flag === false,
+    'AL QUITARLO, SETTINGS.JSON QUEDA COMO ESTABA',
+    JSON.stringify(restored.statusLine)
+  )
+  await js(`window.api.quotas.installStatusLine()`)
+  const tampered = readSettings()
+  tampered.statusLine = { type: 'command', command: 'echo otra-barra' }
+  fs.writeFileSync(settingsFile, JSON.stringify(tampered, null, 2), 'utf8')
+  const foreign = await js(`window.api.quotas.uninstallStatusLine().then((r) => r.data)`)
+  log(
+    Boolean(foreign?.untouched) && readSettings().statusLine?.command === 'echo otra-barra',
+    'SI LA BARRA YA NO ES LA DE LA APP, NO SE TOCA',
+    foreign?.untouched
+  )
+
+  await js(`(async () => {
+    const api = window.api
+    await api.agents.removeCli('claude-cupo')
+    await api.agents.removeCli('codex-cupo')
+    await api.config.settings({ budgets: [], quotas: {} })
+  })()`)
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

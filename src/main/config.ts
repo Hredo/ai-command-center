@@ -38,11 +38,13 @@ function emptyConfig(): AppConfig {
 let cache: AppConfig | null = null
 
 /**
+ * Puesta al día de una configuración de una versión anterior.
+ *
  * Los agentes que la app detectó sola se actualizan cuando aprendemos a
  * sacarles más información. Sólo se toca el que siga tal cual lo dejó la
  * detección: si lo has cambiado a mano, se queda como lo pusiste.
  */
-function migrateDetectedClis(cfg: AppConfig): void {
+function migrateConfig(cfg: AppConfig): void {
   let changed = false
   for (const agent of cfg.cliAgents) {
     const isOldOpencode =
@@ -79,6 +81,14 @@ function migrateDetectedClis(cfg: AppConfig): void {
       changed = true
     }
   }
+  // 0.8: el presupuesto mensual, que era sólo informativo, pasa a ser uno más
+  // de la lista de presupuestos, que avisan y pueden bloquear.
+  const s = cfg.settings
+  if (s.monthlyBudget && s.monthlyBudget > 0 && !s.budgets?.length) {
+    s.budgets = [{ id: 'mensual', scope: 'total', period: 'month', limitUsd: s.monthlyBudget }]
+    delete s.monthlyBudget
+    changed = true
+  }
   if (changed) {
     try {
       writeFileAtomic(paths.config, JSON.stringify(cfg, null, 2))
@@ -98,7 +108,7 @@ export function getConfig(): AppConfig {
         ...raw,
         settings: { ...defaultSettings, ...(raw.settings || {}) }
       }
-      migrateDetectedClis(cache!)
+      migrateConfig(cache!)
       return cache!
     } catch (e) {
       console.error('config.json corrupto, se parte de cero:', e)

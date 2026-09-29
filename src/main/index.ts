@@ -20,6 +20,7 @@ import { ensureUtf8Locale, loadShellEnv } from './shellEnv'
 import { runSelfTest } from './selftest'
 import { startMaintenance, stopMaintenance } from './maintenance'
 import { watchExternal, stopWatchingExternal } from './external'
+import { startQuotas, stopQuotas, pokeQuotas } from './quotas'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
@@ -205,7 +206,10 @@ app.whenReady().then(async () => {
   // Lo que cambia en disco y lo que dicen los proveedores sobre el consumo
   // van a la ventana en cuanto se sabe: la interfaz no pregunta, escucha.
   initWatch((e) => mainWindow?.webContents.send('git:changed', e))
-  initUsage((all) => mainWindow?.webContents.send('usage:updated', all))
+  initUsage((all) => {
+    mainWindow?.webContents.send('usage:updated', all)
+    pokeQuotas()
+  })
   // El histórico y la configuración avisan al cambiar, venga el cambio de
   // donde venga: el Panel, el Histórico y la barra de título se releen solos.
   initLive((topics) => {
@@ -224,11 +228,28 @@ app.whenReady().then(async () => {
   // en la app de Claude— se leen de sus transcripciones y entran al histórico
   // como cualquier otra. También son las que dicen cuánto llevas gastado del
   // plan en las últimas horas.
-  watchClaude((payload) => mainWindow?.webContents.send('claude:updated', payload))
+  watchClaude((payload) => {
+    mainWindow?.webContents.send('claude:updated', payload)
+    pokeQuotas()
+  })
 
   // Y lo mismo con Codex, OpenCode y Gemini CLI: sus sesiones de fuera entran
   // al histórico y a los cupos en cuanto escriben en su carpeta.
-  if (!SELFTEST) watchExternal((payload) => mainWindow?.webContents.send('external:updated', payload))
+  if (!SELFTEST) {
+    watchExternal((payload) => {
+      mainWindow?.webContents.send('external:updated', payload)
+      pokeQuotas()
+    })
+  }
+
+  // Los cupos de todas las IAs se recalculan con cada cambio de lo anterior y
+  // cada minuto; los que cruzan un umbral avisan.
+  if (!SELFTEST) {
+    startQuotas(
+      (r) => mainWindow?.webContents.send('quotas:updated', r),
+      (a) => mainWindow?.webContents.send('quotas:alert', a)
+    )
+  }
 
   // Los motores locales se vigilan solos: arrancar Ollama con la app abierta
   // se refleja sin tener que pulsar nada.
@@ -268,6 +289,7 @@ app.on('before-quit', () => {
   stopAllWatches()
   stopMaintenance()
   stopWatchingExternal()
+  stopQuotas()
   closeAllTerms()
 })
 

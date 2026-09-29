@@ -14,6 +14,7 @@ import { opencodeLaunch, type OpencodeLaunch } from '../opencode'
 import { killTree } from '../platform'
 import { projectForPath } from '../projectMatch'
 import { resumeArgs, resumeCaps } from '@shared/cliCaps'
+import { budgetBlock } from '../quotas/budgets'
 import type {
   AgentStep, AgentTodo, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
@@ -981,6 +982,25 @@ function startCliAgent(
       run.status = 'error'
       run.error = prep.message
       run.totalMs = Date.now() - startedAt
+      finish(run)
+      return
+    }
+
+    // Un presupuesto con bloqueo agotado frena también a los agentes de
+    // consola, pero sólo si lo que gastan cuenta en él (por omisión, lo de un
+    // plan de suscripción no cuenta).
+    const blocked = budgetBlock({
+      kind: 'cli',
+      providerId: 'cli:' + agent.command,
+      model: agent.model ?? agent.name,
+      projectId: opts.projectId ?? owner?.id,
+      agentId: opts.agentId,
+      agentName: agent.name
+    })
+    if (blocked) {
+      const run = baseRun()
+      run.status = 'error'
+      run.error = blocked
       finish(run)
       return
     }

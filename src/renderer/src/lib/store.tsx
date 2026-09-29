@@ -5,6 +5,8 @@ export interface Toast {
   id: string
   kind: 'ok' | 'error' | 'info'
   text: string
+  /** Un botón para ir a donde se arregla, si lo hay. */
+  action?: { label: string; run: () => void }
 }
 
 interface Store {
@@ -17,7 +19,7 @@ interface Store {
   reload: () => Promise<void>
   reloadStatus: () => Promise<void>
   reloadModels: () => Promise<void>
-  toast: (kind: Toast['kind'], text: string) => void
+  toast: (kind: Toast['kind'], text: string, action?: Toast['action']) => void
   toasts: Toast[]
   dismiss: (id: string) => void
 }
@@ -40,13 +42,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }): Reac
   const [toasts, setToasts] = useState<Toast[]>([])
   const timers = useRef<Record<string, number>>({})
 
-  const toast = useCallback((kind: Toast['kind'], text: string) => {
+  const toast = useCallback((kind: Toast['kind'], text: string, action?: Toast['action']) => {
     const id = crypto.randomUUID()
-    setToasts((t) => [...t, { id, kind, text }])
+    setToasts((t) => [...t, { id, kind, text, action }])
+    // Con botón se queda más: hay que darle tiempo a leerlo y a pulsarlo.
     timers.current[id] = window.setTimeout(() => {
       setToasts((t) => t.filter((x) => x.id !== id))
       delete timers.current[id]
-    }, kind === 'error' ? 7000 : 3800)
+    }, action ? 12000 : kind === 'error' ? 7000 : 3800)
   }, [])
 
   const dismiss = useCallback((id: string) => {

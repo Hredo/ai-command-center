@@ -23,10 +23,20 @@ export interface NavTarget {
 
 type Listener = (t: NavTarget) => void
 const listeners = new Set<Listener>()
+let last: NavTarget | null = null
 
 export function navigate(target: PageId | NavTarget): void {
   const t = typeof target === 'string' ? { page: target } : target
+  last = t
   for (const l of [...listeners]) l(t)
+}
+
+/**
+ * La última navegación pedida. Una sección que se monta por primera vez justo
+ * después (y por tanto no estaba escuchando) la lee al nacer.
+ */
+export function lastNavTarget(): NavTarget | null {
+  return last
 }
 
 export function onNavigate(cb: Listener): () => void {

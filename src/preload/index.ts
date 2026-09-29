@@ -6,8 +6,19 @@ import type {
   StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks, OpencodeModel,
   GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
   GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage,
-  RelaySource, RelayPackage
+  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource
 } from '@shared/types'
+
+/** Estado del statusLine de la app en la configuración de Claude Code. */
+interface StatusLineInfo {
+  installed: boolean
+  chained: boolean
+  foreign: boolean
+  lastAt?: number
+  shell: 'sh' | 'powershell'
+  settingsPath: string
+  untouched?: string
+}
 
 /** Lo que la aplicación puede decir sobre su propio aislamiento. */
 interface SecurityReport {
@@ -301,6 +312,30 @@ const api = {
       ipcRenderer.on('external:updated', listener)
       return () => {
         ipcRenderer.removeListener('external:updated', listener)
+      }
+    }
+  },
+  /** Cupos de todas las IAs, presupuestos y avisos. */
+  quotas: {
+    get: (force?: boolean) => call<QuotaReport>('quotas:get', force),
+    statusLine: () => call<StatusLineInfo>('quotas:statusLine'),
+    installStatusLine: () => call<StatusLineInfo>('quotas:installStatusLine'),
+    uninstallStatusLine: () => call<StatusLineInfo>('quotas:uninstallStatusLine'),
+    adminKeys: () => call<Record<'anthropic' | 'openai', { source: KeySource; masked: string }>>('quotas:adminKeys'),
+    setAdminKey: (which: 'anthropic' | 'openai', key: string) =>
+      call<{ source: KeySource; masked: string }>('quotas:setAdminKey', which, key),
+    onUpdated: (cb: (r: QuotaReport) => void) => {
+      const listener = (_e: unknown, payload: QuotaReport): void => cb(payload)
+      ipcRenderer.on('quotas:updated', listener)
+      return () => {
+        ipcRenderer.removeListener('quotas:updated', listener)
+      }
+    },
+    onAlert: (cb: (a: QuotaAlert) => void) => {
+      const listener = (_e: unknown, payload: QuotaAlert): void => cb(payload)
+      ipcRenderer.on('quotas:alert', listener)
+      return () => {
+        ipcRenderer.removeListener('quotas:alert', listener)
       }
     }
   },

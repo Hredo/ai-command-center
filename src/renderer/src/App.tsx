@@ -14,7 +14,7 @@ import { Pane } from './components/Resizable'
 import { cost } from './lib/format'
 import { TITLEBAR_HEIGHT, TRAFFIC_LIGHTS_WIDTH } from '@shared/defaults'
 import { IS_MAC, modKey } from './lib/platform'
-import { onNavigate, type PageId } from './lib/nav'
+import { navigate, onNavigate, type PageId } from './lib/nav'
 /**
  * Cada sección se descarga la primera vez que se entra en ella.
  *
@@ -236,7 +236,20 @@ function Toasts(): React.JSX.Element {
             className="bg-raised border border-line rounded-xl px-3.5 py-3 flex items-start gap-2.5 shadow-2xl fade-up"
           >
             <Icon size={15} className={cx('mt-0.5 shrink-0', color)} />
-            <span className="flex-1 text-[12.5px] leading-relaxed break-words">{item.text}</span>
+            <div className="flex-1 min-w-0">
+              <span className="block text-[12.5px] leading-relaxed break-words">{item.text}</span>
+              {item.action ? (
+                <button
+                  className="mt-1.5 text-[12px] text-accent hover:underline"
+                  onClick={() => {
+                    item.action!.run()
+                    dismiss(item.id)
+                  }}
+                >
+                  {item.action.label}
+                </button>
+              ) : null}
+            </div>
             <button onClick={() => dismiss(item.id)} className="text-dim hover:text-ink shrink-0" aria-label={t('common.close')}>
               <X size={14} />
             </button>
@@ -247,10 +260,50 @@ function Toasts(): React.JSX.Element {
   )
 }
 
+/**
+ * Los avisos de cupo también se enseñan dentro de la app, con un botón: al
+ * agotarse uno, «Seguir con…» abre la Consola con el agente que más margen
+ * tiene; si no, lleva al Panel, donde están todos los cupos.
+ */
+function useQuotaAlerts(): void {
+  const { toast } = useStore()
+  const t = useT()
+  useEffect(
+    () =>
+      window.api.quotas.onAlert((a) => {
+        const who = `${t(a.provider)} · ${t(a.label)}`
+        if (a.level >= 100) {
+          const s = a.suggestion
+          const text = s
+            ? t('Sin cupo: {who}. Puedes seguir con {agent}: {reason}.', {
+                who,
+                agent: s.agentName,
+                reason:
+                  s.left != null && s.where
+                    ? t('le queda un {n} % en {where}', { n: s.left, where: s.where })
+                    : t('no tiene ningún cupo conocido agotado')
+              })
+            : t('Sin cupo: {who}.', { who })
+          toast('error', text, {
+            label: a.suggestion ? t('Seguir con {name}', { name: a.suggestion.agentName }) : t('Ver cupos'),
+            run: () => navigate(a.suggestion ? { page: 'chat' } : { page: 'dashboard' })
+          })
+          return
+        }
+        toast(a.level >= 95 ? 'error' : 'info', t('{pct} % gastado: {who}', { pct: Math.round(a.usedPct), who }), {
+          label: t('Ver cupos'),
+          run: () => navigate('dashboard')
+        })
+      }),
+    [toast, t]
+  )
+}
+
 function Shell(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('dashboard')
   const windowVisible = useDocumentVisible()
   useWindowChrome()
+  useQuotaAlerts()
 
   // Una página se monta la primera vez que se visita y a partir de ahí se
   // queda montada, sólo oculta. Así no se pierde el scroll, ni la pestaña

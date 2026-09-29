@@ -32,8 +32,14 @@ import { notifyArena, notifyCommand, notifyPull } from './notify'
 import { allRuns } from './runs'
 import { buildRelay, relayPrompt } from './relay'
 import { refreshExternal } from './external'
-import { getConfig } from './config'
-import type { GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage } from '@shared/types'
+import { getConfig, updateSettings } from './config'
+import { quotaReport, pokeQuotas } from './quotas'
+import { statusLineInfo, installStatusLine, uninstallStatusLine } from './quotas/claudeStatusLine'
+import { ADMIN_KEYS, adminKey } from './quotas/remote'
+import { setKey, getStoredKey, mask } from './secrets'
+import type {
+  GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource
+} from '@shared/types'
 
 export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   const send = (channel: string, payload: unknown): void => {
@@ -258,6 +264,39 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   /* ------------------------- Sesiones de otras herramientas ------------------- */
 
   handle('external:refresh', () => refreshExternal(true))
+
+  /* ---------------------------------- Cupos ----------------------------------- */
+
+  handle('quotas:get', (force?: boolean) => quotaReport(force === true))
+  handle('quotas:statusLine', () => statusLineInfo())
+  // Tocar ~/.claude/settings.json sólo lo pide el usuario desde Ajustes: el
+  // interruptor viene apagado y aquí se enciende o se apaga de verdad.
+  handle('quotas:installStatusLine', () => {
+    const info = installStatusLine()
+    const q = getConfig().settings.quotas ?? {}
+    updateSettings({ quotas: { ...q, claudeStatusLine: true } })
+    pokeQuotas()
+    return info
+  })
+  handle('quotas:uninstallStatusLine', () => {
+    const info = uninstallStatusLine()
+    const q = getConfig().settings.quotas ?? {}
+    updateSettings({ quotas: { ...q, claudeStatusLine: false } })
+    pokeQuotas()
+    return info
+  })
+  const adminStatus = (which: keyof typeof ADMIN_KEYS): { source: KeySource; masked: string } => {
+    const stored = getStoredKey(ADMIN_KEYS[which].id)
+    if (stored) return { source: 'stored', masked: mask(stored) }
+    return adminKey(which) ? { source: 'env', masked: '' } : { source: 'none', masked: '' }
+  }
+  handle('quotas:adminKeys', () => ({ anthropic: adminStatus('anthropic'), openai: adminStatus('openai') }))
+  handle('quotas:setAdminKey', (which: string, key: string) => {
+    if (which !== 'anthropic' && which !== 'openai') throw new Error('clave de administrador desconocida')
+    setKey(ADMIN_KEYS[which].id, typeof key === 'string' ? key.trim() : '')
+    pokeQuotas()
+    return adminStatus(which)
+  })
 
   /* --------------------------------- Avisos ----------------------------------- */
 

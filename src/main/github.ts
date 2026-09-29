@@ -193,3 +193,31 @@ export async function ghClone(
   if (!r.ok) return { ok: false, detail: r.err || 'gh repo clone falló' }
   return { ok: true, detail: r.err || 'clonado', path: dest }
 }
+
+/**
+ * Una consulta a la API de GitHub hecha por el propio `gh`, con su sesión.
+ * La app recibe la respuesta, nunca el token. Sólo se usa con rutas fijas
+ * escritas aquí (el cupo de Copilot, las pull requests…), no con texto que
+ * venga de la interfaz.
+ */
+export async function ghApi(path: string, opts: { cwd?: string; timeout?: number } = {}): Promise<any> {
+  const gh = await ghPath()
+  if (!gh) throw new Error('GitHub CLI no está instalado')
+  const r = await run(gh, ['api', path], { cwd: opts.cwd, timeout: opts.timeout ?? 15000 })
+  if (!r.ok) throw new Error(r.err || `gh api ${path} falló`)
+  try {
+    return JSON.parse(r.out)
+  } catch {
+    throw new Error('respuesta de GitHub que no es JSON')
+  }
+}
+
+/** Ejecuta gh con argumentos armados aquí; devuelve salida y error tal cual. */
+export async function ghRun(
+  args: string[],
+  opts: { cwd?: string; timeout?: number } = {}
+): Promise<{ ok: boolean; out: string; err: string }> {
+  const gh = await ghPath()
+  if (!gh) return { ok: false, out: '', err: 'GitHub CLI no está instalado' }
+  return run(gh, args, { cwd: opts.cwd, timeout: opts.timeout ?? 30000 })
+}

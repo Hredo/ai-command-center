@@ -18,7 +18,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { refreshClaude } from './claudeSessions'
 
-const ROOT = join(homedir(), '.claude', 'projects')
+// Claude Code guarda todo en CLAUDE_CONFIG_DIR si está definida.
+const ROOT = join(process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude'), 'projects')
 
 /** Espera tras un cambio: junta las líneas que un mensaje escribe de golpe. */
 const SETTLE_MS = 250

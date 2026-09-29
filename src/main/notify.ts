@@ -7,7 +7,7 @@
  */
 import { Notification, BrowserWindow, app } from 'electron'
 import { getConfig } from './config'
-import type { RunRecord } from '@shared/types'
+import type { QuotaAlert, RunRecord } from '@shared/types'
 
 function fmtCost(usd: number): string {
   if (usd === 0) return '$0'
@@ -102,6 +102,26 @@ export function notifyPull(model: string, ok: boolean, detail?: string): void {
   if (!shouldNotify()) return
   if (ok) show('Modelo descargado', `${model} ya está disponible en Ollama.`)
   else show('Descarga fallida', `${model}: ${detail ?? 'error desconocido'}`, true)
+}
+
+/**
+ * Aviso de un cupo que cruza un umbral. Tiene su propio interruptor en los
+ * ajustes de cupos: no depende del aviso de fin de tarea ni de si la ventana
+ * está delante, porque quedarse sin cupo importa aunque estés mirando.
+ */
+export function notifyQuota(a: QuotaAlert): void {
+  if (getConfig().settings.quotas?.alerts === false) return
+  if (!Notification.isSupported()) return
+  const at = (ms?: number): string =>
+    ms ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+  const who = `${a.provider} · ${a.label}`
+  if (a.level >= 100) {
+    const next = a.suggestion ? ` Puedes seguir con ${a.suggestion.agentName}: ${a.suggestion.reason}.` : ''
+    show(`Sin cupo: ${who}`, `${a.resetsAt ? `Se repone a las ${at(a.resetsAt)}.` : ''}${next}`.trim(), true)
+    return
+  }
+  const eta = a.etaAt && (!a.resetsAt || a.etaAt < a.resetsAt) ? ` A este ritmo llegas al tope a las ${at(a.etaAt)}.` : ''
+  show(`${Math.round(a.usedPct)} % gastado: ${who}`, `Has pasado del ${a.level} %.${eta}`, a.level >= 95)
 }
 
 /** Aviso de un comando de terminal largo que ha terminado. */
