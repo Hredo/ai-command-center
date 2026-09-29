@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Search, Cpu, Cloud, Check } from 'lucide-react'
+import { ChevronDown, Search, Cpu, Cloud, Check, Star } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { cx, Badge } from './ui'
 import { price, tokens, shortModel } from '../lib/format'
 import type { ModelInfo } from '@shared/types'
 
 import { useT } from '../lib/i18n'
+/** Grupo de favoritos: va antes que los proveedores. */
+const FAV = '__favoritos'
+
 export interface Pick {
   providerId: string
   model: string
@@ -31,7 +34,8 @@ export function ModelPicker({
   exclude?: string[]
 }): React.JSX.Element {
   const t = useT()
-  const { models, defs, modelsLoading } = useStore()
+  const { models, defs, modelsLoading, config } = useStore()
+  const favorites = config?.favorites ?? []
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -67,12 +71,15 @@ export function ModelPicker({
       map.get(m.providerId)!.push(m)
     }
     // Los motores locales primero: son los que el usuario tiene delante.
-    return [...map.entries()].sort((a, b) => {
+    const sorted = [...map.entries()].sort((a, b) => {
       const la = isLocal(a[0]) ? 0 : 1
       const lb = isLocal(b[0]) ? 0 : 1
       return la - lb || a[0].localeCompare(b[0])
     })
-  }, [models, q, exclude, defs])
+    // Y encima de todo, los favoritos (se marcan en Modelos).
+    const favs = filtered.filter((m) => favorites.includes(`${m.providerId}:${m.id}`))
+    return favs.length ? [[FAV, favs] as [string, ModelInfo[]], ...sorted] : sorted
+  }, [models, q, exclude, defs, favorites])
 
   const current = value ? models.find((m) => m.providerId === value.providerId && m.id === value.model) : null
 
@@ -131,9 +138,15 @@ export function ModelPicker({
               groups.map(([pid, list]) => (
                 <div key={pid}>
                   <div className="px-3 py-1.5 flex items-center gap-1.5 sticky top-0 bg-panel z-10">
-                    {isLocal(pid) ? <Cpu size={11} className="text-ok" /> : <Cloud size={11} className="text-dim" />}
+                    {pid === FAV ? (
+                      <Star size={11} className="text-warn" />
+                    ) : isLocal(pid) ? (
+                      <Cpu size={11} className="text-ok" />
+                    ) : (
+                      <Cloud size={11} className="text-dim" />
+                    )}
                     <span className="text-[10.5px] uppercase tracking-wider text-dim font-medium">
-                      {providerName(pid)}
+                      {pid === FAV ? t('Favoritos') : providerName(pid)}
                     </span>
                     <span className="num text-[10.5px] text-[#3a4255]">{list.length}</span>
                   </div>
@@ -156,12 +169,15 @@ export function ModelPicker({
                           {sel ? <Check size={13} className="text-accent" /> : null}
                         </span>
                         <span className="flex-1 truncate text-[12.5px]">{m.id}</span>
+                        {pid === FAV ? (
+                          <span className="text-[10.5px] text-dim shrink-0 truncate max-w-[90px]">{providerName(m.providerId)}</span>
+                        ) : null}
                         {m.contextLength ? (
                           <span className="num text-[10.5px] text-[#4a5266] shrink-0">
                             {tokens(m.contextLength)}
                           </span>
                         ) : null}
-                        {isLocal(pid) ? (
+                        {isLocal(m.providerId) ? (
                           <Badge tone="ok">local</Badge>
                         ) : m.priceOut != null ? (
                           <span className="num text-[10.5px] text-dim shrink-0 w-14 text-right">

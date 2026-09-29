@@ -1,19 +1,34 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   Boxes, Search, RefreshCw, Cpu, Cloud, ArrowUpDown, Database, Filter, ExternalLink,
-  Download, Copy, Check, AlertCircle
+  Download, Copy, Check, AlertCircle, Star, GitCompare, X
 } from 'lucide-react'
 import { Panel, Button, Badge, Empty, Input, Select, Tabs, cx, Spinner, Modal } from '../components/ui'
+import { ModelCompare, modelFavKey, usageOf } from '../components/ModelCompare'
 import { useStore } from '../lib/store'
-import { price, tokens, relTime, bytes } from '../lib/format'
-import type { ModelInfo, ModelLinks } from '@shared/types'
+import { useRunsVersion } from '../lib/engine'
+import { price, tokens, relTime, bytes, ms, tps, cost } from '../lib/format'
+import type { ModelInfo, ModelLinks, ModelUsage } from '@shared/types'
 
 import { useT } from '../lib/i18n'
-type SortKey = 'name' | 'priceIn' | 'priceOut' | 'context'
+type SortKey = 'name' | 'priceIn' | 'priceOut' | 'context' | 'intelligence' | 'coding' | 'value'
+
+/** Precio mezclado (3 de entrada por 1 de salida), para «calidad por dólar». */
+const blended = (m: ModelInfo): number => ((m.priceIn ?? 0) * 3 + (m.priceOut ?? 0)) / 4
+
+/** Calidad por dólar: sin índice va al final; gratis y con índice, lo primero. */
+function valueOf(m: ModelInfo): number {
+  const q = m.bench?.intelligence
+  if (q == null) return -1
+  const p = blended(m)
+  return p > 0 ? q / p : q * 1e6
+}
+
+const MAX_COMPARE = 4
 
 export default function Models(): React.JSX.Element {
   const t = useT()
-  const { models, modelsLoading, reloadModels, defs, toast } = useStore()
+  const { models, modelsLoading, reloadModels, defs, toast, config, reload } = useStore()
   const [tab, setTab] = useState<'available' | 'catalog'>('available')
   const [q, setQ] = useState('')
   const [catalog, setCatalog] = useState<ModelInfo[]>([])
@@ -27,6 +42,36 @@ export default function Models(): React.JSX.Element {
   const [links, setLinks] = useState<ModelLinks | null>(null)
   const [linksLoading, setLinksLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [onlyFav, setOnlyFav] = useState(false)
+  const [selected, setSelected] = useState<ModelInfo[]>([])
+  const [comparing, setComparing] = useState(false)
+  const [usage, setUsage] = useState<ModelUsage[]>([])
+  const version = useRunsVersion()
+  const favorites = config?.favorites ?? []
+
+  // Lo medido con tu uso se relee cuando termina una ejecución.
+  useEffect(() => {
+    void window.api.runs.modelUsage().then((r) => r.ok && r.data && setUsage(r.data))
+  }, [version])
+
+  const toggleFav = async (m: ModelInfo): Promise<void> => {
+    const key = modelFavKey(m)
+    await window.api.models.favorite(key, !favorites.includes(key))
+    await reload()
+  }
+
+  const toggleSelected = (m: ModelInfo): void => {
+    const key = modelFavKey(m)
+    setSelected((cur) => {
+      if (cur.some((x) => modelFavKey(x) === key)) return cur.filter((x) => modelFavKey(x) !== key)
+      if (cur.length >= MAX_COMPARE) {
+        toast('info', t('Se comparan como mucho {n} modelos a la vez', { n: MAX_COMPARE }))
+        return cur
+      }
+      return [...cur, m]
+    })
+  }
+  const isSelected = (m: ModelInfo): boolean => selected.some((x) => modelFavKey(x) === modelFavKey(m))
 
   /** Abre la ficha del modelo y pide sus enlaces al proceso principal. */
   const openDetail = async (m: ModelInfo): Promise<void> => {
@@ -85,6 +130,7 @@ export default function Models(): React.JSX.Element {
     let out = src.filter((m) => {
       if (providerFilter && m.providerId !== providerFilter) return false
       if (onlyFree && !(m.priceIn === 0 && m.priceOut === 0)) return false
+      if (onlyFav && !favorites.includes(modelFavKey(m))) return false
       if (tab === 'catalog') return true // el filtrado por texto lo hace el backend
       if (!key) return true
       return m.id.toLowerCase().includes(key) || m.name.toLowerCase().includes(key)
@@ -93,12 +139,15 @@ export default function Models(): React.JSX.Element {
     out = [...out].sort((a, b) => {
       if (sort === 'name') return dir * (a.providerId + a.id).localeCompare(b.providerId + b.id)
       if (sort === 'context') return dir * ((a.contextLength ?? 0) - (b.contextLength ?? 0))
+      if (sort === 'intelligence') return dir * ((a.bench?.intelligence ?? -1) - (b.bench?.intelligence ?? -1))
+      if (sort === 'coding') return dir * ((a.bench?.coding ?? -1) - (b.bench?.coding ?? -1))
+      if (sort === 'value') return dir * (valueOf(a) - valueOf(b))
       const av = (sort === 'priceIn' ? a.priceIn : a.priceOut) ?? 0
       const bv = (sort === 'priceIn' ? b.priceIn : b.priceOut) ?? 0
       return dir * (av - bv)
     })
     return out
-  }, [tab, models, catalog, q, sort, asc, providerFilter, onlyFree])
+  }, [tab, models, catalog, q, sort, asc, providerFilter, onlyFree, onlyFav, favorites])
 
   const providersInView = useMemo(() => {
     const src = tab === 'available' ? models : catalog
@@ -159,7 +208,7 @@ export default function Models(): React.JSX.Element {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-[420px]">
+          <div className="relative flex-1 min-w-[200px] max-w-[420px]">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dim" />
             <Input
               value={q}
@@ -168,24 +217,48 @@ export default function Models(): React.JSX.Element {
               className="pl-8"
             />
           </div>
-          <Select value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)} className="w-[190px]">
-            <option value="">{t('Todos los proveedores')}</option>
-            {providersInView.map((p) => (
-              <option key={p} value={p}>
-                {providerName(p)}
-              </option>
-            ))}
-          </Select>
+          <div className="w-[190px] shrink-0">
+            <Select value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)}>
+              <option value="">{t('Todos los proveedores')}</option>
+              {providersInView.map((p) => (
+                <option key={p} value={p}>
+                  {providerName(p)}
+                </option>
+              ))}
+            </Select>
+          </div>
           <button
             onClick={() => setOnlyFree((f) => !f)}
             className={cx(
-              'h-9 px-3 rounded-lg border text-[12.5px] flex items-center gap-1.5 transition-colors',
+              'h-9 px-3 rounded-lg border text-[12.5px] flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap',
               onlyFree ? 'bg-[#0d2019] border-[#194b39] text-ok' : 'bg-raised border-line text-muted hover:text-ink'
             )}
           >
             <Filter size={13} /> {t('Sólo gratis')}
           </button>
-          <span className="num text-[11.5px] text-dim ml-auto">{rows.length} resultados</span>
+          <button
+            onClick={() => setOnlyFav((f) => !f)}
+            className={cx(
+              'h-9 px-3 rounded-lg border text-[12.5px] flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap',
+              onlyFav ? 'bg-[#221c0b] border-[#4b3d19] text-warn' : 'bg-raised border-line text-muted hover:text-ink'
+            )}
+          >
+            <Star size={13} /> {t('Favoritos')}
+          </button>
+          <button
+            onClick={() => {
+              setSort('value')
+              setAsc(false)
+            }}
+            className={cx(
+              'h-9 px-3 rounded-lg border text-[12.5px] flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap',
+              sort === 'value' ? 'bg-[#0b1d22] border-[#19424b] text-accent' : 'bg-raised border-line text-muted hover:text-ink'
+            )}
+            title={t('Índice de calidad de Artificial Analysis dividido por el precio mezclado (3 de entrada por 1 de salida)')}
+          >
+            <ArrowUpDown size={13} /> {t('Calidad por dólar')}
+          </button>
+          <span className="num text-[11.5px] text-dim ml-auto whitespace-nowrap shrink-0">{t('{n} resultados', { n: rows.length })}</span>
         </div>
       </div>
 
@@ -217,12 +290,15 @@ export default function Models(): React.JSX.Element {
               <table className="w-full">
                 <thead className="sticky top-0 bg-panel z-10">
                   <tr className="text-[10.5px] uppercase tracking-wider text-dim border-b border-line">
-                    {th('Modelo', 'name', 'text-left pl-4')}
+                    <th className="w-[62px]" />
+                    {th(t('Modelo'), 'name', 'text-left')}
                     <th className="font-medium py-2 text-left w-[150px]">{t('Proveedor')}</th>
-                    {th('Contexto', 'context', 'text-right w-[92px]')}
-                    {th('$ / M entrada', 'priceIn', 'text-right w-[110px]')}
-                    {th('$ / M salida', 'priceOut', 'text-right w-[110px]')}
-                    <th className="font-medium py-2 text-left w-[130px] pl-4 pr-4">{t('Entradas')}</th>
+                    {th(t('Calidad'), 'intelligence', 'text-right w-[86px] pr-2')}
+                    {th(t('Código'), 'coding', 'text-right w-[80px] pr-2')}
+                    {th(t('Contexto'), 'context', 'text-right w-[92px]')}
+                    {th(t('$ / M entrada'), 'priceIn', 'text-right w-[110px]')}
+                    {th(t('$ / M salida'), 'priceOut', 'text-right w-[110px]')}
+                    <th className="font-medium py-2 text-left w-[230px] pl-4 pr-4">{t('Capacidades')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -233,7 +309,25 @@ export default function Models(): React.JSX.Element {
                       className="group border-b border-line-soft hover:bg-[#12151f] cursor-pointer"
                       title={t('Ver la ficha del modelo y su enlace')}
                     >
-                      <td className="pl-4 py-2">
+                      <td className="pl-3 pr-2 py-2" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={isSelected(m)}
+                            onChange={() => toggleSelected(m)}
+                            title={t('Añadir al comparador')}
+                            className="accent-[#22d3ee]"
+                          />
+                          <button
+                            onClick={() => void toggleFav(m)}
+                            title={favorites.includes(modelFavKey(m)) ? t('Quitar de favoritos') : t('Añadir a favoritos')}
+                            className={favorites.includes(modelFavKey(m)) ? 'text-warn' : 'text-dim hover:text-ink'}
+                          >
+                            <Star size={12} className={favorites.includes(modelFavKey(m)) ? 'fill-current' : ''} />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="truncate text-[12.5px] font-mono group-hover:text-accent transition-colors">
                             {m.id}
@@ -257,6 +351,8 @@ export default function Models(): React.JSX.Element {
                           {providerName(m.providerId)}
                         </span>
                       </td>
+                      <td className="num text-right text-[12px] text-muted pr-2">{m.bench?.intelligence ?? '—'}</td>
+                      <td className="num text-right text-[12px] text-muted pr-2">{m.bench?.coding ?? '—'}</td>
                       <td className="num text-right text-[12px] text-muted">
                         {m.contextLength ? tokens(m.contextLength) : '—'}
                       </td>
@@ -270,10 +366,12 @@ export default function Models(): React.JSX.Element {
                         {price(m.priceOut)}
                       </td>
                       <td className="pl-4 pr-4 py-2">
-                        <div className="flex gap-1 flex-wrap">
-                          {(m.modalities ?? []).slice(0, 3).map((mod) => (
-                            <Badge key={mod}>{mod}</Badge>
-                          ))}
+                        {/* En una sola línea: el detalle completo está en la ficha. */}
+                        <div className="flex gap-1 flex-nowrap overflow-hidden">
+                          {m.caps?.tools ? <Badge tone="accent">{t('herramientas')}</Badge> : null}
+                          {m.caps?.reasoning ? <Badge tone="violet">{t('razona')}</Badge> : null}
+                          {m.caps?.openWeights ? <Badge tone="ok">{t('abierto')}</Badge> : null}
+                          {(m.modalities ?? []).includes('image') ? <Badge>{t('imagen')}</Badge> : null}
                           {m.sizeBytes ? <Badge tone="ok">{tokens(m.sizeBytes / 1e6)}MB</Badge> : null}
                         </div>
                       </td>
@@ -291,6 +389,37 @@ export default function Models(): React.JSX.Element {
         </Panel>
       </div>
 
+      {/* ------------------------------------------------ Comparador */}
+      {selected.length ? (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-raised border border-line rounded-xl shadow-2xl px-4 py-2.5 flex items-center gap-3">
+          <span className="text-[12.5px] whitespace-nowrap">{t('{n} para comparar', { n: selected.length })}</span>
+          <div className="flex gap-1 max-w-[520px] overflow-hidden">
+            {selected.map((m) => (
+              <Badge key={modelFavKey(m)} className="max-w-[160px]">
+                <span className="truncate">{m.id}</span>
+                <button onClick={() => toggleSelected(m)} className="ml-1 text-dim hover:text-ink">
+                  <X size={10} />
+                </button>
+              </Badge>
+            ))}
+          </div>
+          <Button size="sm" variant="primary" disabled={selected.length < 2} onClick={() => setComparing(true)}>
+            <GitCompare size={13} /> {t('Comparar')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
+            {t('Vaciar')}
+          </Button>
+        </div>
+      ) : null}
+      <ModelCompare
+        open={comparing}
+        onClose={() => setComparing(false)}
+        models={selected}
+        usage={usage}
+        providerName={providerName}
+        favorites={favorites}
+      />
+
       {/* ------------------------------------------------ Ficha del modelo */}
       <Modal
         open={Boolean(detail)}
@@ -302,6 +431,17 @@ export default function Models(): React.JSX.Element {
             <Button variant="ghost" onClick={() => setDetail(null)}>
               {t('Cerrar')}
             </Button>
+            {detail ? (
+              <Button variant="ghost" onClick={() => void toggleFav(detail)}>
+                <Star size={13} className={favorites.includes(modelFavKey(detail)) ? 'text-warn fill-current' : ''} />
+                {favorites.includes(modelFavKey(detail)) ? t('Quitar de favoritos') : t('Añadir a favoritos')}
+              </Button>
+            ) : null}
+            {detail ? (
+              <Button variant="ghost" onClick={() => toggleSelected(detail)}>
+                <GitCompare size={13} /> {isSelected(detail) ? t('Quitar del comparador') : t('Añadir al comparador')}
+              </Button>
+            ) : null}
             {links ? (
               <Button variant="primary" onClick={() => go(links.primary)}>
                 <ExternalLink size={13} />
@@ -366,6 +506,88 @@ export default function Models(): React.JSX.Element {
                 </div>
               ) : null}
             </div>
+
+            {/* Capacidades y puntuaciones públicas */}
+            {detail.caps || detail.knowledge ? (
+              <div className="flex flex-wrap gap-1.5 items-center">
+                {detail.caps?.tools ? <Badge tone="accent">{t('herramientas')}</Badge> : null}
+                {detail.caps?.reasoning ? <Badge tone="violet">{t('razona')}</Badge> : null}
+                {detail.caps?.structured ? <Badge>{t('salida estructurada')}</Badge> : null}
+                {detail.caps?.openWeights ? <Badge tone="ok">{t('pesos abiertos')}</Badge> : null}
+                {detail.caps?.attachments ? <Badge>{t('adjuntos')}</Badge> : null}
+                {detail.knowledge ? (
+                  <span className="text-[11.5px] text-dim">{t('sabe hasta {date}', { date: detail.knowledge })}</span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {detail.bench ? (
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-dim mb-1.5">
+                  {t('Puntuaciones públicas')}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    [t('Calidad'), detail.bench.intelligence],
+                    [t('Código'), detail.bench.coding],
+                    [t('Agéntico'), detail.bench.agentic]
+                  ] as [string, number | undefined][]).map(([label, v]) => (
+                    <div key={label} className="bg-raised border border-line rounded-lg px-3 py-2">
+                      <div className="text-[10.5px] text-dim">{label}</div>
+                      <div className="num text-[15px]">{v ?? '—'}</div>
+                    </div>
+                  ))}
+                </div>
+                {detail.bench.design?.length ? (
+                  <div className="mt-2 text-[11.5px] text-muted leading-relaxed">
+                    {t('Design Arena')}:{' '}
+                    {detail.bench.design
+                      .slice()
+                      .sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99))
+                      .slice(0, 6)
+                      .map((d) => `${d.category} ${d.elo}${d.rank ? ` (#${d.rank})` : ''}`)
+                      .join(' · ')}
+                  </div>
+                ) : null}
+                <div className="text-[10.5px] text-dim mt-1">
+                  {t('Índices de Artificial Analysis (0–100) y Elo de Design Arena, según OpenRouter.')}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Lo que tú has medido con él */}
+            {(() => {
+              const u = usageOf(usage, detail)
+              if (!u) return null
+              return (
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-dim mb-1.5">{t('Con tu uso')}</div>
+                  <div className="grid grid-cols-4 gap-2 text-[12px]">
+                    <div className="bg-raised border border-line rounded-lg px-3 py-2">
+                      <div className="text-[10.5px] text-dim">{t('Ejecuciones')}</div>
+                      <div className="num">{u.runs}{u.errors ? ` · ${u.errors} err` : ''}</div>
+                    </div>
+                    <div className="bg-raised border border-line rounded-lg px-3 py-2">
+                      <div className="text-[10.5px] text-dim">{t('Latencia inicial')}</div>
+                      <div className="num">{u.avgTtft ? ms(u.avgTtft) : '—'}</div>
+                    </div>
+                    <div className="bg-raised border border-line rounded-lg px-3 py-2">
+                      <div className="text-[10.5px] text-dim">{t('Velocidad')}</div>
+                      <div className="num">{u.avgTps ? tps(u.avgTps) : '—'}</div>
+                    </div>
+                    <div className="bg-raised border border-line rounded-lg px-3 py-2">
+                      <div className="text-[10.5px] text-dim">{t('Coste por ejecución')}</div>
+                      <div className="num">{cost(u.cost / Math.max(1, u.runs))}</div>
+                    </div>
+                  </div>
+                  {u.elo ? (
+                    <div className="text-[11.5px] text-muted mt-1.5">
+                      {t('Tu Elo en la Arena: {elo} ({wins} de {games} duelos ganados)', { elo: u.elo, wins: u.wins ?? 0, games: u.games ?? 0 })}
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })()}
 
             {detail.modalities?.length ? (
               <div>

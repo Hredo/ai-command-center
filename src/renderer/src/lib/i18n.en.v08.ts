@@ -290,5 +290,74 @@ export const enV08: Record<string, string> = {
   'Clave de administrador borrada': 'Admin key removed',
   'No se pudo guardar': "Couldn't save",
   'en el entorno ({env})': 'in the environment ({env})',
-  opcional: 'optional'
+  opcional: 'optional',
+
+  /* ------------------------------------ Modelos: calidad, comparador, favoritos */
+  'Se comparan como mucho {n} modelos a la vez': 'You can compare up to {n} models at once',
+  Favoritos: 'Favorites',
+  'Índice de calidad de Artificial Analysis dividido por el precio mezclado (3 de entrada por 1 de salida)':
+    'Artificial Analysis quality index divided by the blended price (3 input to 1 output)',
+  'Calidad por dólar': 'Quality per dollar',
+  Calidad: 'Quality',
+  Código: 'Coding',
+  '$ / M entrada': '$ / M input',
+  '$ / M salida': '$ / M output',
+  Capacidades: 'Capabilities',
+  'Añadir al comparador': 'Add to comparison',
+  'Quitar del comparador': 'Remove from comparison',
+  'Quitar de favoritos': 'Remove from favorites',
+  'Añadir a favoritos': 'Add to favorites',
+  razona: 'reasoning',
+  abierto: 'open',
+  '{n} para comparar': '{n} to compare',
+  Comparar: 'Compare',
+  Vaciar: 'Clear',
+  'salida estructurada': 'structured output',
+  'pesos abiertos': 'open weights',
+  adjuntos: 'attachments',
+  'sabe hasta {date}': 'knows up to {date}',
+  'Puntuaciones públicas': 'Public scores',
+  Agéntico: 'Agentic',
+  'Design Arena': 'Design Arena',
+  'Índices de Artificial Analysis (0–100) y Elo de Design Arena, según OpenRouter.':
+    'Artificial Analysis indices (0–100) and Design Arena Elo, as reported by OpenRouter.',
+  'Con tu uso': 'From your usage',
+  'Coste por ejecución': 'Cost per run',
+  'Tu Elo en la Arena: {elo} ({wins} de {games} duelos ganados)': 'Your Arena Elo: {elo} ({wins} of {games} duels won)',
+  'Calidad (AA)': 'Quality (AA)',
+  'Código (AA)': 'Coding (AA)',
+  'Agéntico (AA)': 'Agentic (AA)',
+  Razona: 'Reasoning',
+  Herramientas: 'Tools',
+  'Salida estructurada': 'Structured output',
+  'Pesos abiertos': 'Open weights',
+  'Sabe hasta': 'Knowledge cutoff',
+  'Tus ejecuciones': 'Your runs',
+  'Tu latencia inicial': 'Your time to first token',
+  'Tu velocidad': 'Your speed',
+  'Coste medio por ejecución': 'Average cost per run',
+  'Tus errores': 'Your errors',
+  'Tu Elo (Arena)': 'Your Elo (Arena)',
+  'Comparar modelos': 'Compare models',
+  'Calidad, código y agéntico son los índices de Artificial Analysis que publica OpenRouter (0–100). Lo demás de abajo es tuyo: sale de tus ejecuciones y de los ganadores que marcas en la Arena.':
+    'Quality, coding and agentic are the Artificial Analysis indices OpenRouter publishes (0–100). Everything below that is yours: it comes from your runs and the winners you pick in the Arena.',
+
+  /* ------------------------------------------------ Arena: clasificación */
+  'Tu clasificación': 'Your ranking',
+  'Todavía no hay clasificación: sale de los ganadores que marcas en cada comparativa.':
+    'No ranking yet: it comes from the winners you pick in each comparison.',
+  Ganados: 'Won',
+  'Elo por parejas: en cada comparativa con ganador, el ganador le gana a cada uno de los demás. Se empieza en 1500.':
+    'Pairwise Elo: in each comparison with a winner, the winner beats each of the others. Everyone starts at 1500.',
+
+  /* ------------------------------------------------ Panel: reparto */
+  consola: 'CLI',
+  Reparto: 'Breakdown',
+  'en qué se va el gasto y quién trabaja más': 'where the spend goes and who works the most',
+  'Ninguna ejecución de estos días va apuntada a un proyecto.': 'No run in this period is assigned to a project.',
+  'Nada que repartir en estos días.': 'Nothing to break down in this period.',
+  Errores: 'Errors',
+  'y {n} más': 'and {n} more',
+  '{n} resultados': '{n} results',
+  imagen: 'image'
 }

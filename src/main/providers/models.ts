@@ -5,7 +5,7 @@ import { PROVIDERS, providerById, effectiveBaseUrl } from './catalog'
 import { resolveKey } from '../secrets'
 import { getConfig } from '../config'
 import { isContextVariant } from '../ollama'
-import type { ModelInfo, ProviderDef } from '@shared/types'
+import type { ModelBench, ModelCaps, ModelInfo, ProviderDef } from '@shared/types'
 
 /** fetch con timeout, porque un endpoint local caído cuelga el arranque. */
 export async function fetchJson(
@@ -163,7 +163,16 @@ async function fromModelsDev(): Promise<ModelInfo[]> {
         modalities: m.modalities?.input,
         source: 'catalog',
         updatedAt: m.last_updated ? Date.parse(m.last_updated) : undefined,
-        description: prov.name
+        description: prov.name,
+        caps: {
+          reasoning: bool(m.reasoning),
+          tools: bool(m.tool_call),
+          structured: bool(m.structured_output),
+          openWeights: bool(m.open_weights),
+          attachments: bool(m.attachment)
+        },
+        knowledge: typeof m.knowledge === 'string' ? m.knowledge : undefined,
+        releaseDate: typeof m.release_date === 'string' ? m.release_date : undefined
       })
     }
   }
@@ -183,8 +192,96 @@ async function fromOpenRouter(): Promise<ModelInfo[]> {
     priceOut: Number(m.pricing?.completion) * 1e6 || 0,
     modalities: m.architecture?.input_modalities,
     source: 'catalog' as const,
-    description: m.description?.slice(0, 400)
+    description: m.description?.slice(0, 400),
+    caps: orCaps(m),
+    knowledge: typeof m.knowledge_cutoff === 'string' ? m.knowledge_cutoff : undefined,
+    bench: orBench(m.benchmarks)
   }))
+}
+
+const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined)
+
+/** Lo que OpenRouter dice que admite cada modelo. */
+function orCaps(m: any): ModelCaps {
+  const params: string[] = Array.isArray(m.supported_parameters) ? m.supported_parameters : []
+  return {
+    reasoning: params.includes('reasoning') || m.reasoning != null,
+    tools: params.includes('tools'),
+    structured: params.includes('structured_outputs') || params.includes('response_format'),
+    // Si tiene ficha en Hugging Face, sus pesos están publicados.
+    openWeights: m.hugging_face_id ? true : undefined
+  }
+}
+
+/** Índices de Artificial Analysis y Elo de Design Arena, si OpenRouter los trae. */
+function orBench(b: any): ModelBench | undefined {
+  if (!b || typeof b !== 'object') return undefined
+  const aa = b.artificial_analysis ?? {}
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+  const design = (Array.isArray(b.design_arena) ? b.design_arena : [])
+    .filter((x: any) => typeof x?.elo === 'number')
+    .map((x: any) => ({ arena: String(x.arena ?? ''), category: String(x.category ?? ''), elo: x.elo, rank: num(x.rank) }))
+  const out: ModelBench = {
+    intelligence: num(aa.intelligence_index),
+    coding: num(aa.coding_index),
+    agentic: num(aa.agentic_index),
+    design: design.length ? design : undefined
+  }
+  return out.intelligence != null || out.coding != null || out.agentic != null || out.design ? out : undefined
+}
+
+/**
+ * Clave para casar el mismo modelo entre fuentes y proveedores:
+ * «anthropic/claude-haiku-4.5», «claude-haiku-4-5» y «claude-haiku-4-5-20251001»
+ * son el mismo.
+ */
+export function modelKey(id: string): string {
+  const bare = (id.includes('/') ? id.split('/').pop()! : id).toLowerCase()
+  return bare
+    .replace(/:.*$/, '')
+    .replace(/[._\s]+/g, '-')
+    .replace(/-(latest|\d{8})$/, '')
+}
+
+let extrasMemo: {
+  at: number
+  bench: Map<string, ModelBench>
+  caps: Map<string, Pick<ModelInfo, 'caps' | 'knowledge' | 'releaseDate'>>
+} | null = null
+
+function extrasIndex(): NonNullable<typeof extrasMemo> {
+  const cat = getCatalog()
+  if (extrasMemo && extrasMemo.at === cat.fetchedAt) return extrasMemo
+  const bench = new Map<string, ModelBench>()
+  const caps = new Map<string, Pick<ModelInfo, 'caps' | 'knowledge' | 'releaseDate'>>()
+  // models.dev va primero en el catálogo: sus capacidades son las más completas.
+  for (const m of cat.models) {
+    const k = modelKey(m.id)
+    if (m.bench && !bench.has(k)) bench.set(k, m.bench)
+    if (m.caps && !caps.has(k)) caps.set(k, { caps: m.caps, knowledge: m.knowledge, releaseDate: m.releaseDate })
+  }
+  extrasMemo = { at: cat.fetchedAt, bench, caps }
+  return extrasMemo
+}
+
+/**
+ * Añade a un modelo las puntuaciones y capacidades que el catálogo tenga de
+ * él, aunque las publique otra fuente. A los modelos locales no: son variantes
+ * cuantizadas y las puntuaciones del original no les valen.
+ */
+export function withExtras(m: ModelInfo): ModelInfo {
+  if (m.local || providerById(m.providerId)?.local) return m
+  if (m.bench && m.caps) return m
+  const idx = extrasIndex()
+  const k = modelKey(m.id)
+  const c = idx.caps.get(k)
+  return {
+    ...m,
+    bench: m.bench ?? idx.bench.get(k),
+    caps: m.caps ?? c?.caps,
+    knowledge: m.knowledge ?? c?.knowledge,
+    releaseDate: m.releaseDate ?? c?.releaseDate
+  }
 }
 
 /**
@@ -215,11 +312,12 @@ export async function refreshCatalog(): Promise<{ count: number; sources: string
 /** Busca en el catálogo por texto libre, ordenado por relevancia simple. */
 export function searchCatalog(query: string, limit = 400): ModelInfo[] {
   const models = getCatalog().models
-  if (!query.trim()) return models.slice(0, limit)
+  if (!query.trim()) return models.slice(0, limit).map(withExtras)
   const q = query.toLowerCase()
   return models
     .filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q) || m.providerId.includes(q))
     .slice(0, limit)
+    .map(withExtras)
 }
 
 // ---------------------------------------------------------------------------
@@ -333,16 +431,16 @@ export function computeCost(
  */
 export function enrich(models: ModelInfo[]): ModelInfo[] {
   return models.map((m) => {
-    if (m.priceIn != null) return m
+    if (m.priceIn != null) return withExtras(m)
     const p = priceFor(m.providerId, m.id)
     const cat = getCatalog().models.find((c) => c.providerId === m.providerId && c.id === m.id)
-    return {
+    return withExtras({
       ...m,
       priceIn: p.in,
       priceOut: p.out,
       contextLength: m.contextLength ?? cat?.contextLength,
       maxOutput: m.maxOutput ?? cat?.maxOutput
-    }
+    })
   })
 }
 

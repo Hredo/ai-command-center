@@ -62,6 +62,59 @@ export interface ModelInfo {
   sizeBytes?: number
   updatedAt?: number
   description?: string
+  /** Qué sabe hacer, según el catálogo (models.dev u OpenRouter). */
+  caps?: ModelCaps
+  /** Hasta cuándo llega lo que sabe: «2025-03». */
+  knowledge?: string
+  releaseDate?: string
+  /** Puntuaciones públicas, cuando las hay. */
+  bench?: ModelBench
+}
+
+export interface ModelCaps {
+  reasoning?: boolean
+  tools?: boolean
+  structured?: boolean
+  openWeights?: boolean
+  /** Acepta ficheros adjuntos. */
+  attachments?: boolean
+}
+
+/**
+ * Puntuaciones públicas de un modelo, tal como las publica OpenRouter:
+ * los índices de Artificial Analysis (0–100, más es mejor) y el Elo de
+ * Design Arena por categoría. No son de la app: se dice de dónde salen.
+ */
+export interface ModelBench {
+  intelligence?: number
+  coding?: number
+  agentic?: number
+  design?: { arena: string; category: string; elo: number; rank?: number }[]
+}
+
+/**
+ * Lo que tú has medido de un modelo con tu uso: velocidad, latencia, coste y,
+ * si ha competido en la Arena, su Elo personal.
+ */
+export interface ModelUsage extends StatsBucket {
+  providerId: string
+  model: string
+  /** Última vez que se usó. */
+  lastAt: number
+  elo?: number
+  games?: number
+  wins?: number
+}
+
+/** Una fila de la clasificación personal que sale de los ganadores de la Arena. */
+export interface EloRow {
+  key: string
+  providerId: string
+  model: string
+  label: string
+  elo: number
+  games: number
+  wins: number
 }
 
 /** Preset de agente que trabaja por API. */

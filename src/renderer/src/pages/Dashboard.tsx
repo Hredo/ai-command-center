@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react'
 import {
-  Activity, DollarSign, Gauge, Zap, Coins, ArrowRight, Cpu, Cloud, AlertTriangle, Timer
+  Activity, DollarSign, Gauge, Zap, Coins, ArrowRight, Cpu, Cloud, AlertTriangle, Timer, PieChart
 } from 'lucide-react'
 import { Panel, PanelHeader, Stat, Button, Tabs, Empty, Meter, Badge, Dot, cx } from '../components/ui'
 import { useStore } from '../lib/store'
@@ -21,6 +21,7 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
   const t = useT()
   const { status, models } = useStore()
   const [days, setDays] = useState<7 | 30 | 90>(30)
+  const [split, setSplit] = useState<'project' | 'agent' | 'provider'>('project')
   const [ov, setOv] = useState<any>(null)
   const [recent, setRecent] = useState<RunRecord[]>([])
   // En cuanto termina una ejecución, el panel se vuelve a leer: nada de
@@ -52,6 +53,18 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
   const topModels: StatsBucket[] = (ov?.byModel ?? []).slice(0, 7)
   const maxCost = Math.max(...topModels.map((m) => m.cost), 0.0001)
   const maxTps = Math.max(...topModels.map((m) => m.avgTps), 1)
+
+  // Reparto por proyecto, agente o proveedor: lo calcula ya el resumen.
+  const splitRows: StatsBucket[] = (
+    split === 'project' ? ov?.byProject : split === 'agent' ? ov?.byAgent : ov?.byProvider
+  ) ?? []
+  const splitMaxCost = Math.max(...splitRows.map((b) => b.cost), 0.0001)
+  const splitMaxRuns = Math.max(...splitRows.map((b) => b.runs), 1)
+  const splitName = (key: string): string => {
+    if (split !== 'provider') return key
+    if (key.startsWith('cli:')) return `${key.slice(4)} · ${t('consola')}`
+    return status.find((s) => s.id === key)?.name ?? key
+  }
 
   const activeProviders = status.filter((s) => (s.local ? s.reachable : s.keySource !== 'none'))
   const localUp = status.filter((s) => s.local && s.reachable)
@@ -261,6 +274,80 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
               </div>
             </Panel>
           </div>
+        ) : null}
+
+        {/* ------------------------------------ Reparto por proyecto, agente o proveedor */}
+        {!empty ? (
+          <Panel>
+            <PanelHeader
+              title={t('Reparto')}
+              subtitle={t('en qué se va el gasto y quién trabaja más')}
+              icon={<PieChart size={14} />}
+              right={
+                <Tabs
+                  value={split}
+                  onChange={setSplit}
+                  items={[
+                    { id: 'project', label: t('Proyectos'), count: ov?.byProject?.length },
+                    { id: 'agent', label: t('Agentes'), count: ov?.byAgent?.length },
+                    { id: 'provider', label: t('Proveedores'), count: ov?.byProvider?.length }
+                  ]}
+                />
+              }
+            />
+            {splitRows.length === 0 ? (
+              <div className="px-4 py-5 text-[12px] text-dim">
+                {split === 'project'
+                  ? t('Ninguna ejecución de estos días va apuntada a un proyecto.')
+                  : t('Nada que repartir en estos días.')}
+              </div>
+            ) : (
+              <div className="px-4 py-2">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-[10.5px] uppercase tracking-wider text-dim">
+                      <th className="text-left font-medium py-1.5">{split === 'project' ? t('Proyecto') : split === 'agent' ? t('Agente') : t('Proveedor')}</th>
+                      <th className="text-left font-medium w-[150px] pl-3">{t('Ejecuciones')}</th>
+                      <th className="text-left font-medium w-[170px] pl-3">{t('Coste')}</th>
+                      <th className="text-right font-medium w-20">Tokens</th>
+                      <th className="text-right font-medium w-20">{t('Velocidad')}</th>
+                      <th className="text-right font-medium w-16">{t('Errores')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {splitRows.slice(0, 10).map((b) => (
+                      <tr key={b.key} className="border-t border-line-soft">
+                        <td className="py-2 pr-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: colorFor(b.key) }} />
+                            <span className="truncate text-[12.5px]">{splitName(b.key)}</span>
+                          </div>
+                        </td>
+                        <td className="pl-3">
+                          <div className="flex items-center gap-2">
+                            <Meter value={b.runs} max={splitMaxRuns} color="#818cf8" />
+                            <span className="num text-[11.5px] text-muted w-10 text-right shrink-0">{b.runs}</span>
+                          </div>
+                        </td>
+                        <td className="pl-3">
+                          <div className="flex items-center gap-2">
+                            <Meter value={b.cost} max={splitMaxCost} color={colorFor(b.key)} />
+                            <span className="num text-[11.5px] text-muted w-16 text-right shrink-0">{cost(b.cost)}</span>
+                          </div>
+                        </td>
+                        <td className="num text-right text-[11.5px] text-muted">{tokens(b.tokensIn + b.tokensOut)}</td>
+                        <td className="num text-right text-[11.5px] text-muted">{b.avgTps ? b.avgTps.toFixed(0) : '—'}</td>
+                        <td className={cx('num text-right text-[11.5px]', b.errors ? 'text-bad' : 'text-dim')}>{b.errors || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {splitRows.length > 10 ? (
+                  <div className="text-[11px] text-dim py-1.5">{t('y {n} más', { n: splitRows.length - 10 })}</div>
+                ) : null}
+              </div>
+            )}
+          </Panel>
         ) : null}
 
         {/* ------------------------------------------------ Infraestructura */}

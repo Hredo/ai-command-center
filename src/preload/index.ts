@@ -6,7 +6,7 @@ import type {
   StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks, OpencodeModel,
   GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
   GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage,
-  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource
+  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow
 } from '@shared/types'
 
 /** Estado del statusLine de la app en la configuración de Claude Code. */
@@ -83,7 +83,9 @@ const api = {
     price: (providerId: string, model: string) =>
       call<{ in: number; out: number; source: string }>('models:price', providerId, model),
     available: () => call<any[]>('models:available'),
-    links: (providerId: string, model: string) => call<ModelLinks>('models:links', providerId, model)
+    links: (providerId: string, model: string) => call<ModelLinks>('models:links', providerId, model),
+    /** Marca o desmarca un favorito («proveedor:modelo»); devuelve la lista entera. */
+    favorite: (key: string, on: boolean) => call<string[]>('models:favorite', key, on)
   },
   detect: {
     all: () => call<DetectionResult>('detect:all'),
@@ -149,6 +151,10 @@ const api = {
     compact: () =>
       call<{ compacted: number; archived: number; bytesBefore: number; bytesAfter: number }>('runs:compact'),
     compare: (ids: string[]) => call<RunRecord[]>('runs:compare', ids),
+    /** Lo medido de cada modelo que has usado, con su Elo si ha competido. */
+    modelUsage: () => call<ModelUsage[]>('runs:modelUsage'),
+    /** Clasificación personal con los ganadores de la Arena. */
+    elo: () => call<EloRow[]>('runs:elo'),
     /** Lo gastado en un proyecto desde siempre, con el reparto por agente. */
     projectTotals: (projectId: string) =>
       call<{ runs: number; cost: number; tokens: number; errors: number; lastAt?: number; byAgent: StatsBucket[] }>(

@@ -279,6 +279,23 @@ process.env.CLAUDE_CONFIG_DIR = CLAUDE_DIR
 // (con el freno puesto no sale ninguna petición).
 process.env.GROQ_API_KEY = 'clave-de-prueba'
 
+// Un catálogo de modelos de mentira (y reciente, para que no se descargue):
+// el mismo modelo en models.dev, con sus capacidades, y en OpenRouter, con
+// sus puntuaciones. Se guarda el de verdad y se devuelve al acabar.
+const CATALOG = path.join(app.getPath('userData'), 'data', 'models-cache.json')
+const CATALOG_BACKUP = fs.existsSync(CATALOG) ? fs.readFileSync(CATALOG) : null
+fs.mkdirSync(path.dirname(CATALOG), { recursive: true })
+fs.writeFileSync(CATALOG, JSON.stringify({
+  fetchedAt: Date.now(),
+  models: [
+    { id: 'modelo-prueba-4-5', providerId: 'anthropic', name: 'Modelo prueba', source: 'catalog', priceIn: 1, priceOut: 5,
+      caps: { tools: true, reasoning: true, openWeights: false }, knowledge: '2025-03' },
+    { id: 'vendor/modelo-prueba-4.5', providerId: 'openrouter', name: 'Modelo prueba', source: 'catalog', priceIn: 1, priceOut: 5,
+      caps: { tools: true }, bench: { intelligence: 61, coding: 55, design: [{ arena: 'models', category: 'website', elo: 1300, rank: 3 }] } },
+    { id: 'otro-modelo', providerId: 'openrouter', name: 'Otro', source: 'catalog', priceIn: 0, priceOut: 0 }
+  ]
+}), 'utf8')
+
 require('../out/main/index.js')
 
 app.whenReady().then(async () => {
@@ -686,8 +703,64 @@ app.whenReady().then(async () => {
   })()`)
 
   /* -------------------------------------------------------------- *
+   * C1 · Puntuaciones y capacidades · C3 · Elo personal             *
+   * C6 · Lo medido de cada modelo y favoritos                       *
+   * -------------------------------------------------------------- */
+  const cm = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${bins}
+    const api = window.api
+    const engine = window.__accEngine
+    const cat = (await api.models.catalog('modelo-prueba', 50)).data
+
+    // Dos agentes compiten dos veces y gana siempre el mismo.
+    const mk = async (id, command, args, parser) => {
+      await api.agents.saveCli({ id, name: id, type: 'cli', command, args, parser, color: '#fff', createdAt: Date.now() })
+    }
+    await mk('elo-a', bins.claude, ['-p', '--output-format', 'stream-json', '--verbose'], 'claude-stream-json')
+    await mk('elo-b', bins.codex, ['exec', '--json', '{{prompt}}'], 'codex-json')
+    const sid = await engine.newSession('cli', { cliAgentId: 'elo-a' })
+    const runs = []
+    for (const [agent, arena, winner] of [['elo-a', 'arena-1', true], ['elo-b', 'arena-1', false], ['elo-a', 'arena-2', true], ['elo-b', 'arena-2', false]]) {
+      const r = await engine.sendCli(sid, { prompt: 'duelo', agentId: agent, projectPath: repo })
+      await api.runs.update(r.id, { arenaId: arena, winner })
+      runs.push(r)
+    }
+    const elo = (await api.runs.elo()).data
+    const usage = (await api.runs.modelUsage()).data
+
+    const favOn = (await api.models.favorite('openrouter:otro-modelo', true)).data
+    const cfgOn = (await api.config.get()).data.favorites
+    const favOff = (await api.models.favorite('openrouter:otro-modelo', false)).data
+
+    await engine.deleteSession(sid)
+    for (const r of runs) await api.runs.remove(r.id)
+    await api.agents.removeCli('elo-a')
+    await api.agents.removeCli('elo-b')
+    return { cat, elo, usage, favOn, cfgOn, favOff, a: runs[0], b: runs[1] }
+  })()`)
+  const md = cm.cat?.find((m) => m.providerId === 'anthropic')
+  const or = cm.cat?.find((m) => m.providerId === 'openrouter' && m.id.includes('modelo-prueba'))
+  log(md?.bench?.intelligence === 61 && md?.bench?.coding === 55, 'LAS PUNTUACIONES DE OPENROUTER LLEGAN AL MISMO MODELO DE OTRA FUENTE', JSON.stringify(md?.bench ?? null).slice(0, 80))
+  log(md?.caps?.reasoning === true && md?.knowledge === '2025-03', 'models.dev: capacidades y fecha de corte se guardan')
+  log(or?.bench?.design?.[0]?.elo === 1300, 'Design Arena por categoría se conserva')
+  const ea = cm.elo?.find((e) => e.providerId === cm.a?.providerId && e.model === cm.a?.model)
+  const eb = cm.elo?.find((e) => e.providerId === cm.b?.providerId && e.model === cm.b?.model)
+  log(ea?.elo === 1531 && ea?.wins === 2 && ea?.games === 2 && eb?.elo === 1469, 'ELO PERSONAL CON LOS GANADORES DE LA ARENA', `${ea?.elo} / ${eb?.elo}`)
+  log(cm.elo?.[0]?.key === ea?.key, 'la clasificación va de mayor a menor')
+  const ua = cm.usage?.find((u) => u.providerId === cm.a?.providerId && u.model === cm.a?.model)
+  log(ua?.runs === 2 && ua?.elo === 1531 && Math.abs((ua?.cost ?? 0) - 0.02) < 1e-9, 'LO MEDIDO DE CADA MODELO LLEVA SU ELO', ua ? `${ua.runs} ejecuciones, ${ua.cost} $, Elo ${ua.elo}` : 'no aparece')
+  log(cm.favOn?.includes('openrouter:otro-modelo') && cm.cfgOn?.includes('openrouter:otro-modelo') && !cm.favOff?.includes('openrouter:otro-modelo'), 'los favoritos se guardan y se quitan')
+
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
+  try {
+    if (CATALOG_BACKUP) fs.writeFileSync(CATALOG, CATALOG_BACKUP)
+    else fs.rmSync(CATALOG, { force: true })
+  } catch {
+    /* el catálogo se vuelve a descargar solo */
+  }
   try {
     fs.rmSync(TMP, { recursive: true, force: true })
   } catch {

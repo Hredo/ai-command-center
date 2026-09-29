@@ -2,7 +2,7 @@ import { appendFileSync, readFileSync, existsSync } from 'node:fs'
 import { paths } from './paths'
 import { writeFileAtomic } from './atomic'
 import { notifyChange } from './live'
-import type { RunRecord, StatsBucket } from '@shared/types'
+import type { EloRow, ModelUsage, RunRecord, StatsBucket } from '@shared/types'
 
 let memo: RunRecord[] | null = null
 
@@ -392,6 +392,77 @@ export function overview(days = 30): Overview {
       .reduce((s, r) => s + (r.costTotal || 0), 0),
     runsToday: allRuns().filter((r) => r.createdAt >= todayStart.getTime()).length
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Elo personal y lo medido de cada modelo                            *
+ * ------------------------------------------------------------------ */
+
+const ELO_START = 1500
+const ELO_K = 32
+
+/** La clave de un contendiente: proveedor y modelo. */
+export const usageKey = (providerId: string, model: string): string => `${providerId}|${model}`
+
+/**
+ * Clasificación personal con los ganadores que has marcado en la Arena. Cada
+ * comparativa con ganador cuenta como que el ganador le ganó a cada uno de
+ * los demás (Elo por parejas, K = 32, se empieza en 1500), en orden de fecha.
+ */
+export function personalElo(): EloRow[] {
+  const rows = new Map<string, EloRow>()
+  const get = (r: RunRecord): EloRow => {
+    const key = usageKey(r.providerId, r.model)
+    let row = rows.get(key)
+    if (!row) {
+      row = { key, providerId: r.providerId, model: r.model, label: r.agentName ?? r.model, elo: ELO_START, games: 0, wins: 0 }
+      rows.set(key, row)
+    }
+    return row
+  }
+  const sessions = arenaSessions().sort((a, b) => a.createdAt - b.createdAt)
+  for (const s of sessions) {
+    const winner = s.runs.find((r) => r.winner)
+    if (!winner) continue
+    const w = get(winner)
+    for (const r of s.runs) {
+      if (r === winner || r.status === 'aborted') continue
+      const l = get(r)
+      if (l === w) continue
+      const expected = 1 / (1 + 10 ** ((l.elo - w.elo) / 400))
+      const delta = ELO_K * (1 - expected)
+      w.elo += delta
+      l.elo -= delta
+      w.games++
+      l.games++
+      w.wins++
+    }
+  }
+  return [...rows.values()].map((r) => ({ ...r, elo: Math.round(r.elo) })).sort((a, b) => b.elo - a.elo)
+}
+
+/** Lo medido de cada modelo que has usado, con su Elo si ha competido. */
+export function modelUsage(): ModelUsage[] {
+  const rows = allRuns()
+  const last = new Map<string, number>()
+  for (const r of rows) {
+    const k = usageKey(r.providerId, r.model)
+    if ((last.get(k) ?? 0) < r.createdAt) last.set(k, r.createdAt)
+  }
+  const elo = new Map(personalElo().map((e) => [e.key, e]))
+  return bucketBy(rows, (r) => usageKey(r.providerId, r.model)).map((b) => {
+    const [providerId, ...rest] = b.key.split('|')
+    const e = elo.get(b.key)
+    return {
+      ...b,
+      providerId,
+      model: rest.join('|'),
+      lastAt: last.get(b.key) ?? 0,
+      elo: e?.elo,
+      games: e?.games,
+      wins: e?.wins
+    }
+  })
 }
 
 /** Devuelve las comparativas agrupadas por arenaId, más recientes primero. */

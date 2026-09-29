@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   Swords, Play, Square, Plus, X, Trophy, Timer, Zap, DollarSign, Crown,
-  AlertTriangle, RotateCcw, ChevronDown, History as HistoryIcon, Cpu, Bot, FolderGit2
+  AlertTriangle, RotateCcw, ChevronDown, History as HistoryIcon, Cpu, Bot, FolderGit2, Medal
 } from 'lucide-react'
 import { Button, Textarea, Badge, cx, Dot, Meter, Select } from '../components/ui'
 import { ModelPicker } from '../components/ModelPicker'
@@ -22,7 +22,7 @@ import {
   useArena, setArena, setContenders, emptyContender, launchArena, stopArena, useRunsVersion,
   type Contender
 } from '../lib/engine'
-import type { RunRecord } from '@shared/types'
+import type { EloRow, RunRecord } from '@shared/types'
 import { SharedWidthHandle } from '../components/Resizable'
 import { usePaneSize } from '../lib/prefs'
 
@@ -43,6 +43,8 @@ export default function Arena(): React.JSX.Element {
   const state = useArena()
   const [sessions, setSessions] = useState<any[]>([])
   const [showHistory, setShowHistory] = useState(false)
+  const [showRank, setShowRank] = useState(false)
+  const [elo, setElo] = useState<EloRow[]>([])
   const [showSystem, setShowSystem] = useState(false)
 
   const cliAgents = config?.cliAgents ?? []
@@ -70,6 +72,12 @@ export default function Arena(): React.JSX.Element {
   useEffect(() => {
     void loadSessions()
   }, [loadSessions, runsVersion])
+
+  // La clasificación sale de los ganadores que marcas: cambia al votar.
+  useEffect(() => {
+    if (!showRank) return
+    void window.api.runs.elo().then((r) => r.ok && r.data && setElo(r.data))
+  }, [showRank, runsVersion])
 
   // Al acabar una comparativa se refresca el listado de guardadas.
   useEffect(() => {
@@ -138,6 +146,9 @@ export default function Arena(): React.JSX.Element {
           <span className="text-[12px] text-dim">{t('mismo prompt, modelos y agentes, decisiones con datos')}</span>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setShowRank((s) => !s)}>
+            <Medal size={13} /> {t('Tu clasificación')}
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setShowHistory((s) => !s)}>
             <HistoryIcon size={13} /> {t('arena.history', { n: sessions.length })}
           </Button>
@@ -152,6 +163,48 @@ export default function Arena(): React.JSX.Element {
           )}
         </div>
       </div>
+
+      {showRank ? (
+        <div className="border-b border-line bg-panel max-h-[240px] overflow-y-auto shrink-0">
+          {elo.length === 0 ? (
+            <div className="px-5 py-4 text-[12.5px] text-dim leading-relaxed">
+              {t('Todavía no hay clasificación: sale de los ganadores que marcas en cada comparativa.')}
+            </div>
+          ) : (
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-[10.5px] uppercase tracking-wider text-dim border-b border-line">
+                  <th className="text-left font-medium py-1.5 pl-5 w-10">#</th>
+                  <th className="text-left font-medium">{t('Contendiente')}</th>
+                  <th className="text-right font-medium w-20">Elo</th>
+                  <th className="text-right font-medium w-28 pr-5">{t('Ganados')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {elo.map((e, i) => (
+                  <tr key={e.key} className="border-b border-line-soft last:border-0">
+                    <td className="py-1.5 pl-5 num text-dim">{i + 1}</td>
+                    <td className="truncate">
+                      <span className="inline-flex items-center gap-2 min-w-0">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: colorFor(e.model) }} />
+                        <span className="truncate">{e.providerId.startsWith('cli:') ? e.label : shortModel(e.model)}</span>
+                        <span className="text-[11px] text-dim truncate">{e.providerId}</span>
+                      </span>
+                    </td>
+                    <td className={cx('num text-right', i === 0 ? 'text-warn' : 'text-muted')}>{e.elo}</td>
+                    <td className="num text-right text-muted pr-5">
+                      {e.wins} / {e.games}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="px-5 py-2 text-[11px] text-dim border-t border-line-soft">
+            {t('Elo por parejas: en cada comparativa con ganador, el ganador le gana a cada uno de los demás. Se empieza en 1500.')}
+          </div>
+        </div>
+      ) : null}
 
       {showHistory ? (
         <div className="border-b border-line bg-panel max-h-[220px] overflow-y-auto shrink-0">

@@ -9,7 +9,9 @@ import { runCliAgent, killCli } from './agents/cli'
 import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
 import { scanProject, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
-import { queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy, projectTotals } from './runs'
+import {
+  queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy, projectTotals, modelUsage, personalElo
+} from './runs'
 import { paths, agentWorkspace } from './paths'
 import { registerExtraIpc } from './ipcExtra'
 import { checkArgs, isTrustedSender, launchedWithoutSandbox, openExternal, RENDERER_PREFS, type SecurityReport } from './security'
@@ -217,6 +219,19 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   // La poda del histórico a demanda: la misma que corre sola cada pocas horas.
   handle('runs:compact', () => runMaintenance())
   handle('runs:compare', (ids: string[]) => allRuns().filter((r) => ids.includes(r.id)))
+  // Lo medido de cada modelo (velocidad, latencia, coste) y la clasificación
+  // personal que sale de los ganadores de la Arena.
+  handle('runs:modelUsage', () => modelUsage())
+  handle('runs:elo', () => personalElo())
+  // Favoritos: «proveedor:modelo», los mismos que usa el selector de modelos.
+  handle('models:favorite', (key: string, on: boolean) => {
+    if (typeof key !== 'string' || !key.includes(':')) throw new Error('clave de modelo no válida')
+    const cfg = getConfig()
+    const set = new Set(cfg.favorites ?? [])
+    if (on) set.add(key)
+    else set.delete(key)
+    return saveConfig({ ...cfg, favorites: [...set] }).favorites
+  })
   handle('runs:buckets', (field: string, days: number) => {
     const since = Date.now() - (days ?? 30) * 86_400_000
     const rows = allRuns().filter((r) => r.createdAt >= since)
