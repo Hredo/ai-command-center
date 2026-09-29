@@ -19,6 +19,7 @@ import { IS_LINUX, IS_MAC } from './platform'
 import { ensureUtf8Locale, loadShellEnv } from './shellEnv'
 import { runSelfTest } from './selftest'
 import { startMaintenance, stopMaintenance } from './maintenance'
+import { watchExternal, stopWatchingExternal } from './external'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
@@ -225,6 +226,10 @@ app.whenReady().then(async () => {
   // plan en las últimas horas.
   watchClaude((payload) => mainWindow?.webContents.send('claude:updated', payload))
 
+  // Y lo mismo con Codex, OpenCode y Gemini CLI: sus sesiones de fuera entran
+  // al histórico y a los cupos en cuanto escriben en su carpeta.
+  if (!SELFTEST) watchExternal((payload) => mainWindow?.webContents.send('external:updated', payload))
+
   // Los motores locales se vigilan solos: arrancar Ollama con la app abierta
   // se refleja sin tener que pulsar nada.
   watchLocalServers((servers) => {
@@ -262,6 +267,7 @@ app.on('before-quit', () => {
   stopWatchingClaude()
   stopAllWatches()
   stopMaintenance()
+  stopWatchingExternal()
   closeAllTerms()
 })
 

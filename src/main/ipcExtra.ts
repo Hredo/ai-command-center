@@ -30,8 +30,10 @@ import { listDir, readProjectFile, writeProjectFile, createEntry, trashEntry, re
 import { ghStatus, ghRepos, ghClone, ghLoginCommand, ghLogoutCommand, forgetGhPath } from './github'
 import { notifyArena, notifyCommand, notifyPull } from './notify'
 import { allRuns } from './runs'
+import { buildRelay, relayPrompt } from './relay'
+import { refreshExternal } from './external'
 import { getConfig } from './config'
-import type { GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress } from '@shared/types'
+import type { GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage } from '@shared/types'
 
 export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   const send = (channel: string, payload: unknown): void => {
@@ -239,6 +241,23 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     return { ...claudeWindows(five?.resetsAt), limit: five ?? null }
   })
   handle('claude:refresh', () => refreshClaude())
+
+  /* --------------------------------- Relevo ----------------------------------- */
+
+  const RELAY_KINDS = new Set(['session', 'claude', 'codex', 'opencode', 'gemini'])
+  handle('relay:build', (src: RelaySource) => {
+    if (!src || !RELAY_KINDS.has(String(src.kind)) || typeof src.id !== 'string' || !src.id) {
+      throw new Error('origen del relevo no válido')
+    }
+    return buildRelay({ kind: src.kind, id: src.id })
+  })
+  handle('relay:prompt', (pkg: RelayPackage, opts?: { includeDiff?: boolean; note?: string }) =>
+    relayPrompt(pkg, { includeDiff: opts?.includeDiff === true, note: typeof opts?.note === 'string' ? opts.note : undefined })
+  )
+
+  /* ------------------------- Sesiones de otras herramientas ------------------- */
+
+  handle('external:refresh', () => refreshExternal(true))
 
   /* --------------------------------- Avisos ----------------------------------- */
 

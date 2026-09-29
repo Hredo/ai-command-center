@@ -21,6 +21,7 @@ import type {
   AgentStep, CliLimit
 } from '@shared/types'
 import { useStore } from './store'
+import { navigate } from './nav'
 
 /* ------------------------------------------------------------------ *
  * Almacén mínimo                                                     *
@@ -178,6 +179,12 @@ const arena = new Slice<ArenaState>({
   system: '',
   running: false
 })
+/**
+ * Conversación que alguien fuera de la Consola ha pedido abrir (el relevo, la
+ * paleta de comandos). La Consola la lee al montarse o al cambiar, así que no
+ * importa si todavía no se había visitado.
+ */
+const focus = new Slice<{ id: string; nonce: number } | null>(null)
 /** Cambia cada 250 ms mientras algo esté corriendo: mueve los contadores. */
 const ticker = new Slice<number>(0)
 /**
@@ -366,6 +373,22 @@ function schedulePersist(sessionId: string): void {
       })
     }, 700)
   )
+}
+
+/**
+ * Guarda ya una conversación y espera a que esté en disco. Lo necesita quien
+ * vaya a leerla desde el proceso principal (el relevo): el guardado normal va
+ * con retardo y leería la versión de hace un momento.
+ */
+export async function saveSessionNow(id: string): Promise<void> {
+  const timer = saveTimers.get(id)
+  if (timer) {
+    window.clearTimeout(timer)
+    saveTimers.delete(id)
+  }
+  const state = chats.get()[id]
+  if (!state) return
+  await window.api.sessions.save({ ...state.session, turns: state.turns.map(toStoredTurn), updatedAt: Date.now() })
 }
 
 /** Fuerza el guardado inmediato de todo lo pendiente. */
@@ -1378,6 +1401,16 @@ export function EngineProvider({ children }: { children: React.ReactNode }): Rea
   return <>{children}</>
 }
 
+/** Abre una conversación en la Consola desde cualquier sitio. */
+export function focusChat(id: string): void {
+  focus.set({ id, nonce: Date.now() })
+  navigate({ page: 'chat', sessionId: id })
+}
+
+export function useChatFocus(): { id: string; nonce: number } | null {
+  return useSlice(focus)
+}
+
 export function useSessions(): StoredSession[] {
   return useSlice(sessions)
 }
@@ -1423,7 +1456,7 @@ if (typeof window !== 'undefined') {
   ;(window as unknown as Record<string, unknown>).__accEngine = {
     newSession, openSession, archiveSession, unarchiveSession, deleteSession,
     patchSessionConfig, renameSession, sendChat, sendCli, stopSession, approveStep,
-    flushPersist, loadSessions,
+    flushPersist, loadSessions, saveSessionNow, focusChat,
     openTerm, sendTermCommand, writeTerm, closeTerm, interruptTerm, clearTerm,
     resizeTerm, termScrollback, onTermData,
     launchArena, stopArena, setArena, setContenders, emptyContender,

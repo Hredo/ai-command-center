@@ -39,5 +39,44 @@ export const enV08: Record<string, string> = {
   'Bifurcará al enviar': 'Will fork on send',
   Bifurcar: 'Fork',
   'El próximo turno abre una sesión nueva del agente': 'The next turn opens a new agent session',
-  'Empezar de cero': 'Start over'
+  'Empezar de cero': 'Start over',
+
+  /* --------------------------------------------------------- Relevo */
+  Relevo: 'Handoff',
+  'Seguir con otra IA': 'Continue with another AI',
+  'Pasar este trabajo a otra IA con todo su contexto': 'Hand this work to another AI with all its context',
+  'Parece que se ha agotado un cupo o un límite. Puedes seguir con otra IA sin perder lo hecho.':
+    'It looks like a quota or limit ran out. You can continue with another AI without losing what was done.',
+  'No se pudo preparar el relevo': 'Could not prepare the handoff',
+  'Seguir con {name}': 'Continue with {name}',
+  Seguir: 'Continue',
+  'Leyendo la sesión y el repositorio…': 'Reading the session and the repository…',
+  'Lo estaba haciendo': 'It was being done by',
+  'otra IA': 'another AI',
+  Tareas: 'Tasks',
+  '{done} de {total} hechas': '{done} of {total} done',
+  'no llevaba lista': 'no task list',
+  'Sin confirmar': 'Uncommitted',
+  '{n} ficheros nuevos': '{n} new files',
+  nada: 'nothing',
+  Conversación: 'Conversation',
+  'últimos {n} mensajes': 'last {n} messages',
+  'Esta sesión no dice en qué carpeta trabajaba: un agente de consola no puede seguirla, uno por API sí.':
+    "This session doesn't say which folder it worked in: a CLI agent can't continue it, an API one can.",
+  '{folder} no es uno de tus proyectos: se dará de alta al lanzarlo.':
+    "{folder} isn't one of your projects: it will be added when you launch.",
+  'Quién lo sigue': 'Who continues',
+  'Agente de consola': 'CLI agent',
+  'Modelo por API': 'API model',
+  'No tienes agentes de consola': 'You have no CLI agents',
+  'Trabaja como agente: lee, edita y ejecuta en el proyecto': 'Works as an agent: reads, edits and runs commands in the project',
+  'El que tenga configurado; se puede cambiar después en la Consola.': 'Whatever it has configured; you can change it later in the Console.',
+  'Qué quieres que haga ahora': 'What you want it to do now',
+  'Opcional: si lo dejas vacío, termina lo pendiente y dice qué ha hecho.':
+    'Optional: if left empty, it finishes what is pending and reports what it did.',
+  'Incluir el diff sin confirmar (recortado: es largo)': 'Include the uncommitted diff (trimmed: it is long)',
+  'Incluir el diff sin confirmar': 'Include the uncommitted diff',
+  'Lo que recibirá': 'What it will receive',
+  'Editado a mano: ya no se regenera.': 'Edited by hand: no longer regenerated.',
+  'Se puede editar antes de lanzarlo.': 'You can edit it before launching.'
 }

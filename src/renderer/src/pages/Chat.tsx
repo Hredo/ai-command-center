@@ -11,7 +11,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
-  ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw
+  ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw,
+  ArrowRightLeft
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -30,13 +31,14 @@ import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
   unarchiveSession, deleteSession, sendChat, sendCli, stopSession, loadSessions, approveStep,
-  type Turn
+  useChatFocus, type Turn
 } from '../lib/engine'
 import {
   API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession
 } from '@shared/types'
 import { Pane } from '../components/Resizable'
 import { resumeCaps } from '@shared/cliCaps'
+import { RelayModal, endedByLimit } from '../components/RelayModal'
 
 import { useT } from '../lib/i18n'
 import { withMod } from '../lib/platform'
@@ -372,6 +374,16 @@ export default function Chat(): React.JSX.Element {
     })
   }, [sessions, query, showArchived])
 
+  // Otra parte de la app (el relevo, la paleta) pide abrir una conversación.
+  const focusReq = useChatFocus()
+  useEffect(() => {
+    if (!focusReq) return
+    setActiveId(focusReq.id)
+    setShowArchived(false)
+    void openSession(focusReq.id)
+    stick.current = true
+  }, [focusReq])
+
   // Al entrar: se abre la última conversación viva, o se crea una.
   useEffect(() => {
     if (activeId) return
@@ -545,6 +557,10 @@ export default function Chat(): React.JSX.Element {
     })
   }
 
+  const [relayOpen, setRelayOpen] = useState(false)
+  const relaySource = useMemo(() => (session ? { kind: 'session' as const, id: session.id } : null), [session?.id])
+  const lastAssistant = [...turns].reverse().find((x) => x.role === 'assistant')
+
   const totalCost = turns.reduce((s, t) => s + (t.metrics?.costTotal ?? 0), 0)
   const totalTok = turns.reduce((s, t) => s + (t.metrics?.totalTokens ?? 0), 0)
   const liveTurn = turns.find((t) => t.streaming && t.live)
@@ -686,6 +702,16 @@ export default function Chat(): React.JSX.Element {
               ) : null}
               <ContextGauge compact used={contextUsed} limit={contextLimit} />
               <UsageLimitView compact limit={lastLimit} />
+              {session && turns.length > 0 && !running ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setRelayOpen(true)}
+                  title={t('Pasar este trabajo a otra IA con todo su contexto')}
+                >
+                  <ArrowRightLeft size={12} /> <span className="@max-[40rem]:hidden">{t('Relevo')}</span>
+                </Button>
+              ) : null}
             </div>
           </div>
 
@@ -719,6 +745,19 @@ export default function Chat(): React.JSX.Element {
             {turns.map((t) => (
               <TurnView key={t.id} turn={t} isCli={isCli} />
             ))}
+            {/* Si el último turno se cortó por un cupo o un límite, se ofrece
+                seguir con otra IA sin tener que ir a buscarlo. */}
+            {!running && lastAssistant && endedByLimit(lastAssistant) ? (
+              <div className="rounded-xl border border-warn/40 bg-warn/5 px-4 py-3 flex items-center gap-3">
+                <AlertTriangle size={15} className="text-warn shrink-0" />
+                <span className="text-[12.5px] flex-1 leading-relaxed">
+                  {t('Parece que se ha agotado un cupo o un límite. Puedes seguir con otra IA sin perder lo hecho.')}
+                </span>
+                <Button size="sm" variant="primary" onClick={() => setRelayOpen(true)}>
+                  <ArrowRightLeft size={12} /> {t('Seguir con otra IA')}
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -797,6 +836,8 @@ export default function Chat(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      <RelayModal source={relaySource} open={relayOpen} onClose={() => setRelayOpen(false)} />
 
       {/* ------------------------------------------------ Ajustes de la sesión */}
       <Pane paneKey="chat.detail" side="left" className="border-l border-line bg-void overflow-y-auto">

@@ -149,8 +149,114 @@ function setupFixtures() {
   BINS.plain = makeBin('otro-cli', 'plain.js')
 }
 
+/* ------------------------------------------------------------------ *
+ * Sesiones de otras herramientas, en carpetas falsas                  *
+ * ------------------------------------------------------------------ */
+
+const CODEX_HOME = path.join(HOME, 'codex')
+const GEMINI_HOME = path.join(HOME, 'gemini')
+const DATA_HOME = path.join(HOME, 'data')
+const CODEX_ID = '0199a213-81c0-7800-8aa1-bbab2a035a53'
+
+function setupExternal() {
+  const now = Date.now()
+  const iso = (ms) => new Date(ms).toISOString()
+  // Codex: una sesión en el repo con sus tokens y las ventanas del plan.
+  const day = path.join(CODEX_HOME, 'sessions', '2026', '09', '29')
+  fs.mkdirSync(day, { recursive: true })
+  const lines = [
+    { timestamp: iso(now - 600000), type: 'session_meta', payload: { id: CODEX_ID, cwd: REPO } },
+    { timestamp: iso(now - 599000), type: 'turn_context', payload: { cwd: REPO, model: 'gpt-5-codex' } },
+    { timestamp: iso(now - 598000), type: 'event_msg', payload: { type: 'user_message', message: 'arregla el login de la app' } },
+    {
+      timestamp: iso(now - 500000),
+      type: 'response_item',
+      payload: {
+        type: 'function_call',
+        name: 'update_plan',
+        arguments: JSON.stringify({ plan: [{ step: 'leer login', status: 'completed' }, { step: 'arreglar token', status: 'in_progress' }] })
+      }
+    },
+    { timestamp: iso(now - 400000), type: 'event_msg', payload: { type: 'agent_message', message: 'He encontrado el fallo del token.' } },
+    {
+      timestamp: iso(now - 399000),
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: { input_tokens: 9000, cached_input_tokens: 4000, output_tokens: 700, reasoning_output_tokens: 100, total_tokens: 9700 },
+          last_token_usage: { input_tokens: 9000, cached_input_tokens: 4000, output_tokens: 700, reasoning_output_tokens: 100, total_tokens: 9700 }
+        },
+        rate_limits: {
+          primary: { used_percent: 42.5, window_minutes: 300, resets_in_seconds: 3600 },
+          secondary: { used_percent: 12, window_minutes: 10080, resets_in_seconds: 400000 }
+        }
+      }
+    }
+  ]
+  fs.writeFileSync(
+    path.join(day, `rollout-2026-09-29T10-00-00-${CODEX_ID}.jsonl`),
+    lines.map((l) => JSON.stringify(l)).join('\n') + '\n',
+    'utf8'
+  )
+
+  // Gemini CLI: la carpeta es el SHA-256 de la ruta del proyecto.
+  const hash = require('node:crypto').createHash('sha256').update(REPO).digest('hex')
+  const chats = path.join(GEMINI_HOME, 'tmp', hash, 'chats')
+  fs.mkdirSync(chats, { recursive: true })
+  fs.writeFileSync(
+    path.join(chats, 'session-gem1.json'),
+    JSON.stringify({
+      sessionId: 'gem-sesion-1',
+      projectHash: hash,
+      startTime: iso(now - 300000),
+      messages: [
+        { id: 'u1', timestamp: iso(now - 300000), type: 'user', content: 'documenta la API' },
+        { id: 'g1', timestamp: iso(now - 290000), type: 'gemini', content: 'Primer paso.', model: 'gemini-2.5-pro', tokens: { input: 1000, output: 100, cached: 0, thoughts: 20, tool: 0, total: 1120 } },
+        { id: 'g2', timestamp: iso(now - 280000), type: 'gemini', content: 'Hecho.', model: 'gemini-2.5-pro', tokens: { input: 1200, output: 80, cached: 500, thoughts: 0, tool: 0, total: 1280 } }
+      ]
+    }),
+    'utf8'
+  )
+
+  // OpenCode: su SQLite con una sesión del plan Go, su lista de tareas y una
+  // tabla de cuentas con un secreto que la app no debe leer nunca.
+  const ocDir = path.join(DATA_HOME, 'opencode')
+  fs.mkdirSync(ocDir, { recursive: true })
+  const { DatabaseSync } = require('node:sqlite')
+  const db = new DatabaseSync(path.join(ocDir, 'opencode.db'))
+  db.exec(`
+    create table session (id text primary key, project_id text, parent_id text, slug text, directory text, title text,
+      version text, time_created integer, time_updated integer, model text, cost real, tokens_input integer,
+      tokens_output integer, tokens_reasoning integer, tokens_cache_read integer);
+    create table message (id text primary key, session_id text, time_created integer, time_updated integer, data text);
+    create table part (id text primary key, message_id text, session_id text, time_created integer, time_updated integer, data text);
+    create table todo (session_id text, content text, status text, priority text, position integer, time_created integer, time_updated integer);
+    create table account (id text primary key, access_token text);
+  `)
+  db.prepare('insert into account values (?, ?)').run('cuenta', 'SECRETO-QUE-NO-DEBE-LEERSE')
+  db.prepare('insert into session values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+    'ses_oc1', 'p1', null, 'slug', REPO, 'Refactor del router', '1', now - 200000, now - 100000,
+    JSON.stringify({ id: 'kimi-k3', providerID: 'opencode-go' }), 0.42, 3000, 400, 0, 100
+  )
+  db.prepare('insert into message values (?,?,?,?,?)').run('m1', 'ses_oc1', now - 200000, now - 200000, JSON.stringify({ role: 'user' }))
+  db.prepare('insert into message values (?,?,?,?,?)').run(
+    'm2', 'ses_oc1', now - 150000, now - 150000,
+    JSON.stringify({ role: 'assistant', providerID: 'opencode-go', modelID: 'kimi-k3', cost: 0.42, tokens: { input: 3000, output: 400 } })
+  )
+  db.prepare('insert into part values (?,?,?,?,?,?)').run('p1', 'm1', 'ses_oc1', now - 200000, now - 200000, JSON.stringify({ type: 'text', text: 'refactoriza el router' }))
+  db.prepare('insert into part values (?,?,?,?,?,?)').run('p2', 'm2', 'ses_oc1', now - 150000, now - 150000, JSON.stringify({ type: 'text', text: 'Router partido en dos.' }))
+  db.prepare('insert into todo values (?,?,?,?,?,?,?)').run('ses_oc1', 'separar rutas', 'completed', 'high', 0, now, now)
+  db.prepare('insert into todo values (?,?,?,?,?,?,?)').run('ses_oc1', 'añadir tests', 'pending', 'high', 1, now, now)
+  db.close()
+}
+
 setupRepo()
 setupFixtures()
+setupExternal()
+process.env.CODEX_HOME = CODEX_HOME
+process.env.GEMINI_CLI_HOME = GEMINI_HOME
+process.env.XDG_DATA_HOME = DATA_HOME
 
 require('../out/main/index.js')
 
@@ -167,7 +273,8 @@ app.whenReady().then(async () => {
     const { repo, fixtures } = ${ctx}
     const api = window.api
     const engine = window.__accEngine
-    const project = { id: 'proyecto-prueba', name: 'Proyecto de prueba', path: repo, color: '#fff', createdAt: Date.now() }
+    // En una subcarpeta: en la raíz del repo hay sesiones de fuera que también contarían.
+    const project = { id: 'proyecto-prueba', name: 'Proyecto de prueba', path: repo + '/sub', color: '#fff', createdAt: Date.now() }
     await api.projects.save(project)
     const agent = {
       id: 'claude-falso', name: 'Claude falso', type: 'cli', command: 'node',
@@ -177,7 +284,7 @@ app.whenReady().then(async () => {
 
     // Sin projectId, sólo con una carpeta de dentro del proyecto: tiene que apuntarse igual.
     const sid = await engine.newSession('cli', { cliAgentId: agent.id })
-    const run = await engine.sendCli(sid, { prompt: 'mira', agentId: agent.id, projectPath: repo + '/sub' })
+    const run = await engine.sendCli(sid, { prompt: 'mira', agentId: agent.id, projectPath: repo + '/sub/' })
     const totals = (await api.runs.projectTotals(project.id)).data
 
     // Se envejece la ejecución y se poda.
@@ -286,6 +393,80 @@ app.whenReady().then(async () => {
     'UN CLI QUE NO SABE RETOMAR RECIBE LA CONVERSACIÓN EN EL PROMPT',
     (p.second?.response ?? '').replace(/\s+/g, ' ').slice(0, 80)
   )
+
+  /* -------------------------------------------------------------- *
+   * A6 · Sesiones de Codex, OpenCode y Gemini CLI de fuera          *
+   * A2 · Relevo entre agentes                                       *
+   * -------------------------------------------------------------- */
+  const ext = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${bins}
+    const api = window.api
+    const engine = window.__accEngine
+    const project = { id: 'proyecto-ext', name: 'Repo ext', path: repo, color: '#fff', createdAt: Date.now() }
+    await api.projects.save(project)
+    await api.external.refresh()
+    await new Promise((r) => setTimeout(r, 300))
+    const rows = (await api.runs.query({ limit: 50 })).data.rows
+    const codex = rows.find((r) => r.id === 'codex-${CODEX_ID}')
+    const opencode = rows.find((r) => r.id === 'opencode-ses_oc1')
+    const gemini = rows.find((r) => r.id === 'gemini-gem-sesion-1')
+
+    const rCodex = (await api.relay.build({ kind: 'codex', id: '${CODEX_ID}' })).data
+    const rOc = (await api.relay.build({ kind: 'opencode', id: 'ses_oc1' })).data
+
+    // Relevo desde una conversación de la Consola.
+    const agent = { id: 'codex-relay', name: 'Codex falso', type: 'cli', command: bins.codex, args: ['exec', '--json', '{{prompt}}'], parser: 'codex-json', color: '#fff', createdAt: Date.now() }
+    await api.agents.saveCli(agent)
+    const sid = await engine.newSession('cli', { cliAgentId: agent.id, projectId: project.id })
+    const run = await engine.sendCli(sid, { prompt: 'empieza el arreglo', agentId: agent.id, projectPath: repo, projectId: project.id })
+    await engine.saveSessionNow(sid)
+    const rSes = (await api.relay.build({ kind: 'session', id: sid })).data
+    const prompt = (await api.relay.prompt(rSes, { includeDiff: true, note: 'termina los tests' })).data
+    const bad = await api.relay.build({ kind: 'inventado', id: 'x' })
+
+    await engine.deleteSession(sid)
+    if (run?.id) await api.runs.remove(run.id)
+    await api.agents.removeCli(agent.id)
+    for (const r of [codex, opencode, gemini]) if (r) await api.runs.remove(r.id)
+    await api.projects.remove(project.id)
+    return { codex, opencode, gemini, rCodex, rOc, rSes, prompt, bad }
+  })()`)
+
+  log(
+    Boolean(ext.codex) && ext.codex.projectId === 'proyecto-ext' && ext.codex.promptTokens === 9000,
+    'CODEX DE FUERA ENTRA AL HISTÓRICO, EN SU PROYECTO',
+    ext.codex ? `${ext.codex.promptTokens} tokens, ${ext.codex.model}` : 'no aparece'
+  )
+  log(
+    Boolean(ext.opencode) && Math.abs(ext.opencode.costTotal - 0.42) < 1e-9 && ext.opencode.costEstimated === false,
+    'OPENCODE DE FUERA, CON SU COSTE REAL',
+    ext.opencode ? String(ext.opencode.costTotal) : 'no aparece'
+  )
+  log(ext.opencode?.prompt === 'refactoriza el router', 'OpenCode: la primera petición da título', String(ext.opencode?.prompt))
+  log(
+    Boolean(ext.gemini) && ext.gemini.projectId === 'proyecto-ext' && ext.gemini.promptTokens === 2200,
+    'GEMINI CLI DE FUERA, EN SU PROYECTO POR SU HASH',
+    ext.gemini ? `${ext.gemini.promptTokens} tokens, proyecto ${ext.gemini.projectId}` : 'no aparece'
+  )
+  log(ext.rCodex?.goal === 'arregla el login de la app' && ext.rCodex?.exchanges?.length === 2, 'relevo desde Codex: objetivo e intercambios', `${ext.rCodex?.exchanges?.length} mensajes`)
+  log(ext.rCodex?.todos?.length === 2 && ext.rCodex.todos[1].active === true, 'relevo desde Codex: su plan como tareas', JSON.stringify(ext.rCodex?.todos))
+  log(
+    ext.rOc?.todos?.length === 2 && ext.rOc.todos[0].done === true && ext.rOc.exchanges?.length === 2,
+    'relevo desde OpenCode: tareas y conversación de su base de datos'
+  )
+  log(!JSON.stringify(ext.rOc ?? {}).includes('SECRETO'), 'LAS CUENTAS DE OPENCODE NO SE LEEN')
+  log(
+    ext.rSes?.todos?.length === 2 && ext.rSes?.projectId === 'proyecto-ext' && (ext.rSes?.exchanges?.length ?? 0) >= 2,
+    'RELEVO DESDE LA CONSOLA: TAREAS, PROYECTO Y CONVERSACIÓN',
+    `${ext.rSes?.todos?.length} tareas, ${ext.rSes?.exchanges?.length} mensajes`
+  )
+  log(
+    typeof ext.prompt === 'string' && ext.prompt.includes('Tomas el relevo') && ext.prompt.includes('termina los tests') && ext.prompt.includes('arreglar'),
+    'EL PROMPT DEL RELEVO LLEVA OBJETIVO, TAREAS Y LA NOTA',
+    (ext.prompt ?? '').slice(0, 70)
+  )
+  log(ext.bad?.ok === false, 'un origen inventado se rechaza', ext.bad?.error)
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

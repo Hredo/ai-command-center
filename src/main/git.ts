@@ -754,3 +754,10 @@ export async function gitShow(cwd: string, hash: string): Promise<string> {
   const r = await git(cwd, ['show', '--no-color', '--stat', '--patch', '--find-renames', ref], 20000)
   return r.out
 }
+
+/**
+ * La llamada a git sin lista blanca, para el propio proceso principal: el
+ * relevo, los puntos de control y los worktrees arman sus argumentos aquí
+ * mismo, nunca con texto que venga de la interfaz.
+ */
+export { git as gitExec }

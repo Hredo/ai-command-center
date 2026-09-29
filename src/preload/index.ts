@@ -5,7 +5,8 @@ import type {
   DetectedServer, StatsBucket, StreamDelta, CliEvent, TermInfo, TermEvent,
   StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks, OpencodeModel,
   GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
-  GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage
+  GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage,
+  RelaySource, RelayPackage
 } from '@shared/types'
 
 /** Lo que la aplicación puede decir sobre su propio aislamiento. */
@@ -285,6 +286,23 @@ const api = {
   attach: {
     pick: () => call<Attachment[]>('attach:pick'),
     describe: (path: string) => call<Attachment>('attach:describe', path)
+  },
+  /** Relevo: pasar un trabajo a medias de una IA a otra con todo su contexto. */
+  relay: {
+    build: (src: RelaySource) => call<RelayPackage>('relay:build', src),
+    prompt: (pkg: RelayPackage, opts?: { includeDiff?: boolean; note?: string }) =>
+      call<string>('relay:prompt', pkg, opts)
+  },
+  /** Sesiones de Codex, OpenCode y Gemini CLI abiertas fuera de la app. */
+  external: {
+    refresh: () => call<{ imported: number }>('external:refresh'),
+    onUpdated: (cb: (p: { imported: number }) => void) => {
+      const listener = (_e: unknown, payload: { imported: number }): void => cb(payload)
+      ipcRenderer.on('external:updated', listener)
+      return () => {
+        ipcRenderer.removeListener('external:updated', listener)
+      }
+    }
   },
   /** Avisos de que algo cambió en el proceso principal: quien lo lea se relee. */
   live: {

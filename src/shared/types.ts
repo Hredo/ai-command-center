@@ -1085,3 +1085,41 @@ export interface ModelLinks {
   /** Alternativas útiles: pesos, precios, documentación. */
   extras: { label: string; url: string }[]
 }
+
+/* ------------------------------------------------------------------ *
+ * Relevo entre agentes                                               *
+ * ------------------------------------------------------------------ */
+
+/**
+ * De dónde sale un relevo: una conversación de la Consola (`session`), una
+ * sesión de Claude Code de cualquier sitio (`claude`) o una de Codex, OpenCode
+ * o Gemini CLI abierta fuera de la app.
+ */
+export interface RelaySource {
+  kind: 'session' | 'claude' | 'codex' | 'opencode' | 'gemini'
+  id: string
+}
+
+/** Lo que recibe el agente que toma el relevo. Se enseña entero antes de lanzarlo. */
+export interface RelayPackage {
+  source: RelaySource
+  label: string
+  /** Quién lo estaba haciendo. */
+  fromAgent?: string
+  projectPath?: string
+  projectId?: string
+  projectName?: string
+  branch?: string
+  /** La primera petición. */
+  goal?: string
+  exchanges: { role: 'user' | 'assistant'; content: string }[]
+  todos: AgentTodo[]
+  filesTouched: string[]
+  /** `git diff HEAD --stat`. */
+  gitStat: string
+  untracked: string[]
+  diff: string
+  diffTruncated: boolean
+  /** Por qué se releva, si se sabe: cupo agotado, un error… */
+  reason?: string
+}

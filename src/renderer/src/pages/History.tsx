@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
-  History as HistoryIcon, Search, Download, Trash2, X, Crown, Copy, Check, AlertTriangle
+  History as HistoryIcon, Search, Download, Trash2, X, Crown, Copy, Check, AlertTriangle, ArrowRightLeft
 } from 'lucide-react'
 import { Panel, Button, Badge, Empty, Input, Select, Modal, Dot } from '../components/ui'
 import { Markdown } from '../components/Markdown'
@@ -9,12 +9,15 @@ import { useRunsVersion } from '../lib/engine'
 import { cost, tokens, ms, tps, dateTime, shortModel, colorFor } from '../lib/format'
 import type { RunRecord } from '@shared/types'
 import { Pane } from '../components/Resizable'
+import { RelayModal, relaySourceOf } from '../components/RelayModal'
 
 import { useT } from '../lib/i18n'
 function Detail({ run, onClose, onDelete }: { run: RunRecord | null; onClose: () => void; onDelete: (id: string) => void }): React.JSX.Element | null {
   const t = useT()
   const [copied, setCopied] = useState(false)
+  const [relay, setRelay] = useState(false)
   if (!run) return null
+  const relaySource = relaySourceOf(run)
 
   const rows: [string, React.ReactNode][] = [
     ['Fecha', dateTime(run.createdAt)],
@@ -66,6 +69,11 @@ function Detail({ run, onClose, onDelete }: { run: RunRecord | null; onClose: ()
             >
               {copied ? <Check size={13} className="text-ok" /> : <Copy size={13} />} Copiar
             </Button>
+            {relaySource ? (
+              <Button size="sm" variant="ghost" onClick={() => setRelay(true)} title={t('Pasar este trabajo a otra IA con todo su contexto')}>
+                <ArrowRightLeft size={13} /> {t('Relevo')}
+              </Button>
+            ) : null}
             <Button size="sm" variant="ghost" onClick={() => onDelete(run.id)}>
               <Trash2 size={13} />
             </Button>
@@ -75,6 +83,7 @@ function Detail({ run, onClose, onDelete }: { run: RunRecord | null; onClose: ()
           </div>
         </div>
 
+        <RelayModal source={relaySource} open={relay} onClose={() => setRelay(false)} />
         <div className="flex-1 overflow-y-auto">
           <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 px-5 py-4 border-b border-line">
             {rows.map(([k, v]) => (

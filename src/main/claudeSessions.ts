@@ -473,3 +473,18 @@ export async function refreshClaude(): Promise<{ imported: number; files: number
   const scan = await scanClaude()
   return { imported: importClaudeSessions(), files: scan.files }
 }
+
+/** Dónde está la transcripción de una sesión de Claude Code, si se ha visto. */
+export function claudeTranscriptPath(sessionId: string): string | undefined {
+  load()
+  for (const [path, st] of Object.entries(index.files)) {
+    if (st.sessionId === sessionId && existsSync(path)) return path
+  }
+  // Puede ser más vieja que la ventana del índice: se busca por nombre.
+  if (!existsSync(ROOT)) return undefined
+  for (const dir of readdirSync(ROOT)) {
+    const p = join(ROOT, dir, sessionId + '.jsonl')
+    if (existsSync(p)) return p
+  }
+  return undefined
+}

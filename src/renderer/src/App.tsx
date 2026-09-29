@@ -14,6 +14,7 @@ import { Pane } from './components/Resizable'
 import { cost } from './lib/format'
 import { TITLEBAR_HEIGHT, TRAFFIC_LIGHTS_WIDTH } from '@shared/defaults'
 import { IS_MAC, modKey } from './lib/platform'
+import { onNavigate, type PageId } from './lib/nav'
 /**
  * Cada sección se descarga la primera vez que se entra en ella.
  *
@@ -47,9 +48,7 @@ function PageLoading(): React.JSX.Element {
   )
 }
 
-export type PageId =
-  | 'dashboard' | 'chat' | 'arena' | 'terminal' | 'projects' | 'agents' | 'models' | 'house'
-  | 'history' | 'settings'
+export type { PageId }
 
 const NAV: { id: PageId; icon: React.ElementType; group: number }[] = [
   { id: 'dashboard', icon: LayoutDashboard, group: 0 },
@@ -262,6 +261,10 @@ function Shell(): React.JSX.Element {
     setPage(p)
     setVisited((v) => (v.has(p) ? v : new Set(v).add(p)))
   }, [])
+
+  // Cualquier parte de la app puede pedir ir a una sección (el relevo, la
+  // paleta de comandos, un aviso de cupo).
+  useEffect(() => onNavigate((t) => nav(t.page)), [nav])
 
   // Atajos: Ctrl+1..9 salta de sección (Cmd+1..9 en macOS) y Ctrl+, abre
   // Ajustes, que es el décimo y no tenía número.

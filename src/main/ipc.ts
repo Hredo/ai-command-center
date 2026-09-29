@@ -15,6 +15,8 @@ import { registerExtraIpc } from './ipcExtra'
 import { checkArgs, isTrustedSender, launchedWithoutSandbox, openExternal, RENDERER_PREFS, type SecurityReport } from './security'
 import { notifyRun } from './notify'
 import { runMaintenance } from './maintenance'
+import { refreshExternal } from './external'
+import { importClaudeSessions } from './claudeSessions'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 import type { RunOptions, CliRunOptions, Agent, CliAgent, Project } from '@shared/types'
 
@@ -189,7 +191,13 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     if (res.canceled || !res.filePaths[0]) return null
     return res.filePaths[0]
   })
-  handle('projects:save', (p: Project) => saveProject(p))
+  handle('projects:save', (p: Project) => {
+    const cfg = saveProject(p)
+    // Lo que se hizo en esa carpeta desde fuera pasa a contar en el proyecto.
+    importClaudeSessions()
+    void refreshExternal(true)
+    return cfg
+  })
   handle('projects:remove', (id: string) => removeFrom('projects', id))
   handle('projects:scan', (path: string) => scanProject(path))
   handle('projects:context', (path: string, opts: any) => projectContext(path, opts ?? {}))
