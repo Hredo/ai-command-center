@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type {
   AppConfig, Settings, Agent, CliAgent, Project, RunOptions, CliRunOptions, RunRecord, StoredSession,
-  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient
+  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun
 } from '@shared/types'
 import type { IpcChannel, IpcArgs, IpcResult, IpcRes, IpcEvent, IpcEvents } from '@shared/ipcContract'
 
@@ -251,6 +251,15 @@ const api = {
     list: (projectPath?: string) => call('skills:list', projectPath),
     copy: (source: string, target: { id: string; scope: 'personal' | 'project' }, projectPath?: string) =>
       call('skills:copy', source, target, projectPath)
+  },
+  /** Baterías de prompts: definición, resultados y el juez local. */
+  batteries: {
+    save: (battery: Battery) => call('batteries:save', battery),
+    remove: (id: string) => call('batteries:remove', id),
+    runs: (batteryId?: string) => call('batteries:runs', batteryId),
+    saveRun: (run: BatteryRun) => call('batteries:saveRun', run),
+    removeRun: (id: string) => call('batteries:removeRun', id),
+    judge: (model: string, input: { rubric: string; prompt: string; response: string }) => call('batteries:judge', model, input)
   },
   /** El recomendador: un modelo local de Ollama clasifica la tarea. */
   recommend: {

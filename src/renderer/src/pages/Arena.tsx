@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import {
   Swords, Play, Square, Plus, X, Trophy, Timer, Zap, DollarSign, Crown,
   AlertTriangle, RotateCcw, ChevronDown, History as HistoryIcon, Cpu, Bot, FolderGit2, Medal,
-  GitBranch, GitMerge, FileDiff, FlaskConical, Trash2, Save
+  GitBranch, GitMerge, FileDiff, FlaskConical, Trash2, Save, ListChecks
 } from 'lucide-react'
 import { Button, Textarea, Badge, cx, Dot, Meter, Select, Input, Modal, Toggle } from '../components/ui'
 import { ModelPicker } from '../components/ModelPicker'
@@ -24,6 +24,7 @@ import { Markdown } from '../components/Markdown'
 import { LiveMetrics } from '../components/Stats'
 import { AgentActivity } from '../components/AgentActivity'
 import { DiffReview } from '../components/DiffReview'
+import { BatteryPanel } from '../components/BatteryPanel'
 import { samePath } from '../components/WorktreeBox'
 import { useStore } from '../lib/store'
 import { cost, tokens, ms, tps, shortModel, colorFor, relTime } from '../lib/format'
@@ -88,6 +89,7 @@ export default function Arena(): React.JSX.Element {
   const [sessions, setSessions] = useState<any[]>([])
   const [showHistory, setShowHistory] = useState(false)
   const [showRank, setShowRank] = useState(false)
+  const [showBatteries, setShowBatteries] = useState(false)
   const [elo, setElo] = useState<EloRow[]>([])
   const [showSystem, setShowSystem] = useState(false)
   const [viewDiff, setViewDiff] = useState<Contender | null>(null)
@@ -334,6 +336,9 @@ export default function Arena(): React.JSX.Element {
           >
             <Save size={13} /> {t('Predeterminados')}
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => setShowBatteries((s) => !s)}>
+            <ListChecks size={13} /> {t('Baterías')}
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setShowRank((s) => !s)}>
             <Medal size={13} /> {t('Tu clasificación')}
           </Button>
@@ -351,6 +356,8 @@ export default function Arena(): React.JSX.Element {
           )}
         </div>
       </div>
+
+      {showBatteries ? <BatteryPanel names={nameOf} /> : null}
 
       {showRank ? (
         <div className="border-b border-line bg-panel max-h-[240px] overflow-y-auto shrink-0">

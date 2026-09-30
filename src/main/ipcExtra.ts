@@ -45,10 +45,12 @@ import { listSkills, copySkill } from './skills'
 import { mcpReport, planMcpCopy, copyMcpServer, setAppMcpEnabled, removeAppMcp, addAppMcp } from './mcp/configs'
 import { testAppMcp, pruneMcp } from './mcp/client'
 import { classifyWithOllama } from './recommend'
+import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryRun, judgeWithOllama } from './batteries'
 import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
-  GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource, McpClient
+  GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource, McpClient,
+  Battery, BatteryRun
 } from '@shared/types'
 
 export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
@@ -388,6 +390,21 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   // Tocar ~/.claude/settings.json sólo lo pide el usuario desde Ajustes.
   handle('attention:install', () => installNotifyHook())
   handle('attention:uninstall', () => uninstallNotifyHook())
+
+  /* ------------------------------- Baterías ------------------------------------ */
+
+  handle('batteries:save', (b: Battery) => saveBattery(b))
+  handle('batteries:remove', (id: string) => removeBattery(str(id, 'batería')))
+  handle('batteries:runs', (batteryId?: string) => batteryRuns(typeof batteryId === 'string' && batteryId ? batteryId : undefined))
+  handle('batteries:saveRun', (run: BatteryRun) => saveBatteryRun(run))
+  handle('batteries:removeRun', (id: string) => removeBatteryRun(str(id, 'resultado')))
+  handle('batteries:judge', (model: string, input: { rubric: string; prompt: string; response: string }) =>
+    judgeWithOllama(str(model, 'juez'), {
+      rubric: String(input?.rubric ?? ''),
+      prompt: String(input?.prompt ?? ''),
+      response: String(input?.response ?? '')
+    })
+  )
 
   /* ------------------------------- Recomendador -------------------------------- */
 

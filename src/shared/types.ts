@@ -293,6 +293,74 @@ export interface AppMcpServer extends McpSpec {
   addedAt: number
 }
 
+/* ------------------------------------------------------------------ *
+ * Baterías de prompts                                                *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Qué se comprueba de una respuesta: que contenga (o no) un texto, que case
+ * con una expresión regular, que sea JSON, que pasen las pruebas del repo (en
+ * la Arena de código) o que un juez local le dé al menos una nota.
+ */
+export type BatteryCheckKind = 'contains' | 'not_contains' | 'regex' | 'json' | 'tests' | 'judge'
+
+export interface BatteryCheck {
+  id: string
+  kind: BatteryCheckKind
+  /** El texto, la expresión regular o, para el juez, la rúbrica. */
+  value?: string
+  /** Juez: nota mínima para aprobar, de 1 a 10. */
+  min?: number
+}
+
+export interface BatteryCase {
+  id: string
+  prompt: string
+  checks: BatteryCheck[]
+}
+
+export interface Battery {
+  id: string
+  name: string
+  cases: BatteryCase[]
+  createdAt: number
+  /** Modelo de Ollama que hace de juez, si alguna comprobación lo usa. */
+  judgeModel?: string
+}
+
+export interface BatteryCheckResult {
+  checkId: string
+  kind: BatteryCheckKind
+  pass: boolean
+  /** Por qué falló, o lo que dijo el juez. */
+  detail?: string
+  /** La nota del juez (su opinión, no un hecho). */
+  score?: number
+}
+
+export interface BatteryCell {
+  caseId: string
+  contender: string
+  runId?: string
+  ok: boolean
+  checks: BatteryCheckResult[]
+  cost: number
+  ms: number
+  error?: string
+}
+
+export interface BatteryRun {
+  id: string
+  batteryId: string
+  batteryName: string
+  at: number
+  contenders: { key: string; label: string }[]
+  cells: BatteryCell[]
+  judgeModel?: string
+  /** Se paró antes de acabar todos los casos. */
+  stopped?: boolean
+}
+
 /** Claude Code, en una terminal, espera tu respuesta (su hook Notification). */
 export interface TerminalAttention {
   /** La sesión de Claude Code: un aviso por sesión. */
@@ -657,6 +725,8 @@ export interface AppConfig {
   customModels: ModelInfo[]
   /** Servidores MCP que pueden usar los agentes por API (sin secretos: sólo `${VAR}`). */
   mcpServers?: Record<string, AppMcpServer>
+  /** Baterías de prompts con sus comprobaciones, para relanzarlas en la Arena. */
+  batteries?: Battery[]
 }
 
 export interface ProviderOverride {

@@ -11,7 +11,7 @@
  * se ponen de acuerdo.
  */
 import type {
-  Agent, AppConfig, Attachment, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
+  Agent, AppConfig, Attachment, Battery, BatteryRun, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
@@ -55,6 +55,16 @@ export interface GitCmd {
 }
 
 export interface IpcContract {
+  'batteries:save': { args: [battery: Battery]; result: AppConfig }
+  'batteries:remove': { args: [id: string]; result: AppConfig }
+  'batteries:runs': { args: [batteryId?: string]; result: BatteryRun[] }
+  'batteries:saveRun': { args: [run: BatteryRun]; result: boolean }
+  'batteries:removeRun': { args: [id: string]; result: boolean }
+  /** La nota de un juez local (Ollama) con una rúbrica: su opinión. */
+  'batteries:judge': {
+    args: [model: string, input: { rubric: string; prompt: string; response: string }]
+    result: { score: number; reason: string }
+  }
   'attention:list': { args: []; result: TerminalAttention[] }
   'attention:dismiss': { args: [id: string]; result: boolean }
   'attention:hook': { args: []; result: NotifyHookInfo }

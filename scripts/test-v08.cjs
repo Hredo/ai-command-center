@@ -2184,6 +2184,123 @@ app.whenReady().then(async () => {
   else fs.writeFileSync(claudeSettings, settingsBefore)
 
   /* -------------------------------------------------------------- *
+   * C4 · Baterías de prompts  ·  C5 · Juez local                    *
+   * -------------------------------------------------------------- */
+  const batFixture = (name, json, math) => {
+    const file = path.join(FIXTURES, name + '.js')
+    fs.writeFileSync(
+      file,
+      `let p = ''\nprocess.stdin.on('data', (c) => (p += c))\nprocess.stdin.on('end', () => process.stdout.write(p.includes('JSON') ? ${JSON.stringify(json)} : ${JSON.stringify(math)}))\n`
+    )
+    return makeBin(name, name + '.js')
+  }
+  const binBien = batFixture('bat-bien', '{"saludo":"hola"}', 'El resultado es 4.')
+  const binMal = batFixture('bat-mal', 'hola, pero sin json', 'No lo sé: error.')
+  const JUDGE_PORT = API_PORT + 2
+  const judgeReqs = []
+  const judgeMock = await new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      let body = ''
+      req.on('data', (c) => (body += c))
+      req.on('end', () => {
+        let parsed = {}
+        try {
+          parsed = JSON.parse(body || '{}')
+        } catch {}
+        res.writeHead(200, { 'content-type': 'application/json' })
+        if (req.url.startsWith('/api/show')) return res.end(JSON.stringify({ model_info: { 'qwen.context_length': 4096 }, capabilities: ['completion'] }))
+        if (req.url.startsWith('/api/chat')) {
+          judgeReqs.push(parsed)
+          const user = String(parsed.messages?.find((m) => m.role === 'user')?.content ?? '')
+          const good = user.includes('Respuesta que juzgas:\nEl resultado es 4')
+          return res.end(JSON.stringify({ message: { role: 'assistant', content: JSON.stringify({ score: good ? 8 : 2, reason: good ? 'Dice que es 4.' : 'No responde.' }) }, done: true }))
+        }
+        res.end('{}')
+      })
+    })
+    server.listen(JUDGE_PORT, '127.0.0.1', () => resolve(server))
+  })
+  const c4 = await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 20000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(150) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    const out = {}
+    out.prevOllama = (await api.config.get()).data.providers['ollama']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('ollama', 'http://127.0.0.1:${JUDGE_PORT}')
+    await api.agents.saveCli({ id: 'bat-bien', name: 'Bien', type: 'cli', command: ${JSON.stringify(binBien)}, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'bat-mal', name: 'Mal', type: 'cli', command: ${JSON.stringify(binMal)}, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    await api.batteries.save({
+      id: 'bat-1', name: 'Formato', createdAt: Date.now(), judgeModel: 'juez:1b',
+      cases: [
+        { id: 'c1', prompt: 'saluda en JSON', checks: [{ id: 'k1', kind: 'json' }, { id: 'k2', kind: 'contains', value: 'hola' }] },
+        { id: 'c2', prompt: 'cuánto es 2+2', checks: [
+          { id: 'k3', kind: 'regex', value: '\\\\b4\\\\b' }, { id: 'k4', kind: 'not_contains', value: 'error' },
+          { id: 'k5', kind: 'judge', value: 'La respuesta dice que 2+2 es 4', min: 6 }
+        ] }
+      ]
+    })
+    await sleep(500)
+    const direct = await api.batteries.judge('juez:1b', { rubric: 'dice 4', prompt: '2+2', response: 'El resultado es 4.' })
+    out.direct = direct.ok ? direct.data.score + ':' + direct.data.reason : direct.error
+
+    btn('Arena')?.click()
+    await until(() => btn('Baterías'))
+    engine.setArena({ project: undefined, testCommand: '', prompt: '', contenders: [
+      { ...engine.emptyContender('cli'), cliAgentId: 'bat-bien' },
+      { ...engine.emptyContender('cli'), cliAgentId: 'bat-mal' }
+    ] })
+    btn('Baterías').click()
+    const panel = await until(() => document.querySelector('[data-batteries]'))
+    const go = await until(() => { const b = btn('Pasar la batería', panel); return b && !b.disabled ? b : null })
+    if (!go) return { ...out, error: 'no se puede pasar la batería' }
+    go.click()
+    const runs = await until(async () => { const r = await api.batteries.runs('bat-1'); return r.data?.length ? r.data : null }, 40000)
+    out.run = runs?.[0] ?? null
+    await sleep(400)
+    out.totals = [...document.querySelectorAll('[data-total]')].map((x) => x.textContent.trim())
+    out.cells = document.querySelectorAll('[data-cell]').length
+    return out
+  })()`)
+  const judgeReq = judgeReqs.find((r) => r.format?.properties?.score)
+  const byLabel = (label) => c4.run?.contenders.find((c) => c.label === label)?.key
+  const cellOf = (caseId, label) => c4.run?.cells.find((c) => c.caseId === caseId && c.contender === byLabel(label))
+  const bien2 = cellOf('c2', 'Bien')
+  const mal1 = cellOf('c1', 'Mal')
+  log(c4.direct === '8:Dice que es 4.' && judgeReq?.options?.num_ctx === 4096 && judgeReq?.stream === false, 'EL JUEZ LOCAL PUNTÚA CON RÚBRICA, ESQUEMA Y SU VENTANA ENTERA', String(c4.direct))
+  log(
+    Boolean(c4.run) && c4.run.cells.length === 4 && cellOf('c1', 'Bien')?.ok && bien2?.ok && !mal1?.ok && !cellOf('c2', 'Mal')?.ok,
+    'UNA BATERÍA PASA CADA CASO A LOS CONTENDIENTES Y COMPRUEBA LAS RESPUESTAS',
+    c4.error ?? c4.run?.cells.map((c) => c.ok).join(',')
+  )
+  log(
+    mal1?.checks.map((c) => c.kind + ':' + c.pass).join(',') === 'json:false,contains:true' &&
+      cellOf('c2', 'Mal')?.checks.map((c) => c.kind + ':' + c.pass).join(',') === 'regex:false,not_contains:false,judge:false',
+    'cada comprobación dice si pasa: JSON, contiene, expresión regular, no contiene y juez',
+    mal1?.checks.map((c) => c.detail).join(' | ')
+  )
+  log(
+    bien2?.checks.find((c) => c.kind === 'judge')?.score === 8 && c4.run?.judgeModel === 'juez:1b',
+    'la nota del juez se guarda con el juez que la dio'
+  )
+  log(
+    c4.cells === 4 && c4.totals.length === 2 && c4.totals.some((x) => x.includes('2/2') && x.includes('100 %')) && c4.totals.some((x) => x.includes('0/2')),
+    'LA MATRIZ ENSEÑA CADA CASILLA Y EL TOTAL DE CADA CONTENDIENTE',
+    c4.totals.join(' | ')
+  )
+  await js(`(async () => {
+    const api = window.api
+    await api.providers.setBaseUrl('ollama', ${JSON.stringify(c4.prevOllama ?? '')})
+    for (const r of (await api.batteries.runs('bat-1')).data ?? []) await api.batteries.removeRun(r.id)
+    await api.batteries.remove('bat-1')
+    await api.agents.removeCli('bat-bien')
+    await api.agents.removeCli('bat-mal')
+    window.__accEngine.setArena({ prompt: '', contenders: [] })
+  })()`)
+  judgeMock.close()
+
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

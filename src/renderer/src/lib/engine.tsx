@@ -1621,6 +1621,11 @@ export async function launchArena(names: Record<string, string> = {}): Promise<v
   if (ids.length) void window.api.notify.arena(ids)
 }
 
+/** El estado de la Arena ahora mismo, para quien la conduce fuera de React (las baterías). */
+export function peekArenaState(): ArenaState {
+  return arena.get()
+}
+
 export function stopArena(): void {
   for (const c of arena.get().contenders) {
     if (!c.runId || !c.streaming) continue
