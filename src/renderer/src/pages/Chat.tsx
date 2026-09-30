@@ -231,15 +231,22 @@ function TurnView({
   turn,
   isCli,
   sessionId,
-  onReview
+  onReview,
+  onAllow
 }: {
   turn: Turn
   isCli: boolean
   sessionId: string
   /** Abrir la revisión del diff de este turno. */
   onReview?: () => void
+  /** Claude Code: seguir dándole permiso sólo para lo que le faltó. */
+  onAllow?: (rules: string[]) => void
 }): React.JSX.Element {
   const t = useT()
+  // Lo que el agente quiso hacer y no pudo por falta de permiso. Lo que
+  // rechazaste tú (agentes por API) no cuenta: eso ya lo decidiste.
+  const denied = (turn.steps ?? []).filter((s) => s.denied && s.approval !== 'denied')
+  const rules = [...new Set(denied.map((s) => s.rule).filter((r): r is string => Boolean(r)))]
   if (turn.role === 'user') {
     return (
       <div className="flex gap-3 justify-end">
@@ -357,6 +364,30 @@ function TurnView({
               files={turn.files ?? turn.metrics?.filesChanged}
               touched={turn.touched ?? turn.metrics?.filesTouched}
             />
+
+            {/* Lo que no pudo hacer por falta de permiso: suele ser por qué se quedó a medias. */}
+            {!turn.streaming && denied.length ? (
+              <div className="mt-2.5 bg-[#241a09] border border-[#4a3512] rounded-lg px-3 py-2.5 space-y-2" data-denied>
+                <div className="flex items-center gap-1.5 text-[12px] text-warn font-medium">
+                  <AlertTriangle size={13} /> {t('Le faltó permiso para:')}
+                </div>
+                <ul className="text-[11.5px] font-mono text-muted space-y-0.5 break-all">
+                  {denied.map((s) => (
+                    <li key={s.id}>{[s.tool, s.target].filter(Boolean).join(' ')}</li>
+                  ))}
+                </ul>
+                {onAllow && rules.length ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button size="sm" onClick={() => onAllow(rules)}>
+                      <Check size={12} /> {t('Permitir eso y seguir')}
+                    </Button>
+                    <span className="text-[11px] text-dim">{t('Sólo eso, y sólo en el turno siguiente: tus permisos no cambian.')}</span>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-dim">{t('Cambia sus permisos en el panel de la derecha y vuelve a pedírselo.')}</p>
+                )}
+              </div>
+            ) : null}
 
             {/* Métricas: en vivo mientras genera, definitivas al acabar. */}
             {turn.streaming && turn.live ? (
@@ -522,6 +553,25 @@ export default function Chat(): React.JSX.Element {
     // Un agente puede haber cambiado de rama o dejado el árbol sucio.
     if (project) reloadGit()
   }, [input, session, running, isCli, project, config, toast, attachments, reloadGit, t])
+
+  // Claude Code se quedó a medias por un permiso: seguir dándole sólo ese.
+  const isClaudeCli =
+    isCli && (cliAgent?.command ?? '').toLowerCase().split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/, '') === 'claude'
+  const allowAndContinue = useCallback(
+    (rules: string[]) => {
+      if (!session || !config) return
+      void sendTurn(session.id, t('Ya tienes permiso para lo que te faltaba. Sigue donde lo dejaste.'), config, {
+        allowTools: rules,
+        onStart: () => {
+          stick.current = true
+        }
+      }).then((r) => {
+        if (r.error) toast('error', t(r.error))
+        reloadGit()
+      })
+    },
+    [session, config, t, toast, reloadGit]
+  )
 
   // Un agente de API fija modelo, prompt de sistema y parámetros de golpe.
   const applyAgent = (agentId: string): void => {
@@ -756,6 +806,7 @@ export default function Chat(): React.JSX.Element {
                       ? () => setReview({ runId: t.runId!, checkpoint: ck, untilRunId: next?.runId })
                       : undefined
                   }
+                  onAllow={i === turns.length - 1 && !running && isClaudeCli ? allowAndContinue : undefined}
                 />
               )
             })}

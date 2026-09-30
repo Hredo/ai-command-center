@@ -10,10 +10,58 @@ import { Panel, PanelHeader, Button, Badge, Input, Field, Select, Toggle, cx, Do
 import { AppearanceTab, EditorTab, SecurityTab } from './Appearance'
 import { useStore } from '../lib/store'
 import { relTime, bytes } from '../lib/format'
-import type { DetectionResult, ProviderStatus } from '@shared/types'
+import type { DetectionResult, NotifyHookInfo, ProviderStatus } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 import { IS_LINUX, IS_MAC, perOs } from '../lib/platform'
+
+/**
+ * El hook de avisos de Claude Code: opcional y apagado de fábrica, como el
+ * statusLine. Escribe en su settings.json con copia de seguridad y, al
+ * quitarlo, deja tus hooks como estaban.
+ */
+function ClaudeAttentionToggle(): React.JSX.Element {
+  const t = useT()
+  const { toast } = useStore()
+  const [info, setInfo] = useState<NotifyHookInfo | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    void window.api.attention.hook().then((r) => r.ok && r.data && setInfo(r.data))
+  }, [])
+
+  const toggle = async (on: boolean): Promise<void> => {
+    setBusy(true)
+    const r = on ? await window.api.attention.install() : await window.api.attention.uninstall()
+    setBusy(false)
+    if (r.ok && r.data) {
+      setInfo(r.data)
+      toast('ok', on ? t('Avisos de Claude Code activados') : t('Avisos de Claude Code desactivados'))
+    } else toast('error', r.error ?? t('No se pudo cambiar'))
+  }
+
+  return (
+    <div className="pt-3 border-t border-line space-y-2">
+      <Toggle
+        checked={Boolean(info?.installed)}
+        onChange={(v) => void toggle(v)}
+        label={busy ? t('Aplicando…') : t('Avisarme cuando Claude Code en una terminal necesite mi respuesta')}
+      />
+      <ul className="text-[11.5px] text-dim leading-relaxed list-disc pl-4 space-y-0.5">
+        <li>{t('Cuando pide permiso, te pregunta algo o lleva un rato esperando: aviso del sistema y tarjeta en Tareas, que se quita sola al contestarle.')}</li>
+        <li>{t('Añade un hook Notification a tu settings.json de Claude Code, con copia antes de escribir. Tus hooks no se tocan, y al desactivarlo sólo se quita el de la app.')}</li>
+      </ul>
+      {info ? (
+        <div className="text-[11px] text-dim space-y-0.5">
+          <div className="font-mono truncate">{info.settingsPath}</div>
+          {info.installed && info.lastAt ? <div>{t('Último aviso: {ago}', { ago: relTime(info.lastAt) })}</div> : null}
+          {info.shell === 'powershell' ? <div>{t('No hay Git Bash: el hook se ejecuta con PowerShell.')}</div> : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function ProviderRow({
   p,
   onChanged
@@ -471,6 +519,7 @@ export default function Settings(): React.JSX.Element {
                 <p className="text-[11.5px] text-dim leading-relaxed">
                   {t('Se avisa de prompts y agentes al acabar, de comparativas completas, de descargas de modelos, y de comandos de terminal que hayan tardado más de doce segundos. Pulsar el aviso trae la ventana al frente.')}
                 </p>
+                <ClaudeAttentionToggle />
               </div>
             </Panel>
 

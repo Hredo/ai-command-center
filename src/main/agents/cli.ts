@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { join, relative, isAbsolute } from 'node:path'
+import { paths } from '../paths'
 import { randomUUID } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
 import { getConfig } from '../config'
@@ -246,6 +248,34 @@ function describeTool(tool: string, input: any, cwd?: string): string {
 }
 
 /** Nombre de la herramienta como para enseñarlo: sin el prefijo de MCP. */
+/**
+ * La regla de permiso de Claude Code que habría dejado hacer lo que se le
+ * negó: el comando exacto, el fichero concreto o el dominio. Así «Permitir eso
+ * y seguir» da permiso para eso y para nada más.
+ */
+export function permissionRule(tool: string, input: any, cwd?: string): string | undefined {
+  const a = input && typeof input === 'object' ? input : {}
+  if (tool === 'Bash' && typeof a.command === 'string' && a.command.trim()) {
+    return `Bash(${a.command.trim().slice(0, 300)})`
+  }
+  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool)) {
+    const file = typeof a.file_path === 'string' ? a.file_path : typeof a.notebook_path === 'string' ? a.notebook_path : ''
+    if (!file) return 'Edit'
+    // Relativa a la carpeta del agente; fuera de ella, absoluta con «//».
+    const rel = cwd && isAbsolute(file) ? relative(cwd, file) : file
+    const path = rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : '/' + file
+    return `Edit(${path.replace(/\\/g, '/')})`
+  }
+  if (tool === 'WebFetch' && typeof a.url === 'string') {
+    try {
+      return `WebFetch(domain:${new URL(a.url).hostname})`
+    } catch {
+      return 'WebFetch'
+    }
+  }
+  return /^[\w.-]+$/.test(tool) ? tool : undefined
+}
+
 function toolLabel(tool: string): string {
   const m = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/.exec(tool)
   if (m) return m[2] + ' (' + m[1] + ')'
@@ -487,7 +517,8 @@ function parseClaudeLine(line: string, meta: AgentMeta, sink: ParseSink, ctx: Cl
         target: describeTool(tool, denial?.tool_input ?? denial?.input, ctx.cwd),
         detail: 'no tenía permiso para hacerlo',
         status: 'error',
-        denied: true
+        denied: true,
+        rule: permissionRule(tool, denial?.tool_input ?? denial?.input, ctx.cwd)
       })
     }
 
@@ -890,6 +921,20 @@ function injectArgs(template: string[], extra: string[]): string[] {
  * Si la plantilla de argumentos no incluye {{prompt}}, el prompt va por stdin,
  * que evita cualquier problema de escapado con textos largos.
  */
+/** Las reglas se validan: texto corto, sin saltos de línea, como mucho veinte. */
+function allowSettingsFile(runId: string, rules?: unknown): string | null {
+  if (!Array.isArray(rules)) return null
+  const clean = rules
+    .filter((r): r is string => typeof r === 'string' && r.length > 0 && r.length <= 400 && !/[\r\n]/.test(r))
+    .slice(0, 20)
+  if (!clean.length) return null
+  const dir = join(paths.dir, 'cli-settings')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, `${runId.replace(/[^\w-]/g, '_')}.json`)
+  writeFileSync(file, JSON.stringify({ permissions: { allow: clean } }))
+  return file
+}
+
 export async function runCliAgent(
   opts: CliRunOptions,
   onEvent: CliEventFn,
@@ -1033,11 +1078,16 @@ function startCliAgent(
     // tenga guardados el agente.
     const modelArgs = prep ? prep.args : cliModelArgs(agent.command, opts.model ?? agent.model)
     const permissionArgs = cliPermissionArgs(agent.command, opts.permissionMode ?? agent.permissionMode)
+    // Lo que le faltó en el turno anterior, sólo para esta ejecución. Va en un
+    // fichero de ajustes aparte (`--settings`): un solo argumento, sin comillas
+    // que escapar y sin tocar tu settings.json.
+    const allowFile = permissionArgs !== null ? allowSettingsFile(runId, opts.allowTools) : null
     const extra = [
       ...(resume && !resume.beforePrompt ? resume.args : []),
       ...(effortArgs ?? []),
       ...(modelArgs ?? []),
-      ...(permissionArgs ?? [])
+      ...(permissionArgs ?? []),
+      ...(allowFile ? ['--settings', allowFile] : [])
     ]
 
     const usesArgPrompt = agent.args.some((a) => a.includes('{{prompt}}'))
@@ -1297,6 +1347,13 @@ function startCliAgent(
 
     child.on('close', (code) => {
       stopWatch()
+      if (allowFile) {
+        try {
+          unlinkSync(allowFile)
+        } catch {
+          /* ya no estaba */
+        }
+      }
       const totalMs = Date.now() - startedAt
       const finalText = meta.result ?? text ?? rawOut
       // Si el agente avisó de un error y no dio respuesta, es un fallo aunque

@@ -14,7 +14,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   SquareKanban, Plus, Square, Check, X, FileDiff, MessageSquareReply, FolderGit2, GitBranch, Swords,
-  RotateCcw, Archive, Cpu, Bot, AlertTriangle, Loader2, ExternalLink
+  RotateCcw, Archive, Cpu, Bot, AlertTriangle, Loader2, ExternalLink, TerminalSquare
 } from 'lucide-react'
 import { Button, Badge, Select, Textarea, Modal, Field, Toggle, Empty, cx } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -25,7 +25,7 @@ import { useT } from '../lib/i18n'
 import { cost, ms, relTime, shortModel, colorFor } from '../lib/format'
 import { navigate } from '../lib/nav'
 import {
-  useSessions, useOpenChats, useArena, useTick, useRunsVersion, newSession, patchSessionConfig, sendTurn,
+  useSessions, useOpenChats, useArena, useTick, useRunsVersion, useTerminalAttention, newSession, patchSessionConfig, sendTurn,
   setTaskDone, stopSession, stopArena, approveStep, focusChat, archiveSession
 } from '../lib/engine'
 import { buildTasks, TASK_COLUMNS, type TaskCard, type TaskColumn } from '../lib/tasks'
@@ -98,7 +98,9 @@ function Card({
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
 
-  const project = config.projects.find((p) => p.id === card.projectId)
+  const project =
+    config.projects.find((p) => p.id === card.projectId) ??
+    (card.cwd ? config.projects.find((p) => samePath(p.path, card.cwd!)) : undefined)
   const cliAgent = config.cliAgents.find((a) => a.id === card.cliAgentId)
   const apiAgent = config.agents.find((a) => a.id === card.agentId)
   const isArena = card.kind === 'arena'
@@ -132,6 +134,48 @@ function Card({
     e.stopPropagation()
     if (isArena) stopArena()
     else stopSession(card.id)
+  }
+
+  // Claude Code en una terminal: no se le contesta desde aquí (está en su
+  // ventana), pero se ve que espera, dónde y qué pide.
+  if (card.kind === 'terminal') {
+    return (
+      <div className="bg-raised border border-line rounded-lg p-2.5 space-y-2" data-task={card.id}>
+        <div className="flex items-start gap-2 min-w-0">
+          <span className="w-1 self-stretch rounded-full shrink-0 bg-warn" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] leading-snug truncate">{project?.name ?? card.title}</div>
+            <div className="flex items-center gap-1.5 text-[11px] text-dim mt-0.5 min-w-0">
+              <TerminalSquare size={10} className="shrink-0" />
+              <span className="truncate">{t('Claude Code en una terminal')}</span>
+            </div>
+          </div>
+        </div>
+        {card.cwd ? (
+          <div className="text-[10.5px] text-dim font-mono truncate" title={card.cwd}>
+            {card.cwd}
+          </div>
+        ) : null}
+        {card.reason ? (
+          <div className="flex items-start gap-1.5 text-[11.5px] leading-snug text-warn">
+            <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+            <span className="break-words min-w-0">{t(card.reason.text, card.reason.args)}</span>
+          </div>
+        ) : null}
+        <div className="flex items-center gap-1">
+          <span className="text-[10.5px] text-dim num">{relTime(card.updatedAt)}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            onClick={() => card.terminalId && void window.api.attention.dismiss(card.terminalId)}
+            title={t('Quitar el aviso: se quita solo cuando Claude sigue trabajando')}
+          >
+            <X size={12} /> {t('Descartar')}
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -494,7 +538,17 @@ export default function Tasks(): React.JSX.Element {
   const [creating, setCreating] = useState(false)
   const [reviewing, setReviewing] = useState<TaskCard | null>(null)
 
-  const all = useMemo(() => buildTasks(list, chats, arena), [list, chats, arena])
+  const terminal = useTerminalAttention()
+  // Las de la terminal entran al filtro de proyecto por su carpeta.
+  const all = useMemo(
+    () =>
+      buildTasks(list, chats, arena, terminal).map((c) =>
+        c.kind === 'terminal' && c.cwd && !c.projectId
+          ? { ...c, projectId: config?.projects.find((p) => samePath(p.path, c.cwd!))?.id }
+          : c
+      ),
+    [list, chats, arena, terminal, config?.projects]
+  )
 
   const days = PERIODS.find((p) => p.id === period)?.days ?? 0
   const columns = useMemo(() => {

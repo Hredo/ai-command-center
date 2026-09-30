@@ -124,6 +124,20 @@ export function notifyQuota(a: QuotaAlert): void {
   show(`${Math.round(a.usedPct)} % gastado: ${who}`, `Has pasado del ${a.level} %.${eta}`, a.level >= 95)
 }
 
+/**
+ * Un agente espera tu respuesta: un permiso, una pregunta. Va aunque no hayas
+ * pedido avisos de fin de tarea —para eso lo activaste—, salvo que estés
+ * mirando la ventana y prefieras no recibirlos entonces.
+ */
+export function notifyAttention(title: string, body: string): void {
+  if (!Notification.isSupported()) return
+  if (getConfig().settings.notifyOnlyWhenUnfocused) {
+    const win = getWin()
+    if (win && !win.isDestroyed() && win.isFocused()) return
+  }
+  show(title, body, true)
+}
+
 /** Aviso de un comando de terminal largo que ha terminado. */
 export function notifyCommand(command: string, exitCode: number, durationMs: number): void {
   if (!shouldNotify()) return

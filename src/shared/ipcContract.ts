@@ -14,7 +14,7 @@ import type {
   Agent, AppConfig, Attachment, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
-  McpReport, ModelInfo, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
+  McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
   ProjectInfo, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
   RunOptions, RunRecord, Settings, SkillsReport, StatsBucket, StoredSession, StreamDelta, TermEvent, TermInfo,
   UsageSnapshot, WorktreeInfo, WorktreeSetup
@@ -55,6 +55,11 @@ export interface GitCmd {
 }
 
 export interface IpcContract {
+  'attention:list': { args: []; result: TerminalAttention[] }
+  'attention:dismiss': { args: [id: string]; result: boolean }
+  'attention:hook': { args: []; result: NotifyHookInfo }
+  'attention:install': { args: []; result: NotifyHookInfo }
+  'attention:uninstall': { args: []; result: NotifyHookInfo }
   'agents:remove': { args: [id: string]; result: AppConfig }
   'agents:removeCli': { args: [id: string]; result: AppConfig }
   'agents:save': { args: [a: Agent]; result: AppConfig }
@@ -250,6 +255,8 @@ export interface IpcEvents {
   'live:changed': { topics: string[] }
   'catalog:updated': { count: number; sources: string[]; errors: string[] }
   'detect:localChanged': DetectedServer[]
+  /** Los avisos de Claude Code en una terminal (su hook Notification). */
+  'attention:changed': TerminalAttention[]
 }
 
 export type IpcEvent = keyof IpcEvents

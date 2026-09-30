@@ -45,6 +45,7 @@ import { listSkills, copySkill } from './skills'
 import { mcpReport, planMcpCopy, copyMcpServer, setAppMcpEnabled, removeAppMcp, addAppMcp } from './mcp/configs'
 import { testAppMcp, pruneMcp } from './mcp/client'
 import { classifyWithOllama } from './recommend'
+import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource, McpClient
@@ -375,6 +376,18 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     return true
   })
   handle('mcp:app:test', (name: string) => testAppMcp(str(name, 'servidor')))
+
+  /* ------------------------- Claude Code espera respuesta ----------------------- */
+
+  handle('attention:list', () => attentionList())
+  handle('attention:dismiss', (id: string) => {
+    dismissAttention(str(id, 'aviso'))
+    return true
+  })
+  handle('attention:hook', () => notifyHookInfo())
+  // Tocar ~/.claude/settings.json sólo lo pide el usuario desde Ajustes.
+  handle('attention:install', () => installNotifyHook())
+  handle('attention:uninstall', () => uninstallNotifyHook())
 
   /* ------------------------------- Recomendador -------------------------------- */
 

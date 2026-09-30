@@ -11,7 +11,7 @@
  * acabó sin más, para revisar. Lo único que se guarda es que la diste por
  * hecha, y con cuántos turnos: si le vuelves a escribir, vuelve al tablero.
  */
-import type { AgentStep, FileChange, RunCheckpoint, SessionTurn, StoredSession } from '@shared/types'
+import type { AgentStep, FileChange, RunCheckpoint, SessionTurn, StoredSession, TerminalAttention } from '@shared/types'
 import type { ArenaState, ChatState, Turn } from './engine'
 
 export type TaskColumn = 'running' | 'attention' | 'review' | 'done'
@@ -25,9 +25,12 @@ export interface TaskReason {
 }
 
 export interface TaskCard {
-  /** Id de la conversación, o 'arena'. */
+  /** Id de la conversación, 'arena' o 'term:<sesión de Claude Code>'. */
   id: string
-  kind: 'session' | 'arena'
+  kind: 'session' | 'arena' | 'terminal'
+  /** Una sesión de Claude Code en una terminal: dónde trabaja. */
+  cwd?: string
+  terminalId?: string
   column: TaskColumn
   title: string
   reason?: TaskReason
@@ -255,8 +258,33 @@ export function arenaTask(a: ArenaState): TaskCard | null {
   return card
 }
 
+/** Claude Code en una terminal que espera tu respuesta: siempre en esa columna. */
+export function terminalTask(t: TerminalAttention): TaskCard {
+  return {
+    id: 'term:' + t.id,
+    kind: 'terminal',
+    column: 'attention',
+    title: t.project || 'Claude Code',
+    reason: { text: 'En la terminal: {message}', args: { message: t.message } },
+    cwd: t.cwd,
+    terminalId: t.id,
+    cost: 0,
+    costEstimated: false,
+    added: 0,
+    removed: 0,
+    files: 0,
+    updatedAt: t.at,
+    turns: 0
+  }
+}
+
 /** Todas las tarjetas, sin filtrar. */
-export function buildTasks(list: StoredSession[], chats: Record<string, ChatState>, a: ArenaState): TaskCard[] {
+export function buildTasks(
+  list: StoredSession[],
+  chats: Record<string, ChatState>,
+  a: ArenaState,
+  terminal: TerminalAttention[] = []
+): TaskCard[] {
   const out: TaskCard[] = []
   const seen = new Set<string>()
   for (const s of list) {
@@ -272,10 +300,16 @@ export function buildTasks(list: StoredSession[], chats: Record<string, ChatStat
   }
   const arena = arenaTask(a)
   if (arena) out.push(arena)
+  for (const t of terminal) out.push(terminalTask(t))
   return out
 }
 
 /** Cuántas esperan algo de ti: la insignia del menú. */
-export function attentionCount(list: StoredSession[], chats: Record<string, ChatState>, a: ArenaState): number {
-  return buildTasks(list, chats, a).filter((c) => c.column === 'attention').length
+export function attentionCount(
+  list: StoredSession[],
+  chats: Record<string, ChatState>,
+  a: ArenaState,
+  terminal: TerminalAttention[] = []
+): number {
+  return buildTasks(list, chats, a, terminal).filter((c) => c.column === 'attention').length
 }

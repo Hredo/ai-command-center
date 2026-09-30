@@ -719,5 +719,20 @@ export const enV08: Record<string, string> = {
   "Más nivel sólo si sale a cuenta: cada vez que dobla el precio, gana al menos 10 puntos.": "More level only if it pays off: each time the price doubles, it gains at least 10 points.",
   "El de más nivel de los que tienes, cueste lo que cueste.": "The highest-level one you have, whatever it costs.",
   "gratis": "free",
-  "Coincide con la suficiente: subir de nivel no sale a cuenta para esta tarea.": "Same as the enough option: moving up doesn't pay off for this task."
+  "Coincide con la suficiente: subir de nivel no sale a cuenta para esta tarea.": "Same as the enough option: moving up doesn't pay off for this task.",
+  "Le faltó permiso para:": "It lacked permission for:",
+  "Permitir eso y seguir": "Allow that and continue",
+  "Sólo eso, y sólo en el turno siguiente: tus permisos no cambian.": "Only that, and only for the next turn: your permissions don't change.",
+  "Cambia sus permisos en el panel de la derecha y vuelve a pedírselo.": "Change its permissions in the right panel and ask again.",
+  "Ya tienes permiso para lo que te faltaba. Sigue donde lo dejaste.": "You now have permission for what you were missing. Continue where you left off.",
+  "Avisos de Claude Code activados": "Claude Code notices on",
+  "Avisos de Claude Code desactivados": "Claude Code notices off",
+  "Avisarme cuando Claude Code en una terminal necesite mi respuesta": "Notify me when Claude Code in a terminal needs my answer",
+  "Cuando pide permiso, te pregunta algo o lleva un rato esperando: aviso del sistema y tarjeta en Tareas, que se quita sola al contestarle.": "When it asks for permission, asks you something or has been waiting a while: a system notification and a card in Tasks, which goes away on its own once you answer.",
+  "Añade un hook Notification a tu settings.json de Claude Code, con copia antes de escribir. Tus hooks no se tocan, y al desactivarlo sólo se quita el de la app.": "It adds a Notification hook to your Claude Code settings.json, backing it up first. Your hooks aren't touched, and turning it off removes only the app's.",
+  "Último aviso: {ago}": "Last notice: {ago}",
+  "No hay Git Bash: el hook se ejecuta con PowerShell.": "No Git Bash: the hook runs with PowerShell.",
+  "Claude Code en una terminal": "Claude Code in a terminal",
+  "Quitar el aviso: se quita solo cuando Claude sigue trabajando": "Remove the notice: it goes away on its own when Claude keeps working",
+  "En la terminal: {message}": "In the terminal: {message}"
 }

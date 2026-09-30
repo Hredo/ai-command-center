@@ -18,7 +18,7 @@ import React, { useEffect, useSyncExternalStore } from 'react'
 import type {
   RunRecord, StoredSession, SessionTurn, TurnMetrics, TermInfo, TermEvent,
   ChatMessage, SessionKind, UsageLimit, FileChange, FileTouch, Attachment, Effort,
-  AgentStep, CliLimit, QuotaReport, WorktreeSetup, AppConfig
+  AgentStep, CliLimit, QuotaReport, WorktreeSetup, AppConfig, TerminalAttention
 } from '@shared/types'
 import { useStore } from './store'
 import { navigate } from './nav'
@@ -228,6 +228,8 @@ const runsVersion = new Slice<number>(0)
  * manda; aquí sólo se guarda lo último que llegó.
  */
 const quotas = new Slice<QuotaReport | null>(null)
+/** Claude Code en una terminal que espera tu respuesta (si activaste su hook). */
+const terminalAttention = new Slice<TerminalAttention[]>([])
 
 export const uid = (): string => crypto.randomUUID()
 
@@ -670,6 +672,10 @@ function wire(): void {
     if (r.ok && r.data) quotas.set(r.data)
   })
   window.api.quotas.onUpdated((r) => quotas.set(r))
+  void window.api.attention.list().then((r) => {
+    if (r.ok && r.data) terminalAttention.set(r.data)
+  })
+  window.api.attention.onChanged((list) => terminalAttention.set(list))
 }
 
 /* ------------------------------------------------------------------ *
@@ -1243,6 +1249,8 @@ export async function sendCli(
     model?: string
     /** Hasta dónde puede llegar sin preguntar. */
     permissionMode?: string
+    /** Claude Code: reglas de permiso sólo para esta ejecución. */
+    allowTools?: string[]
   }
 ): Promise<RunRecord | undefined> {
   const state = chats.get()[sessionId]
@@ -1302,6 +1310,7 @@ export async function sendCli(
       attachments: opts.attachments,
       model: opts.model,
       permissionMode: opts.permissionMode,
+      allowTools: opts.allowTools,
       conversationId: sessionId,
       kind: 'cli',
       resumeSessionId,
@@ -1340,7 +1349,7 @@ export async function sendTurn(
   sessionId: string,
   prompt: string,
   config: AppConfig,
-  opts: { attachments?: Attachment[]; onStart?: () => void } = {}
+  opts: { attachments?: Attachment[]; onStart?: () => void; allowTools?: string[] } = {}
 ): Promise<{ run?: RunRecord; error?: string }> {
   if (!chats.get()[sessionId]) await openSession(sessionId)
   const state = chats.get()[sessionId]
@@ -1365,7 +1374,8 @@ export async function sendTurn(
       projectId: project.id,
       projectName: project.name,
       effort,
-      attachments: opts.attachments
+      attachments: opts.attachments,
+      allowTools: opts.allowTools
     })
     return { run }
   }
@@ -1702,7 +1712,8 @@ if (typeof window !== 'undefined') {
     peekTerm: (id: string) => terms.get()[id],
     peekTerms: () => terms.get(),
     peekArena: () => arena.get(),
-    peekSessions: () => sessions.get()
+    peekSessions: () => sessions.get(),
+    peekAttention: () => terminalAttention.get()
   }
 }
 
@@ -1776,10 +1787,15 @@ export function useRunsVersion(): number {
 }
 
 const subscribeTasks = (fn: Listener): (() => void) => {
-  const off = [chats.subscribe(fn), sessions.subscribe(fn), arena.subscribe(fn)]
+  const off = [chats.subscribe(fn), sessions.subscribe(fn), arena.subscribe(fn), terminalAttention.subscribe(fn)]
   return () => off.forEach((o) => o())
 }
-const attentionNow = (): number => attentionCount(sessions.get(), chats.get(), arena.get())
+const attentionNow = (): number => attentionCount(sessions.get(), chats.get(), arena.get(), terminalAttention.get())
+
+/** Los avisos de Claude Code en una terminal. */
+export function useTerminalAttention(): TerminalAttention[] {
+  return useSlice(terminalAttention)
+}
 
 /**
  * Cuántas tareas esperan algo de ti. Devuelve un número, así que sólo repinta

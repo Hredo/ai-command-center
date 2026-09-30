@@ -10,7 +10,8 @@ import { getConfig } from './config'
 import { refreshCatalog, getCatalog } from './providers/models'
 import { watchLocalServers, stopWatchingLocalServers } from './detect'
 import { closeAllTerms, terminalStatus } from './terminal'
-import { initNotify } from './notify'
+import { initNotify, notifyAttention } from './notify'
+import { watchAttention, stopWatchingAttention } from './claudeNotify'
 import { initWatch, stopAllWatches } from './watch'
 import { initUsage } from './usage'
 import { initLive } from './live'
@@ -252,6 +253,15 @@ app.whenReady().then(async () => {
     )
   }
 
+  // Claude Code en una terminal que espera tu respuesta (si activaste su hook):
+  // aviso del sistema y tarjeta en Tareas, que se retira sola al contestarle.
+  if (!SELFTEST) {
+    watchAttention((list, added) => {
+      emit(mainWindow, 'attention:changed', list)
+      if (added) notifyAttention(`Claude Code espera tu respuesta${added.project ? ` · ${added.project}` : ''}`, added.message)
+    })
+  }
+
   // Los motores locales se vigilan solos: arrancar Ollama con la app abierta
   // se refleja sin tener que pulsar nada.
   watchLocalServers((servers) => {
@@ -290,6 +300,7 @@ app.on('before-quit', () => {
   stopAllWatches()
   stopMaintenance()
   stopWatchingExternal()
+  stopWatchingAttention()
   stopQuotas()
   closeAllTerms()
 })

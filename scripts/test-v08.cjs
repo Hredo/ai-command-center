@@ -2008,6 +2008,182 @@ app.whenReady().then(async () => {
   ollamaMock.close()
 
   /* -------------------------------------------------------------- *
+   * B6 · «Necesita tu respuesta»: el hook de Claude Code y los      *
+   * permisos denegados en la Consola                                *
+   * -------------------------------------------------------------- */
+  const claudeSettings = path.join(CLAUDE_DIR, 'settings.json')
+  const settingsBefore = fs.existsSync(claudeSettings) ? fs.readFileSync(claudeSettings, 'utf8') : null
+  fs.mkdirSync(CLAUDE_DIR, { recursive: true })
+  fs.writeFileSync(
+    claudeSettings,
+    JSON.stringify(
+      {
+        model: 'opus',
+        hooks: {
+          Notification: [{ matcher: '', hooks: [{ type: 'command', command: 'echo mio' }] }],
+          PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo pre' }] }]
+        }
+      },
+      null,
+      2
+    )
+  )
+  // Un Claude Code falso al que le faltan permisos, en su propia carpeta (tiene que llamarse claude).
+  const permDir = path.join(FIXTURES, 'perm')
+  fs.mkdirSync(permDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(permDir, 'perm.js'),
+    [
+      "const fs = require('node:fs')",
+      "const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')",
+      'const args = process.argv.slice(2)',
+      "const resumed = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : ''",
+      "const s = args.indexOf('--settings')",
+      "let prompt = ''",
+      "process.stdin.on('data', (c) => (prompt += c))",
+      "process.stdin.on('end', () => {",
+      "  const sid = resumed || 'perm-' + Math.random().toString(16).slice(2, 8)",
+      "  out({ type: 'system', subtype: 'init', session_id: sid, model: 'claude-falso', cwd: process.cwd() })",
+      '  if (s !== -1) {',
+      "    const allow = JSON.parse(fs.readFileSync(args[s + 1], 'utf8')).permissions.allow",
+      "    const text = 'permitido: ' + JSON.stringify(allow) + ' resume=' + resumed",
+      "    out({ type: 'assistant', session_id: sid, message: { model: 'claude-falso', content: [{ type: 'text', text }], usage: { input_tokens: 10, output_tokens: 5 } } })",
+      "    out({ type: 'result', session_id: sid, total_cost_usd: 0, duration_ms: 5, num_turns: 1, result: text })",
+      '    return',
+      '  }',
+      "  out({ type: 'assistant', session_id: sid, message: { model: 'claude-falso', content: [{ type: 'text', text: 'No he podido.' }], usage: { input_tokens: 10, output_tokens: 5 } } })",
+      "  out({ type: 'result', session_id: sid, total_cost_usd: 0, duration_ms: 5, num_turns: 1, result: 'No he podido.',",
+      "    permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm test' } }, { tool_name: 'Write', tool_input: { file_path: process.cwd() + '/nuevo.txt' } }] })",
+      '})'
+    ].join('\n')
+  )
+  const permBin = (() => {
+    const target = path.join(permDir, 'perm.js')
+    if (process.platform === 'win32') {
+      const f = path.join(permDir, 'claude.cmd')
+      fs.writeFileSync(f, `@node "${target}" %*\r\n`)
+      return f
+    }
+    const f = path.join(permDir, 'claude')
+    fs.writeFileSync(f, `#!/bin/sh\nexec node "${target}" "$@"\n`)
+    fs.chmodSync(f, 0o755)
+    return f
+  })()
+  const transcript = path.join(TMP, 'transcripcion-ses.jsonl')
+  fs.writeFileSync(transcript, '{"type":"user"}\n')
+
+  const b6a = await js(`(async () => {
+    const api = window.api
+    const before = (await api.attention.hook()).data
+    const inst = await api.attention.install()
+    const again = await api.attention.install()
+    return { before, inst: inst.data, again: again.data, err: inst.error }
+  })()`)
+  const afterInstall = JSON.parse(fs.readFileSync(claudeSettings, 'utf8'))
+  const notif = afterInstall.hooks?.Notification ?? []
+  const ourHook = notif.flatMap((g) => g.hooks ?? []).find((h) => String(h.command).includes('acc-notify'))
+  log(
+    b6a.before?.installed === false && b6a.inst?.installed === true && notif.length === 2 && notif[0].hooks[0].command === 'echo mio' &&
+      afterInstall.hooks.PreToolUse?.[0]?.hooks?.[0]?.command === 'echo pre' && afterInstall.model === 'opus' &&
+      notif.filter((g) => g.hooks.some((h) => String(h.command).includes('acc-notify'))).length === 1,
+    'EL HOOK DE AVISOS SE AÑADE AL LADO DE LOS TUYOS, SIN TOCARLOS (Y SÓLO UNA VEZ)',
+    b6a.err ?? JSON.stringify(notif).slice(0, 160)
+  )
+  log(
+    fs.readdirSync(path.join(app.getPath('userData'), 'data', 'claude-notify')).some((f) => f.startsWith('settings.backup-')),
+    'antes de escribir en settings.json se guarda una copia'
+  )
+
+  // Claude Code avisa: se ejecuta el script del hook con lo que mandaría por stdin.
+  const scriptPath = /"([^"]+)"/.exec(ourHook?.command ?? '')?.[1]
+  const payload = JSON.stringify({
+    session_id: 'ses-terminal', transcript_path: transcript, cwd: REPO, hook_event_name: 'Notification',
+    message: 'Claude needs your permission to use Bash', title: 'Claude Code', notification_type: 'permission_prompt'
+  })
+  let hookRan = false
+  try {
+    execFileSync('sh', [scriptPath], { input: payload })
+    hookRan = true
+  } catch {}
+  const b6b = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    await api.projects.save({ id: 'proyecto-aviso', name: 'Repo aviso', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(400)
+    const out = {}
+    out.listed = Boolean(await until(() => engine.peekAttention().find((a) => a.id === 'ses-terminal')))
+    btn('Tareas')?.click()
+    const card = await until(() => document.querySelector('[data-column="attention"] [data-task="term:ses-terminal"]'))
+    out.cardText = card?.textContent ?? ''
+    const navBtn = [...document.querySelectorAll('button')].find((x) => x.textContent.trim().startsWith('Tareas') && x.closest('.border-r'))
+    out.badge = navBtn?.textContent.trim().replace('Tareas', '')
+    out.attn = document.querySelectorAll('[data-column="attention"] [data-task]').length
+    return out
+  })()`)
+  // Le contestas en la terminal y Claude sigue: su transcripción avanza.
+  await new Promise((r) => setTimeout(r, 1200))
+  fs.appendFileSync(transcript, '{"type":"assistant"}\n')
+  const b6c = await js(`(async () => {
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(150) } return null }
+    const gone = await until(() => !window.__accEngine.peekAttention().some((a) => a.id === 'ses-terminal') && !document.querySelector('[data-task="term:ses-terminal"]'))
+    const off = await window.api.attention.uninstall()
+    return { gone: Boolean(gone), off: off.data }
+  })()`)
+  const afterOff = JSON.parse(fs.readFileSync(claudeSettings, 'utf8'))
+  log(hookRan && b6b.listed && b6b.cardText.includes('Claude needs your permission to use Bash') && b6b.cardText.includes('Repo aviso'), 'UN AVISO DE CLAUDE CODE EN LA TERMINAL SALE EN «NECESITA TU RESPUESTA»', b6b.cardText.slice(0, 120))
+  log(Number(b6b.badge) === b6b.attn && b6b.attn >= 1, 'y cuenta en la insignia del menú', `insignia ${b6b.badge}, columna ${b6b.attn}`)
+  log(b6c.gone, 'CUANDO CLAUDE SIGUE TRABAJANDO, EL AVISO SE QUITA SOLO')
+  log(
+    b6c.off?.installed === false && JSON.stringify(afterOff.hooks?.Notification) === JSON.stringify([{ matcher: '', hooks: [{ type: 'command', command: 'echo mio' }] }]) &&
+      afterOff.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command === 'echo pre',
+    'AL DESACTIVARLO SE QUITA SÓLO EL HOOK DE LA APP',
+    JSON.stringify(afterOff.hooks ?? {}).slice(0, 140)
+  )
+
+  // En la Consola: lo que le faltó sale como aviso y se le puede dar para seguir.
+  const b6d = await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    await api.agents.saveCli({ id: 'perm', name: 'Claude falso', type: 'cli', command: ${JSON.stringify(permBin)}, args: ['-p', '--output-format', 'stream-json', '--verbose'], parser: 'claude-stream-json', color: '#fff', createdAt: Date.now() })
+    await sleep(400)
+    const sid = await engine.newSession('cli', { cliAgentId: 'perm', projectId: 'proyecto-aviso', permissionMode: 'acceptEdits' })
+    await engine.sendTurn(sid, 'pasa los tests', (await api.config.get()).data)
+    const first = engine.peekChat(sid).turns.at(-1)
+    const out = { rules: (first.steps ?? []).filter((s) => s.denied).map((s) => s.rule).join(' | ') }
+    engine.focusChat(sid)
+    const box = await until(() => document.querySelector('[data-denied]'))
+    out.box = box?.textContent ?? ''
+    btn('Permitir eso y seguir', box ?? document)?.click()
+    await until(() => { const c = engine.peekChat(sid); return c && c.turns.length >= 4 && !c.runningRunId }, 10000)
+    out.answer = engine.peekChat(sid).turns.at(-1)?.content ?? ''
+    out.sessionCli = engine.peekChat(sid).session.cliSessionId
+    out.permissionMode = engine.peekChat(sid).session.permissionMode
+    await engine.deleteSession(sid)
+    await api.agents.removeCli('perm')
+    await api.projects.remove('proyecto-aviso')
+    return out
+  })()`)
+  const cliSettingsDir = path.join(app.getPath('userData'), 'data', 'cli-settings')
+  log(b6d.rules === 'Bash(npm test) | Edit(nuevo.txt)', 'CADA PERMISO DENEGADO LLEVA LA REGLA EXACTA QUE LO HABRÍA DEJADO', b6d.rules)
+  log(b6d.box.includes('Le faltó permiso para') && b6d.box.includes('npm test'), 'en la Consola sale como aviso en el turno', b6d.box.slice(0, 100))
+  log(
+    b6d.answer.startsWith('permitido: ["Bash(npm test)","Edit(nuevo.txt)"]') && b6d.answer.includes('resume=perm-') && b6d.permissionMode === 'acceptEdits',
+    '«PERMITIR ESO Y SEGUIR» RETOMA LA SESIÓN CON PERMISO SÓLO PARA ESO',
+    b6d.answer.slice(0, 120)
+  )
+  log(!fs.existsSync(cliSettingsDir) || fs.readdirSync(cliSettingsDir).length === 0, 'el fichero de permisos de esa ejecución se borra al acabar')
+  if (settingsBefore === null) fs.rmSync(claudeSettings, { force: true })
+  else fs.writeFileSync(claudeSettings, settingsBefore)
+
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

@@ -293,6 +293,31 @@ export interface AppMcpServer extends McpSpec {
   addedAt: number
 }
 
+/** Claude Code, en una terminal, espera tu respuesta (su hook Notification). */
+export interface TerminalAttention {
+  /** La sesión de Claude Code: un aviso por sesión. */
+  id: string
+  sessionId?: string
+  cwd?: string
+  /** El nombre de la carpeta, para enseñarlo. */
+  project?: string
+  message: string
+  /** permission_prompt, idle_prompt… tal cual lo manda Claude Code. */
+  type?: string
+  transcriptPath?: string
+  at: number
+  /** Hasta dónde había escrito Claude al avisar: si sigue, es que contestaste. */
+  seenMtime?: number
+}
+
+/** Estado del hook de avisos de la app en Claude Code. */
+export interface NotifyHookInfo {
+  installed: boolean
+  settingsPath: string
+  shell: 'sh' | 'powershell'
+  lastAt?: number
+}
+
 /** Un fichero de instrucciones para agentes (AGENTS.md, CLAUDE.md, GEMINI.md). */
 export interface InstructionFile {
   file: string
@@ -770,6 +795,8 @@ export interface AgentStep {
   removed?: number
   /** El agente pidió permiso y no lo tenía. */
   denied?: boolean
+  /** La regla de permiso que lo habría dejado (Claude Code): «Bash(npm test)». */
+  rule?: string
   /** Agente por API: el paso espera tu permiso, o ya lo tuvo, o se le negó. */
   approval?: 'pending' | 'approved' | 'denied'
 }
@@ -1032,6 +1059,11 @@ export interface CliRunOptions {
   permissionMode?: string
   /** Sesión del propio agente que se retoma, para que recuerde lo anterior. */
   resumeSessionId?: string
+  /**
+   * Reglas de permiso de Claude Code sólo para esta ejecución («Bash(npm test)»,
+   * «Edit(src/app.js)»): lo que le faltó en el turno anterior.
+   */
+  allowTools?: string[]
   /** Retomar en una sesión nueva, dejando la original como estaba. */
   fork?: boolean
   /**

@@ -300,6 +300,15 @@ const api = {
       call('checkpoints:diff', root, id, untilId)
   },
   /** Cupos de todas las IAs, presupuestos y avisos. */
+  /** Claude Code en una terminal que espera tu respuesta (su hook Notification). */
+  attention: {
+    list: () => call('attention:list'),
+    dismiss: (id: string) => call('attention:dismiss', id),
+    hook: () => call('attention:hook'),
+    install: () => call('attention:install'),
+    uninstall: () => call('attention:uninstall'),
+    onChanged: (cb: (list: IpcEvents['attention:changed']) => void) => on('attention:changed', cb)
+  },
   quotas: {
     get: (force?: boolean) => call('quotas:get', force),
     statusLine: () => call('quotas:statusLine'),
