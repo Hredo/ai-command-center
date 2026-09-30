@@ -199,6 +199,100 @@ export interface WorktreeSetup {
 }
 
 /** Un worktree del repositorio, con lo que la app sabe de él. */
+/* ------------------------------------------------------------------ *
+ * MCP                                                                *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Un servidor MCP en un formato común a todos los CLIs. Las referencias a
+ * variables de entorno van como `${VAR}`: al escribir se traducen a la
+ * sintaxis de cada uno.
+ */
+export interface McpSpec {
+  transport: 'stdio' | 'http' | 'sse' | 'ws'
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  url?: string
+  headers?: Record<string, string>
+}
+
+/** Quién usa servidores MCP: los CLIs y los agentes por API de esta app. */
+export type McpClient = 'claude' | 'codex' | 'opencode' | 'gemini' | 'copilot' | 'app'
+
+/** Un valor de env o de cabecera tal como se enseña: nunca el secreto. */
+export interface McpValue {
+  key: string
+  /** Variable de entorno de la que sale. */
+  ref?: string
+  /** Es un secreto escrito tal cual: no se enseña ni se copia. */
+  secret?: boolean
+  /** El valor, sólo si no es un secreto ni una referencia. */
+  value?: string
+}
+
+/** Cómo está definido un servidor en un sitio concreto. */
+export interface McpDefinition {
+  client: McpClient
+  scope: 'personal' | 'project'
+  file: string
+  enabled: boolean
+  transport: McpSpec['transport']
+  /** La orden o la URL, con los secretos tapados. */
+  summary: string
+  env: McpValue[]
+  headers: McpValue[]
+  /** Para ver si dos definiciones son la misma. */
+  hash: string
+  /** Lleva un secreto escrito en los argumentos o en la URL: así no se copia. */
+  secretInline?: boolean
+}
+
+export interface McpServerRow {
+  name: string
+  scope: 'personal' | 'project'
+  definitions: McpDefinition[]
+  /** Las definiciones no son todas iguales. */
+  differs: boolean
+}
+
+export interface McpClientFile {
+  client: McpClient
+  scope: 'personal' | 'project'
+  file: string
+  exists: boolean
+  /** No se pudo leer (JSON o TOML roto): no se escribe en él. */
+  error?: string
+}
+
+export interface McpReport {
+  files: McpClientFile[]
+  servers: McpServerRow[]
+}
+
+/** Lo que haría copiar un servidor a otro sitio, antes de hacerlo. */
+export interface McpCopyPlan {
+  client: McpClient
+  scope: 'personal' | 'project'
+  file: string
+  /** El fragmento que se añade, en el formato de destino. */
+  snippet: string
+  /** Variables de entorno que hay que tener definidas para que funcione. */
+  needsEnv: string[]
+  warnings: string[]
+  /** Si no se puede copiar, por qué. */
+  error?: string
+  /** Dónde queda la copia de seguridad del fichero de destino. */
+  backup?: string
+}
+
+/** Un servidor MCP de los agentes por API de esta app. */
+export interface AppMcpServer extends McpSpec {
+  enabled: boolean
+  addedAt: number
+}
+
 /** Un fichero de instrucciones para agentes (AGENTS.md, CLAUDE.md, GEMINI.md). */
 export interface InstructionFile {
   file: string
@@ -531,6 +625,8 @@ export interface AppConfig {
   projects: Project[]
   favorites: string[]
   customModels: ModelInfo[]
+  /** Servidores MCP que pueden usar los agentes por API (sin secretos: sólo `${VAR}`). */
+  mcpServers?: Record<string, AppMcpServer>
 }
 
 export interface ProviderOverride {

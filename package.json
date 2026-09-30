@@ -24,6 +24,7 @@
     "@homebridge/node-pty-prebuilt-multiarch": "0.14.1"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@tailwindcss/vite": "^4.3.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",
@@ -35,12 +36,14 @@
     "electron": "^44.3.0",
     "electron-builder": "^26.15.0",
     "electron-vite": "^5.0.0",
+    "jsonc-parser": "^3.3.1",
     "lucide-react": "^1.43.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
     "recharts": "^3.10.0",
     "remark-gfm": "^4.0.1",
+    "smol-toml": "^1.9.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.0.0",
     "vite": "^8.2.0"

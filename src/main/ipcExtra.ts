@@ -40,9 +40,11 @@ import { previewUndo, undoCheckpoint, checkpointDiff } from './checkpoints'
 import { listWorktrees, createWorktree, mergeWorktree, removeWorktree, linkWorktree, mainRoot, execInWorktree } from './worktrees'
 import { readInstructionFiles, writeInstructionFiles } from './instructions'
 import { listSkills, copySkill } from './skills'
+import { mcpReport, planMcpCopy, copyMcpServer, setAppMcpEnabled, removeAppMcp, addAppMcp } from './mcp/configs'
+import { testAppMcp, pruneMcp } from './mcp/client'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
-  GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource
+  GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource, McpClient
 } from '@shared/types'
 
 export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
@@ -343,6 +345,34 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     if (projectPath) pokeRepo(projectPath)
     return r
   })
+
+  /* ----------------------------------- MCP ------------------------------------ */
+
+  type McpFrom = { client: McpClient; scope: 'personal' | 'project'; name: string }
+  type McpTo = { client: McpClient; scope: 'personal' | 'project' }
+  const optPath = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
+  handle('mcp:list', (projectPath?: string) => mcpReport(optPath(projectPath)))
+  handle('mcp:plan', (from: McpFrom, to: McpTo, projectPath?: string) => planMcpCopy(from, to, optPath(projectPath)))
+  handle('mcp:copy', (from: McpFrom, to: McpTo, projectPath?: string) => {
+    const r = copyMcpServer(from, to, optPath(projectPath))
+    if (projectPath) pokeRepo(projectPath)
+    return r
+  })
+  handle('mcp:app:enable', (name: string, enabled: boolean) => {
+    setAppMcpEnabled(str(name, 'servidor'), enabled === true)
+    pruneMcp(false)
+    return true
+  })
+  handle('mcp:app:remove', (name: string) => {
+    removeAppMcp(str(name, 'servidor'))
+    pruneMcp(false)
+    return true
+  })
+  handle('mcp:app:add', (input: { name: string; target: string; envVars?: string[] }) => {
+    addAppMcp(input)
+    return true
+  })
+  handle('mcp:app:test', (name: string) => testAppMcp(str(name, 'servidor')))
 
   /* ---------------------------------- Cupos ----------------------------------- */
 

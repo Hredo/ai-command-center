@@ -7,6 +7,7 @@ import { ModelPicker, type Pick } from '../components/ModelPicker'
 import { EFFORT_LABEL, EffortPicker } from '../components/AgentPanel'
 import { useStore } from '../lib/store'
 import { SkillsMatrix } from '../components/SkillsMatrix'
+import { McpCenter } from '../components/McpCenter'
 import { uid, shortModel } from '../lib/format'
 import { API_PERMISSION_MODES, type Agent, type CliAgent, type CliParser, type DetectedCli, type Effort } from '@shared/types'
 
@@ -326,7 +327,7 @@ function CliEditor({
 export default function Agents(): React.JSX.Element {
   const t = useT()
   const { config, reload, toast, defs } = useStore()
-  const [tab, setTab] = useState<'api' | 'cli' | 'skills'>('api')
+  const [tab, setTab] = useState<'api' | 'cli' | 'mcp' | 'skills'>('api')
   const [editing, setEditing] = useState<Agent | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [cliEditing, setCliEditing] = useState<CliAgent | null>(null)
@@ -392,10 +393,11 @@ export default function Agents(): React.JSX.Element {
               items={[
                 { id: 'api', label: t('Por API'), count: agents.length },
                 { id: 'cli', label: t('Línea de comandos'), count: cliAgents.length },
+                { id: 'mcp', label: 'MCP' },
                 { id: 'skills', label: 'Skills' }
               ]}
             />
-            {tab === 'skills' ? null : tab === 'api' ? (
+            {tab === 'skills' || tab === 'mcp' ? null : tab === 'api' ? (
               <Button
                 variant="primary"
                 onClick={() => {
@@ -612,6 +614,13 @@ export default function Agents(): React.JSX.Element {
               </div>
             )}
           </div>
+        ) : null}
+
+        {/* ------------------------------------------------ MCP */}
+        {tab === 'mcp' ? (
+          <Panel className="p-4">
+            <McpCenter />
+          </Panel>
         ) : null}
 
         {/* ------------------------------------------------ Skills */}

@@ -217,13 +217,37 @@ function startAgentMock() {
       req.on('data', (c) => (body += c))
       req.on('end', () => {
         let msgs = []
+        let offered = []
         try {
           const parsed = JSON.parse(body)
           requests.push(parsed)
           msgs = parsed.messages ?? []
+          offered = (parsed.tools ?? []).map((t) => t.function?.name)
         } catch {}
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
         const send = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`)
+        const users = msgs.filter((m) => m.role === 'user')
+        const lastUser = String(users[users.length - 1]?.content ?? '')
+        const tools = msgs.filter((m) => m.role === 'tool')
+        const mcpCall = /suma/.test(lastUser)
+          ? ['mcp__calc__sumar', { a: 2, b: 3, detalle: { unidades: 'm' } }]
+          : /borra la memoria/.test(lastUser)
+            ? ['mcp__calc__borrar', {}]
+            : /token/.test(lastUser)
+              ? ['mcp__calc__token', {}]
+              : null
+        if (mcpCall && offered.includes(mcpCall[0])) {
+          if (!tools.length) {
+            send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_mcp', function: { name: mcpCall[0], arguments: JSON.stringify(mcpCall[1]) } }] } }] })
+            send({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 60, completion_tokens: 10 } })
+          } else {
+            send({ choices: [{ delta: { content: 'Resultado: ' + tools[tools.length - 1].content } }] })
+            send({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 90, completion_tokens: 6 } })
+          }
+          res.write('data: [DONE]\n\n')
+          res.end()
+          return
+        }
         if (!msgs.some((m) => m.role === 'tool')) {
           send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'write_file', arguments: JSON.stringify({ path: 'app.js', content: 'uno\nDOS\ntres\n' }) } }] } }] })
           send({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 80, completion_tokens: 20 } })
@@ -1597,6 +1621,244 @@ app.whenReady().then(async () => {
   if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME
   else process.env.XDG_CONFIG_HOME = prevXdg
   fs.rmSync(path.join(CLAUDE_DIR, 'skills'), { recursive: true, force: true })
+  git(['reset', '-q', '--hard', headB2])
+  git(['clean', '-qfd'])
+
+  /* -------------------------------------------------------------- *
+   * D1 · Centro de MCP  ·  D2 · MCP en los agentes por API          *
+   * -------------------------------------------------------------- */
+  const MCPHOME = path.join(TMP, 'mcp-home')
+  const envBefore = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME, COPILOT_HOME: process.env.COPILOT_HOME, CALC_TOKEN: process.env.CALC_TOKEN }
+  process.env.HOME = MCPHOME
+  process.env.XDG_CONFIG_HOME = path.join(MCPHOME, '.config')
+  process.env.COPILOT_HOME = path.join(MCPHOME, '.copilot')
+  process.env.CALC_TOKEN = 'valor-de-prueba'
+  const MCP_FIXTURE = path.join(FIXTURES, 'mcp-calc.js')
+  fs.writeFileSync(
+    MCP_FIXTURE,
+    [
+      "const rl = require('node:readline').createInterface({ input: process.stdin })",
+      "const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n')",
+      "rl.on('line', (line) => {",
+      '  let m',
+      '  try { m = JSON.parse(line) } catch { return }',
+      "  if (m.method === 'initialize') send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'calc', version: '1.0.0' } } })",
+      "  else if (m.method === 'tools/list') send({ jsonrpc: '2.0', id: m.id, result: { tools: [",
+      "    { name: 'sumar', description: 'Suma dos números', inputSchema: { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' }, detalle: { type: 'object', properties: { unidades: { type: 'string', enum: ['m', 'km'] } } } }, required: ['a', 'b'] }, annotations: { readOnlyHint: true } },",
+      "    { name: 'borrar', description: 'Borra la memoria', inputSchema: { type: 'object', properties: {} } },",
+      "    { name: 'token', description: 'Dice si tiene su token', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } }",
+      '  ] } })',
+      "  else if (m.method === 'tools/call') {",
+      '    const a = m.params.arguments || {}',
+      "    const text = m.params.name === 'sumar' ? String(Number(a.a) + Number(a.b)) : m.params.name === 'token' ? (process.env.CALC_TOKEN === 'valor-de-prueba' ? 'token ok' : 'sin token') : 'memoria borrada'",
+      "    send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text }] } })",
+      "  } else if (m.id !== undefined) send({ jsonrpc: '2.0', id: m.id, result: {} })",
+      '})'
+    ].join('\n')
+  )
+  // Configuraciones de mentira, con secretos escritos tal cual: no deben salir de main.
+  const GH = 'ghp_' + 'abcdefghijklmnopqrstuvwxyz123456'
+  const SK = 'sk-' + 'abcdefghijklmnopqrstuvwx'
+  fs.mkdirSync(CLAUDE_DIR, { recursive: true })
+  fs.writeFileSync(
+    path.join(CLAUDE_DIR, '.claude.json'),
+    JSON.stringify(
+      {
+        numStartups: 5,
+        mcpServers: {
+          calc: { type: 'stdio', command: 'node', args: [MCP_FIXTURE], env: { CALC_TOKEN: GH, LOG_LEVEL: 'debug' } },
+          remoto: { type: 'http', url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer ' + SK } }
+        }
+      },
+      null,
+      2
+    )
+  )
+  fs.mkdirSync(CODEX_HOME, { recursive: true })
+  const codexToml = path.join(CODEX_HOME, 'config.toml')
+  fs.writeFileSync(codexToml, '# mi configuración\nmodel = "gpt-5"\n\n[mcp_servers.docs]\ncommand = "npx"\nargs = ["-y", "docs-mcp"]\nenv_vars = ["DOCS_KEY"]\n')
+  const ocFile = path.join(MCPHOME, '.config', 'opencode', 'opencode.jsonc')
+  fs.mkdirSync(path.dirname(ocFile), { recursive: true })
+  fs.writeFileSync(ocFile, '{\n  // mis servidores\n  "mcp": {\n    "sentry": { "type": "remote", "url": "https://mcp.sentry.dev/mcp", "headers": { "Authorization": "Bearer {env:SENTRY_TOKEN}" } }\n  }\n}\n')
+  fs.writeFileSync(path.join(REPO, '.mcp.json'), JSON.stringify({ mcpServers: { 'del-repo': { type: 'stdio', command: 'node', args: ['servidor.js'] } } }, null, 2))
+  const mockD1 = await startAgentMock()
+  const d1 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    const out = {}
+
+    const rep = (await api.mcp.list()).data
+    out.leak = JSON.stringify(rep).includes('ghp_') || JSON.stringify(rep).includes('sk-abc')
+    const row = (name, scope = 'personal') => rep.servers.find((s) => s.name === name && s.scope === scope)
+    out.rows = rep.servers.filter((s) => s.scope === 'personal').map((s) => s.name + ':' + s.definitions.map((d) => d.client).join('+')).sort().join(' ')
+    const calcDef = row('calc')?.definitions[0]
+    out.calcEnv = calcDef?.env.map((v) => v.key + '=' + (v.secret ? 'secreto' : v.ref ? '$' + v.ref : v.value)).join(',')
+    out.sentryRef = row('sentry')?.definitions[0]?.headers[0]?.ref
+    out.docsRef = row('docs')?.definitions[0]?.env[0]?.ref
+
+    const cp = (name, from, to, scope = 'personal') => api.mcp.copy({ client: from, scope, name }, { client: to, scope }, scope === 'project' ? repo : undefined)
+    const plan = (await api.mcp.plan({ client: 'claude', scope: 'personal', name: 'calc' }, { client: 'codex', scope: 'personal' })).data
+    out.plan = plan
+    const toCodex = await cp('calc', 'claude', 'codex')
+    out.toCodex = toCodex.ok ? toCodex.data.backup ?? 'sin copia' : toCodex.error
+    const toOc = await cp('calc', 'claude', 'opencode')
+    out.toOc = toOc.ok || toOc.error
+    const toClaude = await cp('sentry', 'opencode', 'claude')
+    out.toClaude = toClaude.ok || toClaude.error
+    const toGemini = await cp('docs', 'codex', 'gemini')
+    out.toGemini = toGemini.ok || toGemini.error
+    const remotoCodex = await cp('remoto', 'claude', 'codex')
+    out.remotoCodex = remotoCodex.ok ? remotoCodex.data.needsEnv.join() : remotoCodex.error
+    const again = await cp('calc', 'claude', 'claude')
+    out.again = again.ok ? 'copió' : again.error
+    const proj = (await api.mcp.list(repo)).data
+    out.repoRow = proj.servers.find((s) => s.name === 'del-repo' && s.scope === 'project')?.definitions.map((d) => d.client).sort().join('+')
+    const toRepoGemini = await cp('del-repo', 'claude', 'gemini', 'project')
+    out.toRepoGemini = toRepoGemini.ok || toRepoGemini.error
+
+    // A la app: los agentes por API lo usan.
+    const toApp = await cp('calc', 'claude', 'app')
+    out.toApp = toApp.ok || toApp.error
+    const cfg1 = (await api.config.get()).data
+    out.appSpec = cfg1.mcpServers?.calc
+    const tested = await api.mcp.test('calc')
+    out.tested = tested.ok ? tested.data.tools.map((t) => t.name + (t.readOnly ? '(lectura)' : '')).join(',') : tested.error
+    await api.mcp.add({ name: 'roto', target: 'no-existe-este-comando-mcp --x', envVars: [] })
+
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.projects.save({ id: 'proyecto-mcp', name: 'Repo mcp', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(500)
+    const cfg = async () => (await api.config.get()).data
+    const s1 = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba', projectId: 'proyecto-mcp', agentMode: true, permissionMode: 'acceptEdits', includeContext: false })
+    const r1 = await engine.sendTurn(s1, 'suma 2 y 3 con la calculadora', await cfg())
+    const t1 = engine.peekChat(s1)?.turns.at(-1)
+    out.sumStatus = r1.run?.status ?? r1.error
+    out.sumAnswer = t1?.content
+    out.sumSteps = (t1?.steps ?? []).map((st) => (st.tool ?? st.kind) + ':' + st.status + (st.approval ? ':' + st.approval : '')).join(' | ')
+    out.rotoNote = (t1?.steps ?? []).some((st) => st.kind === 'note' && (st.detail ?? '').includes('roto'))
+
+    // Una que cambia algo espera tu permiso.
+    const s2 = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba', projectId: 'proyecto-mcp', agentMode: true, permissionMode: 'acceptEdits', includeContext: false })
+    const p2 = engine.sendTurn(s2, 'borra la memoria', await cfg())
+    const pend = await until(() => engine.peekChat(s2)?.turns.at(-1)?.steps?.find((st) => st.approval === 'pending'))
+    out.borrarPending = pend?.tool
+    if (pend) engine.approveStep(engine.peekChat(s2).runningRunId, pend.id, true)
+    const r2 = await p2
+    out.borrarAnswer = engine.peekChat(s2)?.turns.at(-1)?.content
+    out.borrarStatus = r2.run?.status ?? r2.error
+
+    // En «Sólo plan» sólo se ofrecen las de lectura.
+    const s3 = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba', projectId: 'proyecto-mcp', agentMode: true, permissionMode: 'plan', includeContext: false })
+    await engine.sendTurn(s3, 'dime si tienes token', await cfg())
+    out.tokenAnswer = engine.peekChat(s3)?.turns.at(-1)?.content
+
+    // Por la interfaz: Agentes › MCP › Copiar calc a Gemini CLI.
+    btn('Agentes')?.click()
+    await until(() => btn('MCP'))
+    btn('MCP').click()
+    const cell = await until(() => document.querySelector('[data-mcp="calc"] [data-client="gemini"]'))
+    if (!cell) return { ...out, error: 'no sale la fila de calc' }
+    btn('Copiar', cell)?.click()
+    const modal = await until(() => {
+      const m = document.querySelector('div.fixed.inset-0')
+      return m && m.textContent.includes('CALC_TOKEN') && btn('Añadirlo', m) ? m : null
+    })
+    out.modalSnippet = modal ? modal.querySelector('pre')?.textContent : null
+    out.modalLeak = modal ? modal.textContent.includes('ghp_') : null
+    if (modal) btn('Añadirlo', modal).click()
+    out.uiDone = Boolean(await until(() => document.querySelector('[data-mcp="calc"] [data-client="gemini"]') && !btn('Copiar', document.querySelector('[data-mcp="calc"] [data-client="gemini"]'))))
+
+    out.ids = [s1, s2, s3]
+    return out
+  })()`)
+  const reqs = mockD1.requests ?? []
+  const planToolsOf = (text) => {
+    const r = reqs.find((b) => (b.messages ?? []).some((m) => m.role === 'user' && String(m.content).includes(text)))
+    return (r?.tools ?? []).map((t) => t.function?.name)
+  }
+  const planTools = planToolsOf('dime si tienes token')
+  const toml = require('smol-toml')
+  let codexDoc = null
+  try {
+    codexDoc = toml.parse(fs.readFileSync(codexToml, 'utf8'))
+  } catch {}
+  const ocText = fs.readFileSync(ocFile, 'utf8')
+  const claudeDoc = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.claude.json'), 'utf8'))
+  const geminiFile = path.join(GEMINI_HOME, '.gemini', 'settings.json')
+  const geminiDoc = fs.existsSync(geminiFile) ? JSON.parse(fs.readFileSync(geminiFile, 'utf8')) : {}
+  const everything = [fs.readFileSync(codexToml, 'utf8'), ocText, JSON.stringify(geminiDoc), JSON.stringify(d1.appSpec ?? {}), JSON.stringify(d1.plan ?? {})].join('\n')
+
+  log(
+    !d1.leak && d1.rows === 'calc:claude docs:codex remoto:claude sentry:opencode' && d1.calcEnv === 'CALC_TOKEN=secreto,LOG_LEVEL=debug' && d1.sentryRef === 'SENTRY_TOKEN' && d1.docsRef === 'DOCS_KEY',
+    'EL CENTRO DE MCP LEE LOS SERVIDORES DE CADA CLI SIN SACAR SUS SECRETOS',
+    d1.error ?? `${d1.rows} · ${d1.calcEnv}`
+  )
+  log(
+    d1.plan?.snippet?.includes('env_vars = ["CALC_TOKEN"]') && d1.plan.snippet.includes('LOG_LEVEL = "debug"') && d1.plan.needsEnv?.includes('CALC_TOKEN') && !everything.includes(GH) && !everything.includes(SK),
+    'AL COPIAR, UN SECRETO PASA A UNA VARIABLE DE ENTORNO Y SU VALOR NO SE COPIA',
+    (d1.plan?.warnings ?? []).join(' ').slice(0, 140)
+  )
+  log(
+    codexDoc?.model === 'gpt-5' && codexDoc?.mcp_servers?.calc?.command === 'node' && codexDoc?.mcp_servers?.docs && fs.readFileSync(codexToml, 'utf8').startsWith('# mi configuración') &&
+      typeof d1.toCodex === 'string' && fs.existsSync(d1.toCodex),
+    'CODEX: LA TABLA SE AÑADE AL TOML SIN TOCAR LO DEMÁS, CON COPIA DE SEGURIDAD',
+    d1.toCodex
+  )
+  log(
+    ocText.includes('// mis servidores') && ocText.includes('"CALC_TOKEN": "{env:CALC_TOKEN}"') && /"command": \[\s*"node"/.test(ocText),
+    'OPENCODE: SE AÑADE CON SU SINTAXIS ({env:VAR}) Y SE CONSERVAN LOS COMENTARIOS'
+  )
+  log(
+    claudeDoc.numStartups === 5 && claudeDoc.mcpServers?.sentry?.headers?.Authorization === 'Bearer ${SENTRY_TOKEN}' && claudeDoc.mcpServers.sentry.type === 'http',
+    'Claude Code: la referencia de OpenCode pasa a ${VAR} y el resto de .claude.json se queda igual'
+  )
+  log(geminiDoc.mcpServers?.docs?.env?.DOCS_KEY === '${DOCS_KEY}' && geminiDoc.mcpServers.docs.command === 'npx', 'Gemini CLI: el fichero se crea con el servidor')
+  log(d1.remotoCodex === 'REMOTO_TOKEN' && codexDoc?.mcp_servers?.remoto?.bearer_token_env_var === 'REMOTO_TOKEN', 'una cabecera con token pasa a bearer_token_env_var en Codex', String(d1.remotoCodex))
+  log(typeof d1.again === 'string' && d1.again.includes('Ya hay'), 'copiar no pisa uno que ya existe', d1.again)
+  log(
+    d1.repoRow === 'claude+copilot' && d1.toRepoGemini === true && fs.existsSync(path.join(REPO, '.gemini', 'settings.json')),
+    'los del proyecto: .mcp.json cuenta para Claude Code y Copilot, y se copian al repositorio',
+    d1.repoRow
+  )
+  log(
+    d1.toApp === true && d1.appSpec?.env?.CALC_TOKEN === '${CALC_TOKEN}' && d1.tested === 'sumar(lectura),borrar,token(lectura)',
+    'UN SERVIDOR PASA A LA APP Y ARRANCA CON SUS HERRAMIENTAS',
+    String(d1.tested)
+  )
+  log(
+    d1.sumStatus === 'ok' && d1.sumAnswer?.includes('5') && /mcp__calc__sumar:ok/.test(d1.sumSteps ?? '') && !/sumar:[a-z]+:pending/.test(d1.sumSteps ?? ''),
+    'UN AGENTE POR API USA UNA HERRAMIENTA MCP DE LECTURA SIN PEDIR PERMISO',
+    `${d1.sumAnswer} · ${d1.sumSteps}`
+  )
+  log(d1.rotoNote === true && d1.sumStatus === 'ok', 'un servidor que no arranca se apunta en la actividad y el agente sigue')
+  log(d1.borrarPending === 'mcp__calc__borrar' && d1.borrarStatus === 'ok' && d1.borrarAnswer?.includes('memoria borrada'), 'UNA HERRAMIENTA MCP QUE CAMBIA ALGO ESPERA TU PERMISO', String(d1.borrarAnswer))
+  log(
+    planTools.includes('mcp__calc__token') && !planTools.includes('mcp__calc__borrar') && d1.tokenAnswer?.includes('token ok'),
+    'en «Sólo plan» sólo se ofrecen las de lectura, y el servidor recibe su variable de entorno',
+    String(d1.tokenAnswer)
+  )
+  log(d1.modalSnippet?.includes('${CALC_TOKEN}') && d1.modalLeak === false && d1.uiDone, 'COPIAR DESDE LA INTERFAZ ENSEÑA LO QUE SE AÑADE Y LO AÑADE', d1.error ?? '')
+  const geminiAfter = fs.existsSync(geminiFile) ? JSON.parse(fs.readFileSync(geminiFile, 'utf8')) : {}
+  log(geminiAfter.mcpServers?.calc?.env?.CALC_TOKEN === '${CALC_TOKEN}', 'y queda en settings.json de Gemini CLI')
+  await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    await api.providers.setBaseUrl('vllm', ${JSON.stringify(d1.prevBase ?? '')})
+    for (const id of ${JSON.stringify(d1.ids ?? [])}) await engine.deleteSession(id)
+    await api.mcp.remove('calc')
+    await api.mcp.remove('roto')
+    await api.projects.remove('proyecto-mcp')
+  })()`)
+  mockD1.close()
+  for (const [k, v] of Object.entries(envBefore)) {
+    if (v === undefined) delete process.env[k]
+    else process.env[k] = v
+  }
   git(['reset', '-q', '--hard', headB2])
   git(['clean', '-qfd'])
 

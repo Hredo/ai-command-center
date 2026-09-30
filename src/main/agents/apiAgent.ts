@@ -20,6 +20,7 @@ import { readUsageLimit } from '../providers/limits'
 import { applyAnthropicEffort, applyGoogleEffort, applyOllamaEffort, applyOpenAiEffort, stripEffort } from '../effort'
 import { modelContextMax } from '../ollama'
 import { projectInstructions } from '../instructions'
+import { mcpToolsFor, callMcpTool } from '../mcp/client'
 import type { AgentStep, ChatMessage, FileTouch, ProviderDef, RunOptions, UsageLimit } from '@shared/types'
 
 /** Rondas de herramientas por petición: un modelo que entra en bucle no gira para siempre. */
@@ -577,13 +578,27 @@ function anthropicDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Di
  * Google Gemini                                                      *
  * ------------------------------------------------------------------ */
 
-/** Gemini quiere los tipos del esquema en mayúsculas y sin `required` vacío. */
-function geminiSchema(p: AgentTool['parameters']): any {
-  const properties: Record<string, any> = {}
-  for (const [k, v] of Object.entries(p.properties)) {
-    properties[k] = { type: v.type.toUpperCase(), description: v.description }
+/**
+ * Gemini quiere los tipos del esquema en mayúsculas, sin `required` vacío y
+ * sólo con los campos que entiende. Las herramientas de MCP traen esquemas
+ * anidados (objetos, listas, enumerados), así que se recorre entero.
+ */
+function geminiSchema(p: any): any {
+  if (!p || typeof p !== 'object') return { type: 'STRING' }
+  const rawType = Array.isArray(p.type) ? p.type.find((t: string) => t !== 'null') : p.type
+  const type = typeof rawType === 'string' ? rawType.toUpperCase() : p.properties ? 'OBJECT' : p.items ? 'ARRAY' : 'STRING'
+  const out: any = { type }
+  if (typeof p.description === 'string') out.description = p.description
+  if (Array.isArray(p.enum)) out.enum = p.enum.map(String)
+  if (typeof p.format === 'string' && (type === 'STRING' || type === 'NUMBER' || type === 'INTEGER')) out.format = p.format
+  if (type === 'OBJECT') {
+    const props = p.properties && typeof p.properties === 'object' ? p.properties : {}
+    out.properties = Object.fromEntries(Object.entries(props).map(([k, v]) => [k, geminiSchema(v)]))
+    const req = Array.isArray(p.required) ? p.required.filter((r: string) => r in out.properties) : []
+    if (req.length) out.required = req
   }
-  return { type: 'OBJECT', properties, ...(p.required.length ? { required: p.required } : {}) }
+  if (type === 'ARRAY') out.items = geminiSchema(p.items)
+  return out
 }
 
 function googleDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Dialect {
@@ -751,7 +766,9 @@ async function runCall(ctx: AgentCtx, tools: AgentTool[], call: ToolCall): Promi
   }
 
   const t0 = Date.now()
-  const r = await executeTool(call.name, call.args, ctx.root, ctx.signal)
+  const r = tool.mcp
+    ? await callMcpTool(tool.mcp, call.args, ctx.signal)
+    : await executeTool(call.name, call.args, ctx.root, ctx.signal)
   if (ctx.signal.aborted) throw abortError()
   if (r.touched) ctx.onTouch(r.touched.path, r.touched.kind)
   ctx.onStep({
@@ -762,14 +779,26 @@ async function runCall(ctx: AgentCtx, tools: AgentTool[], call: ToolCall): Promi
     added: r.added || undefined,
     removed: r.removed || undefined,
     // De un comando interesa la salida entera, que se despliega en la fila.
-    detail: tool.kind === 'run' ? r.output.slice(-4000) : r.isError ? r.output.slice(0, 400) : r.summary
+    detail: tool.kind === 'run' || tool.mcp ? r.output.slice(-4000) : r.isError ? r.output.slice(0, 400) : r.summary
   })
   if (!r.isError && (tool.kind === 'edit' || tool.kind === 'write')) ctx.onEdited()
   return r
 }
 
 export async function runAgentLoop(ctx: AgentCtx): Promise<AgentTotals> {
-  const tools = toolsFor(ctx.opts.permissionMode)
+  // Las propias y las de los servidores MCP de la app. Uno que no arranque no
+  // para al agente: se apunta en su actividad y sigue sin él.
+  const mcp = await mcpToolsFor(ctx.opts.permissionMode)
+  for (const f of mcp.failed) {
+    ctx.onStep({
+      id: 'mcp-' + randomUUID(),
+      at: Date.now(),
+      kind: 'note',
+      status: 'error',
+      detail: `El servidor MCP «${f.server}» no arrancó: ${f.error}`
+    })
+  }
+  const tools = [...toolsFor(ctx.opts.permissionMode), ...mcp.tools]
   // Las reglas del proyecto (AGENTS.md, CLAUDE.md) de la carpeta donde trabaja,
   // que en un worktree es la suya: un agente de consola ya las respeta.
   const rules = ctx.inProject !== false ? projectInstructions(ctx.root) : null

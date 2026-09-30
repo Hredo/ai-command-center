@@ -18,7 +18,8 @@ import { guardPath } from '../security'
 import { IS_WIN, killTree, osName } from '../platform'
 import type { FileTouch } from '@shared/types'
 
-export type ToolKind = 'read' | 'search' | 'edit' | 'write' | 'run'
+/** `mcp`: herramienta de un servidor MCP que puede cambiar cosas; pide permiso como un comando. */
+export type ToolKind = 'read' | 'search' | 'edit' | 'write' | 'run' | 'mcp'
 
 /**
  * Con qué se ejecutan los comandos del agente. En Windows, PowerShell; en
@@ -37,7 +38,10 @@ export interface AgentTool {
   name: string
   kind: ToolKind
   description: string
-  parameters: { type: 'object'; properties: Record<string, ParamSpec>; required: string[] }
+  /** Esquema JSON de la entrada. Las propias son planas; las de MCP pueden anidar. */
+  parameters: { type: 'object'; properties: Record<string, ParamSpec | Record<string, unknown>>; required: string[]; [k: string]: unknown }
+  /** Viene de un servidor MCP: a quién se le pide. */
+  mcp?: { server: string; tool: string }
 }
 
 export const AGENT_TOOLS: AgentTool[] = [
@@ -160,13 +164,14 @@ export function toolsFor(mode?: string): AgentTool[] {
 /**
  * Si una herramienta tiene que esperar a que la apruebes. Leer y buscar nunca
  * lo necesitan; editar sólo en «Pregunta»; ejecutar siempre, salvo «Sin
- * límites».
+ * límites». Las de MCP que cambian algo, como ejecutar; las de sólo lectura,
+ * como leer, salvo en «Pregunta», donde también se preguntan: vienen de fuera.
  */
 export function needsApproval(tool: AgentTool, mode?: string): boolean {
-  if (tool.kind === 'read' || tool.kind === 'search') return false
+  if (tool.kind === 'read' || tool.kind === 'search') return mode === 'manual' && Boolean(tool.mcp)
   if (mode === 'bypassPermissions') return false
   if (mode === 'manual') return true
-  return tool.kind === 'run'
+  return tool.kind === 'run' || tool.kind === 'mcp'
 }
 
 /* ------------------------------------------------------------------ *
@@ -800,5 +805,6 @@ export function describeCall(name: string, args: any): string {
   if (name === 'find_files') return one(str(a.pattern))
   if (name === 'search_text') return one(str(a.pattern) + (a.path ? ' en ' + str(a.path) : '') + (a.glob ? ` (${str(a.glob)})` : ''))
   if (name === 'list_dir') return one(str(a.path) || '.')
+  if (name.startsWith('mcp__')) return one(Object.keys(a).length ? JSON.stringify(a) : '')
   return one(str(a.path))
 }

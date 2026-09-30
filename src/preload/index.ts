@@ -7,7 +7,7 @@ import type {
   GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
   GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage,
   RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow, WorktreeInfo, WorktreeSetup,
-  InstructionFile, SkillsReport
+  InstructionFile, SkillsReport, McpReport, McpCopyPlan, McpClient
 } from '@shared/types'
 
 /** Estado del statusLine de la app en la configuración de Claude Code. */
@@ -334,6 +334,26 @@ const api = {
     list: (projectPath?: string) => call<SkillsReport>('skills:list', projectPath),
     copy: (source: string, target: { id: string; scope: 'personal' | 'project' }, projectPath?: string) =>
       call<SkillsReport>('skills:copy', source, target, projectPath)
+  },
+  /** Servidores MCP de cada CLI y de los agentes por API de la app. */
+  mcp: {
+    list: (projectPath?: string) => call<McpReport>('mcp:list', projectPath),
+    /** Qué se escribiría al copiar, sin escribir nada. */
+    plan: (
+      from: { client: McpClient; scope: 'personal' | 'project'; name: string },
+      to: { client: McpClient; scope: 'personal' | 'project' },
+      projectPath?: string
+    ) => call<McpCopyPlan>('mcp:plan', from, to, projectPath),
+    copy: (
+      from: { client: McpClient; scope: 'personal' | 'project'; name: string },
+      to: { client: McpClient; scope: 'personal' | 'project' },
+      projectPath?: string
+    ) => call<McpCopyPlan>('mcp:copy', from, to, projectPath),
+    enable: (name: string, enabled: boolean) => call<boolean>('mcp:app:enable', name, enabled),
+    remove: (name: string) => call<boolean>('mcp:app:remove', name),
+    add: (input: { name: string; target: string; envVars?: string[] }) => call<boolean>('mcp:app:add', input),
+    test: (name: string) =>
+      call<{ tools: { name: string; readOnly: boolean; description?: string }[] }>('mcp:app:test', name)
   },
   /** Un worktree por tarea: crear, listar, fusionar y quitar. */
   worktrees: {
