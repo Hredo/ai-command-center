@@ -184,6 +184,8 @@ export interface Project {
   worktreeCopy?: string[]
   /** Orden que pasa las pruebas del proyecto (p. ej. pnpm test): la usa la Arena de código. */
   testCommand?: string
+  /** Ficheros de instrucciones que se guardan como copia de AGENTS.md (CLAUDE.md, GEMINI.md). */
+  instructionsMirror?: string[]
 }
 
 /** Cómo fue la preparación de un worktree nuevo. */
@@ -197,6 +199,54 @@ export interface WorktreeSetup {
 }
 
 /** Un worktree del repositorio, con lo que la app sabe de él. */
+/** Un fichero de instrucciones para agentes (AGENTS.md, CLAUDE.md, GEMINI.md). */
+export interface InstructionFile {
+  file: string
+  exists: boolean
+  content: string
+  /** Para no pisar lo que haya cambiado otro desde que se leyó. */
+  mtimeMs: number | null
+  bytes: number
+}
+
+/** Los CLIs que cargan Skills (SKILL.md) y en qué carpetas las buscan. */
+export type SkillTool = 'claude' | 'codex' | 'opencode' | 'gemini' | 'copilot'
+
+/** Una carpeta de Skills: de quién es y quién la lee. */
+export interface SkillLocation {
+  /** claude, agents, opencode, gemini, copilot, github, claude-synced */
+  id: string
+  scope: 'personal' | 'project'
+  path: string
+  readers: SkillTool[]
+  exists: boolean
+  /** Sólo se lee de ella (las que baja claude.ai): no se copia nada ahí. */
+  readOnly?: boolean
+}
+
+/** Una Skill, con todas las carpetas donde está. */
+export interface SkillInfo {
+  /** Nombre de su carpeta: el que cuenta para copiarla. */
+  dir: string
+  scope: 'personal' | 'project'
+  /** El `name` y la `description` de su SKILL.md. */
+  name?: string
+  description?: string
+  copies: { location: string; path: string; hash: string }[]
+  /** Qué CLIs la cargan, por alguna de sus copias. */
+  readers: SkillTool[]
+  /** Hay copias que ya no son iguales. */
+  differs: boolean
+  warnings: string[]
+  /** CLIs que la ven en su carpeta pero no la cargan por cómo está escrita. */
+  rejectedBy: SkillTool[]
+}
+
+export interface SkillsReport {
+  locations: SkillLocation[]
+  skills: SkillInfo[]
+}
+
 export interface WorktreeInfo {
   path: string
   branch?: string

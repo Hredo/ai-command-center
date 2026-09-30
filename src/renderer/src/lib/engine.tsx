@@ -1375,10 +1375,16 @@ export async function sendTurn(
   // Un agente trabaja siempre como agente; un modelo suelto, si hay proyecto y no lo apagaste.
   const agentOn = Boolean(apiAgent) || (Boolean(project) && session.agentMode !== false)
 
-  // El contexto del proyecto se adjunta al prompt de sistema.
+  // El contexto del proyecto se adjunta al prompt de sistema: el de la carpeta
+  // donde trabaja (su worktree, si tiene). Como agente, las instrucciones del
+  // proyecto (AGENTS.md, CLAUDE.md) se las pone el propio bucle.
   let sys = session.systemPrompt ?? ''
   if (project && session.includeContext) {
-    const ctx = await window.api.projects.context(project.path, { tree: true, readme: true })
+    const ctx = await window.api.projects.context(session.worktreePath ?? project.path, {
+      tree: true,
+      readme: true,
+      instructions: !agentOn
+    })
     if (ctx.ok && ctx.data) {
       sys = [sys, `Trabajas sobre este proyecto del usuario:\n\n${ctx.data}`].filter(Boolean).join('\n\n')
     }

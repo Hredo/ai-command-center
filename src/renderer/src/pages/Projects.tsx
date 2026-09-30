@@ -12,6 +12,8 @@ import { GitGraph } from '../components/GitGraph'
 import { AgentActivity } from '../components/AgentActivity'
 import { GithubPanel } from '../components/GithubPanel'
 import { ProjectWorktrees } from '../components/ProjectWorktrees'
+import { InstructionsEditor } from '../components/InstructionsEditor'
+import { SkillsMatrix } from '../components/SkillsMatrix'
 import { Metrics, LiveMetrics } from '../components/Stats'
 import {
   AttachButton, AttachmentList, BranchPicker, ContextGauge, EffortPicker,
@@ -33,7 +35,7 @@ import {
 import { Pane } from '../components/Resizable'
 
 import { useT } from '../lib/i18n'
-type Tab = 'overview' | 'files' | 'git' | 'graph' | 'terminal' | 'agent' | 'settings'
+type Tab = 'overview' | 'files' | 'git' | 'graph' | 'terminal' | 'agent' | 'instructions' | 'settings'
 
 /**
  * Salida del agente, tomada de la sesión que vive en el motor. Así se sigue
@@ -628,6 +630,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                   { id: 'graph', label: t('Árbol') },
                   { id: 'terminal', label: 'Terminal' },
                   { id: 'agent', label: t('Agente'), count: cliRunning ? 1 : undefined },
+                  { id: 'instructions', label: t('Instrucciones') },
                   { id: 'settings', label: t('Ajustes') }
                 ]}
               />
@@ -1041,6 +1044,16 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                     <AgentOutput sessionId={agentSession?.id ?? null} />
                   </>
                 )}
+              </div>
+            ) : null}
+
+            {/* ---------------------------------------- Instrucciones y Skills */}
+            {tab === 'instructions' ? (
+              <div className="p-5 space-y-6 max-w-[1000px] flex-1 min-h-0 overflow-y-auto">
+                <InstructionsEditor key={project.id} project={project} onPatch={(patch) => void patchProject(patch)} />
+                <div className="pt-4 border-t border-line">
+                  <SkillsMatrix key={project.id} scope="project" projectPath={project.path} />
+                </div>
               </div>
             ) : null}
 

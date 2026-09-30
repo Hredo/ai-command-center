@@ -6,6 +6,7 @@ import { Panel, PanelHeader, Button, Badge, Empty, Field, Input, Textarea, Selec
 import { ModelPicker, type Pick } from '../components/ModelPicker'
 import { EFFORT_LABEL, EffortPicker } from '../components/AgentPanel'
 import { useStore } from '../lib/store'
+import { SkillsMatrix } from '../components/SkillsMatrix'
 import { uid, shortModel } from '../lib/format'
 import { API_PERMISSION_MODES, type Agent, type CliAgent, type CliParser, type DetectedCli, type Effort } from '@shared/types'
 
@@ -325,7 +326,7 @@ function CliEditor({
 export default function Agents(): React.JSX.Element {
   const t = useT()
   const { config, reload, toast, defs } = useStore()
-  const [tab, setTab] = useState<'api' | 'cli'>('api')
+  const [tab, setTab] = useState<'api' | 'cli' | 'skills'>('api')
   const [editing, setEditing] = useState<Agent | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [cliEditing, setCliEditing] = useState<CliAgent | null>(null)
@@ -390,10 +391,11 @@ export default function Agents(): React.JSX.Element {
               onChange={setTab}
               items={[
                 { id: 'api', label: t('Por API'), count: agents.length },
-                { id: 'cli', label: t('Línea de comandos'), count: cliAgents.length }
+                { id: 'cli', label: t('Línea de comandos'), count: cliAgents.length },
+                { id: 'skills', label: 'Skills' }
               ]}
             />
-            {tab === 'api' ? (
+            {tab === 'skills' ? null : tab === 'api' ? (
               <Button
                 variant="primary"
                 onClick={() => {
@@ -610,6 +612,13 @@ export default function Agents(): React.JSX.Element {
               </div>
             )}
           </div>
+        ) : null}
+
+        {/* ------------------------------------------------ Skills */}
+        {tab === 'skills' ? (
+          <Panel className="p-4">
+            <SkillsMatrix scope="personal" />
+          </Panel>
         ) : null}
       </div>
 

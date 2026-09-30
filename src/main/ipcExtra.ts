@@ -38,6 +38,8 @@ import { statusLineInfo, installStatusLine, uninstallStatusLine } from './quotas
 import { ADMIN_KEYS, adminKey } from './quotas/remote'
 import { previewUndo, undoCheckpoint, checkpointDiff } from './checkpoints'
 import { listWorktrees, createWorktree, mergeWorktree, removeWorktree, linkWorktree, mainRoot, execInWorktree } from './worktrees'
+import { readInstructionFiles, writeInstructionFiles } from './instructions'
+import { listSkills, copySkill } from './skills'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource
@@ -325,6 +327,21 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   handle('worktrees:link', (path: string, sessionId?: string) => {
     linkWorktree(str(path, 'worktree'), typeof sessionId === 'string' ? sessionId : undefined)
     return true
+  })
+
+  /* ------------------------- Instrucciones y Skills ---------------------------- */
+
+  handle('instructions:read', (root: string) => readInstructionFiles(str(root, 'proyecto')))
+  handle('instructions:write', (root: string, writes: { file: string; content: string; expectedMtime: number | null }[]) => {
+    const r = writeInstructionFiles(str(root, 'proyecto'), writes)
+    pokeRepo(root)
+    return r
+  })
+  handle('skills:list', (projectPath?: string) => listSkills(typeof projectPath === 'string' && projectPath ? projectPath : undefined))
+  handle('skills:copy', (source: string, target: { id: string; scope: 'personal' | 'project' }, projectPath?: string) => {
+    const r = copySkill(str(source, 'Skill'), target, typeof projectPath === 'string' && projectPath ? projectPath : undefined)
+    if (projectPath) pokeRepo(projectPath)
+    return r
   })
 
   /* ---------------------------------- Cupos ----------------------------------- */

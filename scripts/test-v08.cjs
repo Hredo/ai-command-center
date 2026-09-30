@@ -206,6 +206,7 @@ process.stdin.on('end', () => {
 const API_PORT = 18000 + Math.floor(Math.random() * 1000)
 function startAgentMock() {
   return new Promise((resolve) => {
+    const requests = []
     const server = http.createServer((req, res) => {
       if (req.url.endsWith('/models')) {
         res.writeHead(200, { 'content-type': 'application/json' })
@@ -217,7 +218,9 @@ function startAgentMock() {
       req.on('end', () => {
         let msgs = []
         try {
-          msgs = JSON.parse(body).messages ?? []
+          const parsed = JSON.parse(body)
+          requests.push(parsed)
+          msgs = parsed.messages ?? []
         } catch {}
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
         const send = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`)
@@ -232,6 +235,7 @@ function startAgentMock() {
         res.end()
       })
     })
+    server.requests = requests
     server.listen(API_PORT, '127.0.0.1', () => resolve(server))
   })
 }
@@ -1427,6 +1431,172 @@ app.whenReady().then(async () => {
     await api.projects.remove('proyecto-otro')
   })()`)
   mockB3.close()
+  git(['reset', '-q', '--hard', headB2])
+  git(['clean', '-qfd'])
+
+  /* -------------------------------------------------------------- *
+   * D3 · AGENTS.md, CLAUDE.md y Skills                              *
+   * -------------------------------------------------------------- */
+  // Las carpetas personales de Skills cuelgan de HOME: uno de mentira mientras dura el bloque.
+  const SKHOME = path.join(TMP, 'skills-home')
+  const prevHome = process.env.HOME
+  const prevXdg = process.env.XDG_CONFIG_HOME
+  process.env.HOME = SKHOME
+  process.env.XDG_CONFIG_HOME = path.join(SKHOME, '.config')
+  const skill = (dir, name, desc) => {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: >\n  ${desc}\n  en dos líneas\n---\n\nPasos de ${name}.\n`)
+    fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'scripts', 'hola.sh'), 'echo hola\n')
+    fs.mkdirSync(path.join(dir, 'node_modules', 'x'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'node_modules', 'x', 'pesado.js'), '//\n')
+  }
+  skill(path.join(CLAUDE_DIR, 'skills', 'revisar-pr'), 'revisar-pr', 'Revisa una PR')
+  skill(path.join(SKHOME, '.agents', 'skills', 'Mala_Skill'), 'otra-cosa', 'Nombre mal puesto')
+  skill(path.join(REPO, '.claude', 'skills', 'desplegar'), 'desplegar', 'Despliega la app')
+  fs.writeFileSync(path.join(REPO, 'AGENTS.md'), '# Reglas\nREGLA-AGENTS: usa pnpm siempre.\n')
+  fs.writeFileSync(path.join(REPO, 'CLAUDE.md'), '@AGENTS.md\nREGLA-CLAUDE: responde en español.\n')
+  const mockD3 = await startAgentMock()
+  const d3 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    const setValue = (el, value) => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const out = {}
+
+    // Leer y escribir, sin pisar lo que cambió otro.
+    const read = (await api.instructions.read(repo)).data
+    out.read = read.map((f) => f.file + ':' + f.exists).join()
+    const agents = read.find((f) => f.file === 'AGENTS.md')
+    const w1 = await api.instructions.write(repo, [{ file: 'AGENTS.md', content: agents.content + 'REGLA-NUEVA\\n', expectedMtime: agents.mtimeMs }])
+    out.w1 = w1.ok
+    const stale = await api.instructions.write(repo, [{ file: 'AGENTS.md', content: 'pisado', expectedMtime: agents.mtimeMs - 5000 }])
+    out.stale = stale.ok ? 'se escribió' : stale.error
+    const bad = await api.instructions.write(repo, [{ file: '../fuera.md', content: 'x', expectedMtime: null }])
+    out.bad = bad.ok ? 'se escribió' : bad.error
+    // Mantener GEMINI.md como copia: se escriben los dos a la vez.
+    const now = (await api.instructions.read(repo)).data
+    const a2 = now.find((f) => f.file === 'AGENTS.md')
+    const g2 = now.find((f) => f.file === 'GEMINI.md')
+    const both = await api.instructions.write(repo, [
+      { file: 'AGENTS.md', content: a2.content, expectedMtime: a2.mtimeMs },
+      { file: 'GEMINI.md', content: a2.content, expectedMtime: g2.mtimeMs }
+    ])
+    out.both = both.ok && both.data.find((f) => f.file === 'GEMINI.md').content === a2.content
+    const disk = (await api.instructions.read(repo)).data
+    out.bothDisk = disk.find((f) => f.file === 'GEMINI.md').content === disk.find((f) => f.file === 'AGENTS.md').content
+
+    // El contexto de un chat con proyecto las lleva; el de un agente, el propio bucle.
+    const ctxText = (await api.projects.context(repo, {})).data
+    out.ctxRules = ctxText.includes('REGLA-AGENTS') && ctxText.includes('REGLA-CLAUDE') && !ctxText.includes('@AGENTS.md')
+    out.ctxOnce = ctxText.split('REGLA-AGENTS').length - 1
+    const noRules = (await api.projects.context(repo, { instructions: false })).data
+    out.ctxOff = !noRules.includes('REGLA-AGENTS')
+
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.projects.save({ id: 'proyecto-d3', name: 'Repo d3', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(500)
+    const sid = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba', projectId: 'proyecto-d3', agentMode: true, permissionMode: 'bypassPermissions' })
+    const r = await engine.sendTurn(sid, 'pon DOS en app.js', (await api.config.get()).data)
+    out.agentStatus = r.run?.status ?? r.error
+    out.sid = sid
+
+    // Skills: quién ve cada una, y copiar a donde falte.
+    const list = (await api.skills.list(repo)).data
+    const find = (l, dir, scope) => l.skills.find((s) => s.dir === dir && s.scope === scope)
+    out.revisar = find(list, 'revisar-pr', 'personal')?.readers.slice().sort().join()
+    out.mala = find(list, 'Mala_Skill', 'personal')?.warnings.join(' ')
+    out.malaRejected = find(list, 'Mala_Skill', 'personal')?.rejectedBy.join()
+    out.desc = find(list, 'revisar-pr', 'personal')?.description
+    out.desplegar = find(list, 'desplegar', 'project')?.readers.slice().sort().join()
+    const src = find(list, 'revisar-pr', 'personal').copies[0].path
+    const again = await api.skills.copy(src, { id: 'claude', scope: 'personal' })
+    out.again = again.ok ? 'copió' : again.error
+    const fake = await api.skills.copy(repo, { id: 'agents', scope: 'personal' })
+    out.fake = fake.ok ? 'copió' : fake.error
+    const synced = await api.skills.copy(src, { id: 'claude-synced', scope: 'personal' })
+    out.synced = synced.ok ? 'copió' : synced.error
+
+    // Por la interfaz: Agentes › Skills › Copiar para Codex.
+    btn('Agentes')?.click()
+    await until(() => btn('Skills'))
+    btn('Skills').click()
+    const cell = await until(() => document.querySelector('[data-skill="revisar-pr"] [data-tool="codex"]'))
+    if (!cell) return { ...out, error: 'no sale la fila de revisar-pr' }
+    out.cellBefore = cell.textContent.trim()
+    btn('Copiar', cell)?.click()
+    out.cellAfter = Boolean(await until(() => {
+      const c = document.querySelector('[data-skill="revisar-pr"] [data-tool="codex"]')
+      return c && !btn('Copiar', c) ? c : null
+    }))
+    out.geminiAfter = !btn('Copiar', document.querySelector('[data-skill="revisar-pr"] [data-tool="gemini"]'))
+
+    // Y el editor: Proyectos › el proyecto › Instrucciones.
+    btn('Proyectos')?.click()
+    await sleep(600)
+    ;[...document.querySelectorAll('button, div')].find((x) => x.textContent.trim() === 'Repo d3')?.click()
+    await until(() => btn('Instrucciones'))
+    btn('Instrucciones')?.click()
+    const ta = await until(() => document.querySelector('textarea[spellcheck="false"]'))
+    if (!ta) return { ...out, error: 'no sale el editor de instrucciones' }
+    out.editorLoaded = ta.value.includes('REGLA-AGENTS')
+    setValue(ta, ta.value + 'REGLA-DESDE-LA-APP\\n')
+    await sleep(80)
+    btn('Guardar', ta.closest('div.space-y-3'))?.click()
+    out.saved = Boolean(await until(async () => (await api.instructions.read(repo)).data.find((f) => f.file === 'AGENTS.md').content.includes('REGLA-DESDE-LA-APP')))
+    out.projectSkillRow = Boolean(document.querySelector('[data-skill="desplegar"]'))
+    return out
+  })()`)
+  const sysOf = (reqs) => {
+    const body = reqs.find((b) => (b.messages ?? []).some((m) => m.role === 'system'))
+    return body ? body.messages.find((m) => m.role === 'system').content : ''
+  }
+  const agentSys = sysOf(mockD3.requests ?? [])
+  log(d3.read === 'AGENTS.md:true,CLAUDE.md:true,GEMINI.md:false' && d3.w1, 'SE LEEN Y SE ESCRIBEN AGENTS.md, CLAUDE.md Y GEMINI.md', d3.error ?? d3.read)
+  log(typeof d3.stale === 'string' && d3.stale.includes('ha cambiado en disco') && !fs.readFileSync(path.join(REPO, 'AGENTS.md'), 'utf8').includes('pisado'), 'NO SE PISA LO QUE CAMBIÓ OTRO MIENTRAS LO TENÍAS ABIERTO', d3.stale)
+  log(typeof d3.bad === 'string' && !fs.existsSync(path.join(TMP, 'fuera.md')), 'sólo se escriben esos tres ficheros', d3.bad)
+  log(d3.both && d3.bothDisk, 'una copia se guarda a la vez que AGENTS.md')
+  log(d3.ctxRules && d3.ctxOnce === 1 && d3.ctxOff, 'EL CONTEXTO DEL PROYECTO LLEVA SUS INSTRUCCIONES, CON LOS @IMPORTS Y SIN REPETIR', `veces: ${d3.ctxOnce}`)
+  log(
+    d3.agentStatus === 'ok' && agentSys.includes('REGLA-AGENTS') && agentSys.includes('REGLA-CLAUDE') && agentSys.split('REGLA-AGENTS').length === 2,
+    'UN AGENTE POR API TRABAJA CON AGENTS.md Y CLAUDE.md EN SU PROMPT',
+    `${d3.agentStatus} · ${agentSys.length} caracteres`
+  )
+  log(d3.revisar === 'claude,opencode' && d3.desplegar === 'claude,copilot,opencode' && d3.desc === 'Revisa una PR en dos líneas', 'CADA SKILL DICE QUÉ CLIs LA CARGAN', `${d3.revisar} · ${d3.desplegar}`)
+  log(typeof d3.mala === 'string' && d3.mala.includes('OpenCode') && d3.malaRejected === 'opencode', 'se avisa de la que OpenCode no cargaría', d3.mala)
+  log(
+    d3.cellBefore?.includes('Copiar') && d3.cellAfter && d3.geminiAfter &&
+      fs.existsSync(path.join(SKHOME, '.agents', 'skills', 'revisar-pr', 'SKILL.md')) &&
+      fs.existsSync(path.join(SKHOME, '.agents', 'skills', 'revisar-pr', 'scripts', 'hola.sh')) &&
+      !fs.existsSync(path.join(SKHOME, '.agents', 'skills', 'revisar-pr', 'node_modules')),
+    'COPIAR UNA SKILL LA LLEVA A .agents/skills Y LA VEN CODEX, GEMINI Y COPILOT',
+    d3.error ?? ''
+  )
+  log(
+    typeof d3.again === 'string' && d3.again.includes('Ya está') && typeof d3.fake === 'string' && typeof d3.synced === 'string',
+    'copiar no pisa, ni vale una ruta cualquiera, ni se escribe en lo que baja claude.ai',
+    [d3.again, d3.fake, d3.synced].join(' | ').slice(0, 160)
+  )
+  log(d3.editorLoaded && d3.saved && d3.projectSkillRow, 'EL EDITOR DE INSTRUCCIONES GUARDA EN DISCO, Y SALEN LAS SKILLS DEL PROYECTO', d3.error ?? '')
+  await js(`(async () => {
+    const api = window.api
+    await api.providers.setBaseUrl('vllm', ${JSON.stringify(d3.prevBase ?? '')})
+    if (${JSON.stringify(d3.sid ?? '')}) await window.__accEngine.deleteSession(${JSON.stringify(d3.sid ?? '')})
+    await api.projects.remove('proyecto-d3')
+  })()`)
+  mockD3.close()
+  if (prevHome === undefined) delete process.env.HOME
+  else process.env.HOME = prevHome
+  if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME
+  else process.env.XDG_CONFIG_HOME = prevXdg
+  fs.rmSync(path.join(CLAUDE_DIR, 'skills'), { recursive: true, force: true })
   git(['reset', '-q', '--hard', headB2])
   git(['clean', '-qfd'])
 

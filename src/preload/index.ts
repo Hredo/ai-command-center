@@ -6,7 +6,8 @@ import type {
   StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks, OpencodeModel,
   GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
   GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage,
-  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow, WorktreeInfo, WorktreeSetup
+  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow, WorktreeInfo, WorktreeSetup,
+  InstructionFile, SkillsReport
 } from '@shared/types'
 
 /** Estado del statusLine de la app en la configuración de Claude Code. */
@@ -320,6 +321,19 @@ const api = {
         ipcRenderer.removeListener('external:updated', listener)
       }
     }
+  },
+  /** AGENTS.md, CLAUDE.md y GEMINI.md de un proyecto. */
+  instructions: {
+    read: (root: string) => call<InstructionFile[]>('instructions:read', root),
+    /** Guarda uno o varios a la vez; falla sin tocar nada si alguno cambió en disco. */
+    write: (root: string, writes: { file: string; content: string; expectedMtime: number | null }[]) =>
+      call<InstructionFile[]>('instructions:write', root, writes)
+  },
+  /** Las Skills (SKILL.md) de cada CLI: dónde están, quién las ve y copiarlas. */
+  skills: {
+    list: (projectPath?: string) => call<SkillsReport>('skills:list', projectPath),
+    copy: (source: string, target: { id: string; scope: 'personal' | 'project' }, projectPath?: string) =>
+      call<SkillsReport>('skills:copy', source, target, projectPath)
   },
   /** Un worktree por tarea: crear, listar, fusionar y quitar. */
   worktrees: {

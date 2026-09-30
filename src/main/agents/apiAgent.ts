@@ -19,6 +19,7 @@ import { lines, readError } from '../providers/http'
 import { readUsageLimit } from '../providers/limits'
 import { applyAnthropicEffort, applyGoogleEffort, applyOllamaEffort, applyOpenAiEffort, stripEffort } from '../effort'
 import { modelContextMax } from '../ollama'
+import { projectInstructions } from '../instructions'
 import type { AgentStep, ChatMessage, FileTouch, ProviderDef, RunOptions, UsageLimit } from '@shared/types'
 
 /** Rondas de herramientas por petición: un modelo que entra en bucle no gira para siempre. */
@@ -769,7 +770,10 @@ async function runCall(ctx: AgentCtx, tools: AgentTool[], call: ToolCall): Promi
 
 export async function runAgentLoop(ctx: AgentCtx): Promise<AgentTotals> {
   const tools = toolsFor(ctx.opts.permissionMode)
-  const system = [agentInstructions(ctx.root, tools, ctx.inProject !== false), ctx.opts.systemPrompt]
+  // Las reglas del proyecto (AGENTS.md, CLAUDE.md) de la carpeta donde trabaja,
+  // que en un worktree es la suya: un agente de consola ya las respeta.
+  const rules = ctx.inProject !== false ? projectInstructions(ctx.root) : null
+  const system = [agentInstructions(ctx.root, tools, ctx.inProject !== false), rules, ctx.opts.systemPrompt]
     .filter(Boolean)
     .join('\n\n')
   const dialect =

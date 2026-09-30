@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import { join, extname, basename, relative } from 'node:path'
 import { shell } from 'electron'
 import { getConfig } from './config'
+import { projectInstructions } from './instructions'
 import { IS_MAC, IS_WIN, defaultTerminalCommand, findInPath } from './platform'
 import type { ProjectInfo } from '@shared/types'
 
@@ -201,7 +202,7 @@ export function projectTree(path: string, maxEntries = 220): string {
  */
 export async function projectContext(
   path: string,
-  opts: { tree?: boolean; readme?: boolean; files?: string[]; maxChars?: number } = {}
+  opts: { tree?: boolean; readme?: boolean; files?: string[]; maxChars?: number; instructions?: boolean } = {}
 ): Promise<string> {
   const maxChars = opts.maxChars ?? 24_000
   const info = await scanProject(path)
@@ -215,6 +216,11 @@ export async function projectContext(
   if (info.aiDeps.length) parts.push(`Dependencias de IA: ${info.aiDeps.join(', ')}`)
   if (info.scripts) parts.push(`Scripts: ${Object.keys(info.scripts).join(', ')}`)
 
+  // AGENTS.md y CLAUDE.md: las reglas que el proyecto deja para quien trabaje en él.
+  if (opts.instructions !== false) {
+    const rules = projectInstructions(path)
+    if (rules) parts.push(`\n${rules}`)
+  }
   if (opts.readme !== false && info.readme) {
     parts.push(`\n## README (extracto)\n${info.readme}`)
   }
