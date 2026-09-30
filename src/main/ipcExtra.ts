@@ -49,6 +49,7 @@ import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryR
 import { savePrompt, removePrompt, markPromptUsed } from './prompts'
 import { search } from './search'
 import { suggestCommitMessage } from './gitAi'
+import { pullsReport, pullChecks, createPull, describePull } from './pulls'
 import { exportSessions, importSessions } from './exchange'
 import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
 import { setKey, getStoredKey, mask } from './secrets'
@@ -180,6 +181,17 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     const r = await gitCommit(path, message, { all: Boolean(all) })
     pokeRepo(path)
     return r
+  })
+  handle('pulls:report', (path: string) => pullsReport(str(path, 'ruta')))
+  handle('pulls:checks', (path: string, num: number) => pullChecks(str(path, 'ruta'), Number(num)))
+  handle('pulls:create', async (path: string, input: { title: string; body: string; base: string; draft?: boolean }) => {
+    const r = await createPull(str(path, 'ruta'), input ?? { title: '', body: '', base: '' })
+    pokeRepo(path)
+    return r
+  })
+  handle('pulls:describe', (path: string, base: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') => {
+    if (!pick?.providerId || !pick?.model) throw new Error('Elige qué modelo escribe la descripción')
+    return describePull(str(path, 'ruta'), str(base, 'rama'), { providerId: String(pick.providerId), model: String(pick.model) }, lang === 'en' ? 'en' : 'es')
   })
   handle('git:suggestCommit', (path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') => {
     if (!pick?.providerId || !pick?.model) throw new Error('Elige qué modelo escribe el mensaje')

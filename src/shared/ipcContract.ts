@@ -11,7 +11,7 @@
  * se ponen de acuerdo.
  */
 import type {
-  Agent, AppConfig, Attachment, Battery, BatteryRun, PromptTemplate, SearchQuery, SearchResult, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
+  Agent, AppConfig, Attachment, Battery, BatteryRun, PromptTemplate, SearchQuery, SearchResult, PullsReport, PullCheck, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
@@ -122,6 +122,13 @@ export interface IpcContract {
   'git:changes': { args: [path: string]; result: FileChange[] }
   'git:checkout': { args: [path: string, branch: string, create?: boolean]; result: { ok: boolean; detail: string; info?: GitInfo } }
   'git:commit': { args: [path: string, message: string, all?: boolean]; result: GitCmd }
+  'pulls:report': { args: [path: string]; result: PullsReport }
+  'pulls:checks': { args: [path: string, num: number]; result: PullCheck[] }
+  'pulls:create': { args: [path: string, input: { title: string; body: string; base: string; draft?: boolean }]; result: { url: string; pushed: boolean } }
+  'pulls:describe': {
+    args: [path: string, base: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en']
+    result: { title: string; body: string; run: RunRecord }
+  }
   'git:suggestCommit': { args: [path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en']; result: { message: string; run: RunRecord } }
   'git:diff': { args: [path: string, file?: string, staged?: boolean]; result: string }
   'git:graph': { args: [path: string, limit?: number, all?: boolean]; result: GitGraph }

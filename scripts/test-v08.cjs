@@ -240,6 +240,14 @@ function startAgentMock() {
           res.end()
           return
         }
+        // La descripción de una PR: con «Título:» delante, que hay que quitar.
+        if (sysText.includes('descripciones de pull requests')) {
+          send({ choices: [{ delta: { content: 'Título: Añade el panel de PR\n\n- Lista las PR abiertas con su CI\n- Abre la PR desde la app' } }] })
+          send({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 400, completion_tokens: 30 } })
+          res.write('data: [DONE]\n\n')
+          res.end()
+          return
+        }
         // «eco: texto»: contesta sin herramientas, con cuántos mensajes tuyos le han llegado.
         const eco = /eco: (.+)$/s.exec(lastUser)
         if (eco) {
@@ -3376,6 +3384,168 @@ app.whenReady().then(async () => {
   log(notaG7 === 'hola editado\n', 'CTRL+S GUARDA AUNQUE EL CURSOR NO ESTÉ EN EL TEXTO', JSON.stringify(notaG7))
   log(winG7 === 'uno\r\ndos\r\ntres\r\n', 'un fichero con finales de línea de Windows los conserva al guardar', JSON.stringify(winG7))
   log(g7.backToTree && g7.focusedNew && nuevoG7 === '# Nuevo\n', 'AL CREAR UN FICHERO QUEDA ABIERTO PARA ESCRIBIR Y CTRL+S LO GUARDA', `${g7.newBtn} · ${JSON.stringify(nuevoG7)}`)
+
+  /* -------------------------------------------------------------- *
+   * F2 · Pull requests y CI por gh                                 *
+   * -------------------------------------------------------------- */
+  const mockF2 = await startAgentMock()
+  const f2Dir = path.join(FIXTURES, 'gh-falso')
+  fs.mkdirSync(f2Dir, { recursive: true })
+  const ghLog = path.join(f2Dir, 'llamadas.jsonl')
+  const ghCreated = path.join(f2Dir, 'creada.json')
+  fs.writeFileSync(
+    path.join(f2Dir, 'gh.js'),
+    [
+      "const fs = require('node:fs')",
+      'const args = process.argv.slice(2)',
+      "fs.appendFileSync(process.env.FAKE_GH_LOG, JSON.stringify({ args, cwd: process.cwd() }) + String.fromCharCode(10))",
+      "const out = (o) => process.stdout.write(typeof o === 'string' ? o : JSON.stringify(o))",
+      "const cmd = args.slice(0, 2).join(' ')",
+      'const now = new Date().toISOString()',
+      "const pr7 = { number: 7, title: 'Mejora el panel', url: 'https://github.com/h/r/pull/7', state: 'OPEN', isDraft: false, headRefName: 'panel', baseRefName: 'main', author: { login: 'hugo' }, updatedAt: now, reviewDecision: 'APPROVED',",
+      "  statusCheckRollup: [{ __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' }, { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' }, { __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: '' }, { __typename: 'StatusContext', state: 'SUCCESS' }] }",
+      "if (args[0] === '--version') out('gh version 2.60.0 (falso)')",
+      "else if (args[0] === 'api') out({ login: 'hugo', name: 'Hugo', url: 'https://github.com/hugo' })",
+      "else if (args[0] === 'auth') process.stderr.write('  - Token scopes: repo')",
+      'else if (cmd === \'pr list\') out([pr7])',
+      "else if (cmd === 'pr view') {",
+      "  if (fs.existsSync(process.env.FAKE_GH_CREATED)) out({ ...pr7, number: 8, title: 'Añade el panel de PR', headRefName: 'rama-f2', reviewDecision: '', statusCheckRollup: [{ __typename: 'CheckRun', status: 'QUEUED' }] })",
+      "  else { process.stderr.write('no pull requests found for branch \"rama-f2\"'); process.exit(1) }",
+      '}',
+      "else if (cmd === 'pr checks') { out([{ name: 'test', state: 'SUCCESS', bucket: 'pass', link: 'https://x', workflow: 'CI' }, { name: 'lint', state: 'FAILURE', bucket: 'fail', link: 'https://y', workflow: 'CI' }]); process.exit(1) }",
+      "else if (cmd === 'run list') out([{ databaseId: 11, displayTitle: 'Arregla', workflowName: 'CI', status: 'completed', conclusion: 'success', headBranch: 'rama-f2', event: 'push', createdAt: now, url: 'https://github.com/h/r/actions/runs/11' }])",
+      "else if (cmd === 'pr create') {",
+      "  const i = args.indexOf('--body-file')",
+      "  fs.writeFileSync(process.env.FAKE_GH_CREATED, JSON.stringify({ args, body: fs.readFileSync(args[i + 1], 'utf8') }))",
+      "  out('https://github.com/h/r/pull/8' + String.fromCharCode(10))",
+      '}',
+      "else { process.stderr.write('orden desconocida: ' + args.join(' ')); process.exit(1) }"
+    ].join('\n')
+  )
+  if (process.platform === 'win32') {
+    fs.writeFileSync(path.join(f2Dir, 'gh.cmd'), `@node "${path.join(f2Dir, 'gh.js')}" %*\r\n`)
+  } else {
+    fs.writeFileSync(path.join(f2Dir, 'gh'), `#!/bin/sh\nexec node "${path.join(f2Dir, 'gh.js')}" "$@"\n`)
+    fs.chmodSync(path.join(f2Dir, 'gh'), 0o755)
+  }
+  const pathBeforeF2 = process.env.PATH
+  process.env.PATH = f2Dir + path.delimiter + process.env.PATH
+  process.env.FAKE_GH_LOG = ghLog
+  process.env.FAKE_GH_CREATED = ghCreated
+
+  // Un origen de verdad (un repositorio desnudo) y una rama con un commit nuevo.
+  const originF2 = path.join(TMP, 'f2-origen.git')
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', originF2])
+  const headF2 = git(['rev-parse', 'HEAD'])
+  const branchBeforeF2 = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  git(['remote', 'add', 'origin', originF2])
+  git(['push', '-q', 'origin', 'HEAD:main'])
+  git(['fetch', '-q', 'origin'])
+  git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'])
+  git(['checkout', '-q', '-b', 'rama-f2'])
+  fs.writeFileSync(path.join(REPO, 'panel-pr.js'), 'module.exports = "PR"\n')
+  git(['add', 'panel-pr.js'])
+  git(['commit', '-qm', 'Añade el panel de PR'])
+
+  const f2 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const setVal = (el, value) => {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const out = {}
+    await api.github.refresh()
+    const rep = (await api.git.pulls(repo)).data
+    out.report = rep && {
+      gh: rep.gh, github: rep.github, branch: rep.branch, base: rep.base, current: rep.current ?? null, needsPush: rep.needsPush, upstream: rep.upstream,
+      open: rep.open.map((p) => p.number + ':' + JSON.stringify(p.checks) + ':' + p.review).join(','), runs: rep.runs.map((r) => r.workflow + ':' + r.conclusion).join(',')
+    }
+    const checks = await api.git.pullChecks(repo, 7)
+    out.checks = checks.ok ? checks.data.map((c) => c.name + ':' + c.state).join(',') : checks.error
+
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.config.settings({ gitModel: { providerId: 'vllm', model: 'agente-de-prueba' } })
+    const desc = await api.git.describePull(repo, 'main', { providerId: 'vllm', model: 'agente-de-prueba' }, 'es')
+    out.desc = desc.ok ? { title: desc.data.title, body: desc.data.body } : desc.error
+    if (desc.ok) await api.runs.remove(desc.data.run.id)
+
+    // Por la interfaz: Proyectos › Git › Abrir una PR.
+    await api.projects.save({ id: 'proyecto-f2', name: 'Repo f2', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+    engine.navigate({ page: 'projects', projectId: 'proyecto-f2', tab: 'git' })
+    await until(() => document.querySelector('[data-pulls] [data-open-prs] [data-pr="7"]'))
+    out.uiOpen = Boolean(document.querySelector('[data-pulls] [data-pr="7"] [data-checks]'))
+    const openBtn = await until(() => document.querySelector('[data-pulls] [data-open-pr]'))
+    openBtn?.click()
+    const formEl = await until(() => document.querySelector('[data-pr-form]'))
+    out.needsPushNote = formEl?.querySelector('[data-needs-push]')?.textContent ?? null
+    document.querySelector('[data-ai-pr]')?.click()
+    await until(() => document.querySelector('[data-pr-title]')?.value)
+    out.uiTitle = document.querySelector('[data-pr-title]')?.value
+    setVal(document.querySelector('[data-pr-body]'), 'Cuerpo escrito a mano')
+    await sleep(100)
+    document.querySelector('[data-create-pr]')?.click()
+    out.current = await until(async () => { const r = (await api.git.pulls(repo)).data; return r?.current?.number === 8 ? r.current.number : null })
+    out.formClosed = !document.querySelector('[data-pr-form]')
+    out.uiCurrent = Boolean(await until(() => document.querySelector('[data-pulls] [data-pr="8"]')))
+
+    for (const run of (await api.runs.query({ kind: 'git' })).data.rows) await api.runs.remove(run.id)
+    await api.config.settings({ gitModel: null })
+    await api.providers.setBaseUrl('vllm', out.prevBase)
+    await api.projects.remove('proyecto-f2')
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+    return out
+  })()`)
+  let created = null
+  try {
+    created = JSON.parse(fs.readFileSync(ghCreated, 'utf8'))
+  } catch {}
+  let pushedF2 = false
+  try {
+    pushedF2 = Boolean(execFileSync('git', ['--git-dir', originF2, 'rev-parse', '--verify', 'rama-f2'], { encoding: 'utf8' }).trim())
+  } catch {}
+  const ghCalls = fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : ''
+  const f2Prompt = String(
+    (mockF2.requests ?? []).find((b) => String(b.messages?.find((m) => m.role === 'system')?.content ?? '').includes('descripciones de pull requests'))?.messages?.find((m) => m.role === 'user')?.content ?? ''
+  )
+  git(['checkout', '-q', branchBeforeF2])
+  git(['branch', '-q', '-D', 'rama-f2'])
+  git(['remote', 'remove', 'origin'])
+  git(['reset', '-q', '--hard', headF2])
+  process.env.PATH = pathBeforeF2
+  await js(`window.api.github.refresh()`)
+
+  const repF2 = f2.report ?? {}
+  log(
+    repF2.gh === 'ok' && repF2.github && repF2.branch === 'rama-f2' && repF2.base === 'main' && repF2.current === null && repF2.needsPush === true && repF2.upstream === false &&
+      repF2.open === '7:{"pass":2,"fail":1,"pending":1,"total":4}:APPROVED' && repF2.runs === 'CI:success',
+    'F2: LAS PR ABIERTAS CON SU CI, LA RAMA SIN PR Y LAS ACTIONS, TODO POR GH',
+    JSON.stringify(repF2)
+  )
+  log(f2.checks === 'test:pass,lint:fail', 'las comprobaciones de una PR salen aunque gh termine con error por las que fallan', f2.checks)
+  log(
+    f2.desc?.title === 'Añade el panel de PR' && f2.desc.body.startsWith('- Lista las PR abiertas') && f2Prompt.includes('- Añade el panel de PR') && f2Prompt.includes('panel-pr.js') && f2Prompt.includes('hacia main'),
+    'UN MODELO ESCRIBE EL TÍTULO Y LA DESCRIPCIÓN A PARTIR DE LOS COMMITS Y EL DIFF DE LA RAMA',
+    JSON.stringify(f2.desc)
+  )
+  log(
+    f2.uiOpen && (f2.needsPushNote ?? '').includes('git push -u origin HEAD') && f2.uiTitle === 'Añade el panel de PR' && f2.formClosed && f2.current === 8 && f2.uiCurrent,
+    'DESDE EL PANEL SE ABRE LA PR: AVISA DE QUE SUBE LA RAMA Y LUEGO LA ENSEÑA',
+    `${f2.needsPushNote} · ${f2.uiTitle}`
+  )
+  log(
+    pushedF2 && created?.args?.join(' ').includes('--title Añade el panel de PR') && created.args.includes('--base') && created.args.includes('main') &&
+      created.args.includes('--head') && created.args.includes('rama-f2') && created.body === 'Cuerpo escrito a mano',
+    'LA RAMA SE SUBE A ORIGIN Y GH CREA LA PR CON SU TÍTULO, SU CUERPO Y SU BASE',
+    JSON.stringify(created?.args)
+  )
+  log(!/auth token|--with-token|GH_TOKEN/.test(ghCalls), 'la app nunca pide el token a gh', ghCalls.split('\n').length - 1 + ' llamadas')
+  mockF2.close()
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

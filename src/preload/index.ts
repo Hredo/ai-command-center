@@ -183,6 +183,12 @@ const api = {
     diff: (path: string, file?: string, staged = false) => call('git:diff', path, file, staged),
     stage: (path: string, files: string[], stage: boolean) => call('git:stage', path, files, stage),
     commit: (path: string, message: string, all = false) => call('git:commit', path, message, all),
+    /** Pull requests y CI del repositorio, por gh. */
+    pulls: (path: string) => call('pulls:report', path),
+    pullChecks: (path: string, num: number) => call('pulls:checks', path, num),
+    createPull: (path: string, input: { title: string; body: string; base: string; draft?: boolean }) => call('pulls:create', path, input),
+    describePull: (path: string, base: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') =>
+      call('pulls:describe', path, base, pick, lang),
     /** Un modelo escribe el mensaje del commit a partir del diff. */
     suggestCommit: (path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') =>
       call('git:suggestCommit', path, pick, lang),

@@ -16,6 +16,7 @@ import { Badge, Button, cx, Empty, Modal, Textarea } from './ui'
 import { cost, relTime, shortModel } from '../lib/format'
 import { BranchPicker, useGit } from './AgentPanel'
 import { ModelPicker, type Pick } from './ModelPicker'
+import { PullRequests } from './PullRequests'
 import { useStore } from '../lib/store'
 import { usePrefs } from '../lib/prefs'
 import type { FileChange, ModelInfo } from '@shared/types'
@@ -451,6 +452,14 @@ export function GitPanel({
           </Button>
         </div>
       </div>
+
+      {/* --------------------------------------------- Pull requests y CI */}
+      <PullRequests
+        path={path}
+        pick={pick}
+        version={`${info.lastCommit?.hash ?? ''}:${info.ahead ?? 0}:${info.branch ?? ''}`}
+        onToast={onToast}
+      />
 
       {/* --------------------------------------------- Comando libre */}
       <div className="border border-line rounded-lg bg-panel p-3 space-y-2">

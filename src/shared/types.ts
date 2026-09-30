@@ -319,6 +319,66 @@ export interface BatteryCase {
   checks: BatteryCheck[]
 }
 
+/* ------------------------------------------------------------------ *
+ * Pull requests y CI (por gh)                                        *
+ * ------------------------------------------------------------------ */
+
+export interface PullSummary {
+  number: number
+  title: string
+  url: string
+  state: 'OPEN' | 'CLOSED' | 'MERGED'
+  draft: boolean
+  head: string
+  base: string
+  author?: string
+  updatedAt?: number
+  /** APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED… */
+  review?: string
+  /** Cómo va su CI: cuántas comprobaciones pasan, fallan o siguen en marcha. */
+  checks: { pass: number; fail: number; pending: number; total: number }
+}
+
+export interface PullCheck {
+  name: string
+  state: 'pass' | 'fail' | 'pending' | 'skipped' | 'cancel'
+  url?: string
+  workflow?: string
+}
+
+export interface WorkflowRun {
+  id: number
+  title: string
+  workflow: string
+  /** queued, in_progress, completed… */
+  status: string
+  /** success, failure, cancelled… al terminar. */
+  conclusion?: string
+  branch?: string
+  event?: string
+  createdAt: number
+  url: string
+}
+
+export interface PullsReport {
+  /** `missing`: gh no está; `noauth`: sin sesión; `ok`: se puede hablar con GitHub. */
+  gh: 'missing' | 'noauth' | 'ok'
+  /** El repositorio tiene un remoto de GitHub. */
+  github: boolean
+  branch?: string
+  /** La rama principal, hacia la que se abren las PR por omisión. */
+  base?: string
+  /** La PR de la rama en la que estás, si la hay. */
+  current?: PullSummary | null
+  open: PullSummary[]
+  /** Últimas ejecuciones de Actions de esta rama. */
+  runs: WorkflowRun[]
+  /** La rama no está subida o tiene commits sin subir. */
+  needsPush?: boolean
+  upstream?: boolean
+  error?: string
+}
+
 /** Búsqueda de texto completo en conversaciones e histórico. */
 export interface SearchQuery {
   text: string
