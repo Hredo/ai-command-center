@@ -51,6 +51,7 @@ const es: Dict = {
   'nav.chat': 'Consola',
   'nav.arena': 'Arena',
   'nav.terminal': 'Terminal',
+  'nav.tasks': 'Tareas',
   'nav.projects': 'Proyectos',
   'nav.agents': 'Agentes',
   'nav.models': 'Modelos',

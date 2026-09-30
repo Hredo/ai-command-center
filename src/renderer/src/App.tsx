@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from
 import {
   LayoutDashboard, MessageSquare, Swords, FolderGit2, Bot, Boxes, History, Settings2,
   Radar, CheckCircle2, XCircle, Info, X, TerminalSquare, Activity, Home, PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen, SquareKanban
 } from 'lucide-react'
 import { StoreProvider, useStore } from './lib/store'
 import { PrefsProvider, usePrefs, usePaneSize } from './lib/prefs'
 import { I18nProvider, useT } from './lib/i18n'
 import { PageActiveProvider, useDocumentVisible } from './lib/pageActive'
-import { EngineProvider, useBusyCount, useInFlight, useRunsVersion } from './lib/engine'
+import { EngineProvider, useBusyCount, useInFlight, useRunsVersion, useAttentionCount } from './lib/engine'
 import { cx } from './components/ui'
 import { Pane } from './components/Resizable'
 import { cost } from './lib/format'
@@ -32,6 +32,7 @@ import Dashboard from './pages/Dashboard'
 const Chat = lazy(() => import('./pages/Chat'))
 const Arena = lazy(() => import('./pages/Arena'))
 const Terminals = lazy(() => import('./pages/Terminals'))
+const Tasks = lazy(() => import('./pages/Tasks'))
 const Projects = lazy(() => import('./pages/Projects'))
 const Agents = lazy(() => import('./pages/Agents'))
 const Models = lazy(() => import('./pages/Models'))
@@ -55,6 +56,7 @@ const NAV: { id: PageId; icon: React.ElementType; group: number }[] = [
   { id: 'chat', icon: MessageSquare, group: 0 },
   { id: 'arena', icon: Swords, group: 0 },
   { id: 'terminal', icon: TerminalSquare, group: 0 },
+  { id: 'tasks', icon: SquareKanban, group: 0 },
   { id: 'projects', icon: FolderGit2, group: 1 },
   { id: 'agents', icon: Bot, group: 1 },
   { id: 'models', icon: Boxes, group: 1 },
@@ -163,13 +165,16 @@ function TitleBar(): React.JSX.Element {
 function Sidebar({ page, onNav }: { page: PageId; onNav: (p: PageId) => void }): React.JSX.Element {
   const t = useT()
   const busy = useBusyCount()
+  // Tareas no cuenta lo que corre (eso ya lo dicen las demás): cuenta lo que espera algo de ti.
+  const attention = useAttentionCount()
   const { size, set, reset } = usePaneSize('nav.width')
   const icons = size < ICONS_ONLY
 
   const badge: Partial<Record<PageId, number>> = {
     chat: busy.chats,
     arena: busy.arena,
-    terminal: busy.terms
+    terminal: busy.terms,
+    tasks: attention
   }
 
   return (
@@ -198,10 +203,11 @@ function Sidebar({ page, onNav }: { page: PageId; onNav: (p: PageId) => void }):
               {count > 0 ? (
                 <span
                   className={cx(
-                    'min-w-[16px] h-[16px] px-1 rounded-full bg-ok/15 border border-ok/40 text-ok num text-[10px] flex items-center justify-center',
+                    'min-w-[16px] h-[16px] px-1 rounded-full num text-[10px] flex items-center justify-center border',
+                    item.id === 'tasks' ? 'bg-warn/15 border-warn/40 text-warn' : 'bg-ok/15 border-ok/40 text-ok',
                     icons ? 'absolute top-0.5 right-1' : 'ml-auto'
                   )}
-                  title={t('nav.busyHere')}
+                  title={item.id === 'tasks' ? t('Tareas que necesitan tu respuesta') : t('nav.busyHere')}
                 >
                   {count}
                 </span>
@@ -345,6 +351,7 @@ function Shell(): React.JSX.Element {
       { id: 'chat' as PageId, node: <Chat /> },
       { id: 'arena' as PageId, node: <Arena /> },
       { id: 'terminal' as PageId, node: <Terminals /> },
+      { id: 'tasks' as PageId, node: <Tasks /> },
       { id: 'projects' as PageId, node: <Projects onNav={(p) => nav(p as PageId)} /> },
       { id: 'agents' as PageId, node: <Agents /> },
       { id: 'models' as PageId, node: <Models /> },

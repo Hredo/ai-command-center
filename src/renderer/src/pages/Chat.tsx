@@ -30,7 +30,7 @@ import { useStore } from '../lib/store'
 import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
-  unarchiveSession, deleteSession, sendChat, sendCli, stopSession, loadSessions, approveStep,
+  unarchiveSession, deleteSession, sendTurn, stopSession, loadSessions, approveStep,
   useChatFocus, useQuotas, markTurnUndone, type Turn
 } from '../lib/engine'
 import { UndoTurn } from '../components/UndoTurn'
@@ -502,81 +502,25 @@ export default function Chat(): React.JSX.Element {
   // diff): lo que tengas a medias en la caja y sus adjuntos se quedan.
   const send = useCallback(async (override?: string) => {
     const text = override ?? input
-    if (!text.trim() || !session || running) return
-    const prompt = text.trim()
+    if (!text.trim() || !session || running || !config) return
     const files = override === undefined && attachments.length ? attachments : undefined
-    const clear = (): void => {
-      if (override !== undefined) return
-      setInput('')
-      setAttachments([])
-    }
-
-    if (isCli) {
-      if (!session.cliAgentId) {
-        toast('error', t('Elige un agente de línea de comandos en el panel de la derecha'))
-        return
-      }
-      if (!project) {
-        toast('error', t('Un agente de línea de comandos necesita un proyecto donde trabajar'))
-        return
-      }
-      clear()
-      stick.current = true
-      const run = await sendCli(session.id, {
-        prompt,
-        agentId: session.cliAgentId,
-        agentName: cliAgent?.name,
-        model: session.cliModel,
-        permissionMode: session.permissionMode,
-        projectPath: session.worktreePath ?? project.path,
-        projectId: project.id,
-        projectName: project.name,
-        effort,
-        attachments: files
-      })
-      if (run?.status === 'error') toast('error', run.error ?? t('El agente falló'))
-      // Un agente puede haber cambiado de rama o dejado el árbol sucio.
-      reloadGit()
-      return
-    }
-
-    if (!pick) {
-      toast('error', t('Elige un modelo primero'))
-      return
-    }
-
-    // El contexto del proyecto se adjunta al prompt de sistema.
-    let sys = session.systemPrompt ?? ''
-    if (project && session.includeContext) {
-      const ctx = await window.api.projects.context(project.path, { tree: true, readme: true })
-      if (ctx.ok && ctx.data) {
-        sys = [sys, `Trabajas sobre este proyecto del usuario:\n\n${ctx.data}`].filter(Boolean).join('\n\n')
-      }
-      if (project.systemPrompt) sys = [project.systemPrompt, sys].filter(Boolean).join('\n\n')
-    }
-
-    clear()
-    stick.current = true
-    const run = await sendChat(session.id, {
-      prompt,
-      providerId: pick.providerId,
-      model: pick.model,
-      systemPrompt: sys || undefined,
-      temperature: session.temperature,
-      maxTokens: session.maxTokens,
-      agentId: apiAgent?.id,
-      agentName: apiAgent?.name,
-      projectId: project?.id,
-      projectName: project?.name,
-      projectPath: project ? (session.worktreePath ?? project.path) : undefined,
-      effort,
+    const r = await sendTurn(session.id, text.trim(), config, {
       attachments: files,
-      agentMode: agentOn,
-      permissionMode: agentOn ? (session.permissionMode ?? 'acceptEdits') : undefined
+      onStart: () => {
+        stick.current = true
+        if (override !== undefined) return
+        setInput('')
+        setAttachments([])
+      }
     })
-    if (run?.status === 'error') toast('error', run.error ?? 'Error desconocido')
+    if (r.error) {
+      toast('error', t(r.error))
+      return
+    }
+    if (r.run?.status === 'error') toast('error', r.run.error ?? (isCli ? t('El agente falló') : 'Error desconocido'))
+    // Un agente puede haber cambiado de rama o dejado el árbol sucio.
     if (project) reloadGit()
-  }, [input, session, running, isCli, pick, project, apiAgent, cliAgent, toast, effort, attachments, reloadGit, agentOn])
+  }, [input, session, running, isCli, project, config, toast, attachments, reloadGit, t])
 
   // Un agente de API fija modelo, prompt de sistema y parámetros de golpe.
   const applyAgent = (agentId: string): void => {

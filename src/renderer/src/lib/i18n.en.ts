@@ -34,6 +34,7 @@ const base: Record<string, string> = {
   'nav.chat': 'Console',
   'nav.arena': 'Arena',
   'nav.terminal': 'Terminal',
+  'nav.tasks': 'Tasks',
   'nav.projects': 'Projects',
   'nav.agents': 'Agents',
   'nav.models': 'Models',

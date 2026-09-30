@@ -17,6 +17,7 @@ interface Draft {
   comments: ReviewComment[]
   general: string
 }
+/** Borradores por diff: el de un turno y el de la tarea entera (hasta ahora) no se mezclan. */
 const drafts = new Map<string, Draft>()
 
 /** Cuántas líneas de un fichero se enseñan antes de pedir «ver todo». */
@@ -52,7 +53,8 @@ export function DiffReview({
   const [files, setFiles] = useState<DiffFile[] | null>(null)
   const [meta, setMeta] = useState<{ until: 'next' | 'now'; truncated: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [draft, setDraft] = useState<Draft>(() => drafts.get(runId) ?? { comments: [], general: '' })
+  const draftKey = `${runId}:${untilRunId ?? 'now'}`
+  const [draft, setDraft] = useState<Draft>(() => drafts.get(draftKey) ?? { comments: [], general: '' })
   const [editing, setEditing] = useState<{ key: string; file: string; line: DiffLine; id?: string; text: string } | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [full, setFull] = useState<Set<string>>(new Set())
@@ -72,13 +74,13 @@ export function DiffReview({
   useEffect(() => {
     if (!open) return
     setFiles(null)
-    setDraft(drafts.get(runId) ?? { comments: [], general: '' })
+    setDraft(drafts.get(draftKey) ?? { comments: [], general: '' })
     void load()
-  }, [open, runId, load])
+  }, [open, draftKey, load])
 
   const save = (next: Draft): void => {
     setDraft(next)
-    drafts.set(runId, next)
+    drafts.set(draftKey, next)
   }
 
   const byKey = useMemo(() => {
@@ -132,7 +134,7 @@ export function DiffReview({
       deleted: (n) => t('línea {n} que borraste', { n }),
       general: t('Además:')
     })
-    drafts.delete(runId)
+    drafts.delete(draftKey)
     setDraft({ comments: [], general: '' })
     onSend?.(prompt)
   }

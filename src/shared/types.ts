@@ -1096,6 +1096,11 @@ export interface StoredSession {
   cliForkNext?: boolean
   /** Trabaja en un worktree aparte (su carpeta) en vez de en la del proyecto. */
   worktreePath?: string
+  /**
+   * La diste por hecha en el tablero de Tareas, con cuántos turnos tenía: si
+   * le vuelves a escribir, vuelve a su columna.
+   */
+  taskDone?: { at: number; turns: number }
   turns: SessionTurn[]
   pinned?: boolean
   /** Cerrada: sigue guardada y se puede reabrir. */

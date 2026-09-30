@@ -18,10 +18,11 @@ import React, { useEffect, useSyncExternalStore } from 'react'
 import type {
   RunRecord, StoredSession, SessionTurn, TurnMetrics, TermInfo, TermEvent,
   ChatMessage, SessionKind, UsageLimit, FileChange, FileTouch, Attachment, Effort,
-  AgentStep, CliLimit, QuotaReport, WorktreeSetup
+  AgentStep, CliLimit, QuotaReport, WorktreeSetup, AppConfig
 } from '@shared/types'
 import { useStore } from './store'
 import { navigate } from './nav'
+import { attentionCount } from './tasks'
 
 /* ------------------------------------------------------------------ *
  * Almacén mínimo                                                     *
@@ -1326,6 +1327,106 @@ export async function sendCli(
   return run
 }
 
+/**
+ * Manda un turno a una conversación con los ajustes que ya tiene: su agente
+ * de línea de comandos, o su modelo con el contexto del proyecto y, si toca,
+ * como agente. Es lo que hace la Consola al pulsar enviar, y lo usa también el
+ * tablero de Tareas para contestar sin abrirla.
+ *
+ * Si falta algo para poder mandarlo, devuelve el motivo (clave de i18n) sin
+ * tocar nada; `onStart` se llama justo antes de lanzar, cuando ya no hay vuelta.
+ */
+export async function sendTurn(
+  sessionId: string,
+  prompt: string,
+  config: AppConfig,
+  opts: { attachments?: Attachment[]; onStart?: () => void } = {}
+): Promise<{ run?: RunRecord; error?: string }> {
+  if (!chats.get()[sessionId]) await openSession(sessionId)
+  const state = chats.get()[sessionId]
+  if (!state) return { error: 'La conversación ya no existe' }
+  if (state.runningRunId) return { error: 'Ya está trabajando: espera a que acabe o detenlo' }
+  const session = state.session
+  const project = config.projects.find((p) => p.id === session.projectId)
+  const effort: Effort = session.effort ?? 'auto'
+
+  if (session.kind === 'cli') {
+    if (!session.cliAgentId) return { error: 'Elige un agente de línea de comandos en el panel de la derecha' }
+    if (!project) return { error: 'Un agente de línea de comandos necesita un proyecto donde trabajar' }
+    const cliAgent = config.cliAgents.find((a) => a.id === session.cliAgentId)
+    opts.onStart?.()
+    const run = await sendCli(sessionId, {
+      prompt,
+      agentId: session.cliAgentId,
+      agentName: cliAgent?.name,
+      model: session.cliModel,
+      permissionMode: session.permissionMode,
+      projectPath: session.worktreePath ?? project.path,
+      projectId: project.id,
+      projectName: project.name,
+      effort,
+      attachments: opts.attachments
+    })
+    return { run }
+  }
+
+  if (!session.providerId || !session.model) return { error: 'Elige un modelo primero' }
+  const apiAgent = config.agents.find((a) => a.id === session.agentId)
+  // Un agente trabaja siempre como agente; un modelo suelto, si hay proyecto y no lo apagaste.
+  const agentOn = Boolean(apiAgent) || (Boolean(project) && session.agentMode !== false)
+
+  // El contexto del proyecto se adjunta al prompt de sistema.
+  let sys = session.systemPrompt ?? ''
+  if (project && session.includeContext) {
+    const ctx = await window.api.projects.context(project.path, { tree: true, readme: true })
+    if (ctx.ok && ctx.data) {
+      sys = [sys, `Trabajas sobre este proyecto del usuario:\n\n${ctx.data}`].filter(Boolean).join('\n\n')
+    }
+    if (project.systemPrompt) sys = [project.systemPrompt, sys].filter(Boolean).join('\n\n')
+  }
+
+  opts.onStart?.()
+  const run = await sendChat(sessionId, {
+    prompt,
+    providerId: session.providerId,
+    model: session.model,
+    systemPrompt: sys || undefined,
+    temperature: session.temperature,
+    maxTokens: session.maxTokens,
+    agentId: apiAgent?.id,
+    agentName: apiAgent?.name,
+    projectId: project?.id,
+    projectName: project?.name,
+    projectPath: project ? (session.worktreePath ?? project.path) : undefined,
+    effort,
+    attachments: opts.attachments,
+    agentMode: agentOn,
+    permissionMode: agentOn ? (session.permissionMode ?? 'acceptEdits') : undefined
+  })
+  return { run }
+}
+
+/**
+ * Da una tarea por hecha (o la reabre). Se guarda con cuántos turnos tenía:
+ * si le vuelves a escribir, sale de «Hecho» sola.
+ */
+export async function setTaskDone(id: string, done: boolean): Promise<void> {
+  const live = chats.get()[id]
+  const stored = sessions.get().find((s) => s.id === id)
+  const turns = live?.turns.length ?? stored?.turns?.length ?? 0
+  const patch: Partial<StoredSession> = { taskDone: done ? { at: Date.now(), turns } : undefined }
+  if (live) {
+    patchSessionConfig(id, patch)
+    return
+  }
+  sessions.update((list) => list.map((s) => (s.id === id ? { ...s, ...patch } : s)))
+  const r = await window.api.sessions.patch(id, patch)
+  if (r.ok && r.data) {
+    const row = r.data as StoredSession
+    sessions.update((list) => list.map((s) => (s.id === id ? row : s)))
+  }
+}
+
 export function stopSession(sessionId: string): void {
   const st = chats.get()[sessionId]
   if (!st?.runningRunId) return
@@ -1586,7 +1687,7 @@ export function useTick(): number {
 if (typeof window !== 'undefined') {
   ;(window as unknown as Record<string, unknown>).__accEngine = {
     newSession, openSession, archiveSession, unarchiveSession, deleteSession,
-    patchSessionConfig, renameSession, sendChat, sendCli, stopSession, approveStep,
+    patchSessionConfig, renameSession, sendChat, sendCli, sendTurn, setTaskDone, stopSession, approveStep,
     flushPersist, loadSessions, saveSessionNow, focusChat,
     openTerm, sendTermCommand, writeTerm, closeTerm, interruptTerm, clearTerm,
     resizeTerm, termScrollback, onTermData,
@@ -1666,6 +1767,20 @@ export async function refreshQuotas(): Promise<void> {
 
 export function useRunsVersion(): number {
   return useSlice(runsVersion)
+}
+
+const subscribeTasks = (fn: Listener): (() => void) => {
+  const off = [chats.subscribe(fn), sessions.subscribe(fn), arena.subscribe(fn)]
+  return () => off.forEach((o) => o())
+}
+const attentionNow = (): number => attentionCount(sessions.get(), chats.get(), arena.get())
+
+/**
+ * Cuántas tareas esperan algo de ti. Devuelve un número, así que sólo repinta
+ * cuando cambia la cuenta, no con cada trozo de texto que llega.
+ */
+export function useAttentionCount(): number {
+  return useSyncExternalStore(subscribeTasks, attentionNow, attentionNow)
 }
 
 /** Cuántas cosas hay corriendo ahora mismo, para el indicador global. */

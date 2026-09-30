@@ -171,6 +171,35 @@ process.stdin.on('end', () => {
 `
 
 /**
+ * Un agente para el tablero de Tareas que hace una cosa según lo que le pidan:
+ * tardar un poco y crear un fichero, preguntar a mitad, seguir cuando le dicen
+ * que sí o fallar. La conversación anterior le llega dentro del prompt, así
+ * que la respuesta se mira antes que la pregunta.
+ */
+const TASK_FIXTURE = `
+const fs = require('node:fs')
+let prompt = ''
+process.stdin.on('data', (c) => (prompt += c))
+process.stdin.on('end', () => {
+  if (prompt.includes('sí, sigue')) {
+    fs.appendFileSync('medio.txt', 'entero\\n')
+    process.stdout.write('Listo.')
+  } else if (prompt.includes('falla')) {
+    process.stderr.write('se rompió algo')
+    process.exit(3)
+  } else if (prompt.includes('pregunta')) {
+    fs.writeFileSync('medio.txt', 'a medias\\n')
+    process.stdout.write('He hecho la mitad.\\n\\n**¿Sigo con la otra parte?**')
+  } else {
+    setTimeout(() => {
+      fs.writeFileSync('tarea.txt', 'hecho por la tarea\\n')
+      process.stdout.write('Hecho: tarea.txt creado.')
+    }, 2500)
+  }
+})
+`
+
+/**
  * Un proveedor compatible con OpenAI que hace de agente: la primera vez pide
  * escribir app.js con write_file y, cuando le llega el resultado, termina.
  */
@@ -217,6 +246,7 @@ function setupFixtures() {
   fs.writeFileSync(path.join(FIXTURES, 'plain.js'), PLAIN_FIXTURE, 'utf8')
   fs.writeFileSync(path.join(FIXTURES, 'editor.js'), EDITOR_FIXTURE, 'utf8')
   fs.writeFileSync(path.join(FIXTURES, 'review.js'), REVIEW_FIXTURE, 'utf8')
+  fs.writeFileSync(path.join(FIXTURES, 'task.js'), TASK_FIXTURE, 'utf8')
   BINS.claude = makeBin('claude', 'claude.js')
   BINS.codex = makeBin('codex', 'codex.js')
   BINS.gemini = makeBin('gemini', 'gemini.js')
@@ -224,6 +254,7 @@ function setupFixtures() {
   BINS.plain = makeBin('otro-cli', 'plain.js')
   BINS.editor = makeBin('editor-cli', 'editor.js')
   BINS.review = makeBin('revisor-cli', 'review.js')
+  BINS.task = makeBin('tarea-cli', 'task.js')
 }
 
 /* ------------------------------------------------------------------ *
@@ -1222,6 +1253,180 @@ app.whenReady().then(async () => {
     window.__accEngine.setArena({ project: undefined, testCommand: '', contenders: [] })
   })()`)
   mock.close()
+  git(['reset', '-q', '--hard', headB2])
+  git(['clean', '-qfd'])
+
+  /* -------------------------------------------------------------- *
+   * B3 · Tablero de Tareas                                          *
+   * -------------------------------------------------------------- */
+  const mockB3 = await startAgentMock()
+  const b3 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${bins}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    const modal = () => document.querySelector('div.fixed.inset-0')
+    const setValue = (el, value) => {
+      const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value)
+      el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }))
+    }
+    const cardIn = (col, id) => document.querySelector('[data-column="' + col + '"] [data-task="' + id + '"]')
+    const out = {}
+
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.projects.save({ id: 'proyecto-tareas', name: 'Repo tareas', path: repo, color: '#fff', createdAt: Date.now() })
+    await api.projects.save({ id: 'proyecto-otro', name: 'Otro', path: repo + '-otro', color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'tarea', name: 'Tarea', type: 'cli', command: bins.task, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    // Una charla sin proyecto no es una tarea.
+    await api.sessions.save({ id: 'charla-suelta', kind: 'chat', title: 'charla suelta', createdAt: Date.now(), updatedAt: Date.now(),
+      turns: [{ id: 'u', role: 'user', content: 'hola' }, { id: 'a', role: 'assistant', content: '¿Qué tal?' }] })
+    await engine.loadSessions()
+    const cfg = async () => (await api.config.get()).data
+    // La app relee la configuración al guardar un proyecto o un agente.
+    await sleep(600)
+
+    btn('Tareas')?.click()
+    await until(() => btn('Nueva tarea'))
+
+    // Nueva tarea por la interfaz, en su worktree.
+    btn('Nueva tarea').click()
+    const m = await until(() => (modal()?.querySelector('textarea') ? modal() : null))
+    if (!m) return { error: 'no se abre «Nueva tarea»' }
+    const [selProject, selAgent] = m.querySelectorAll('select')
+    setValue(selProject, 'proyecto-tareas')
+    await sleep(50)
+    setValue(selAgent, 'cli:tarea')
+    await sleep(50)
+    out.worktreeOnByDefault = m.textContent.includes('Una carpeta y una rama propias')
+    setValue(m.querySelector('textarea'), 'crea tarea.txt')
+    await sleep(50)
+    btn('Lanzar', m).click()
+    const s1 = await until(() => engine.peekSessions().find((s) => s.title === 'crea tarea.txt' && s.worktreePath))
+    if (!s1) return { error: 'la tarea no se crea con worktree' }
+    out.s1 = s1.id
+    out.wt = s1.worktreePath
+    out.runningCol = Boolean(await until(() => cardIn('running', s1.id), 5000))
+    out.runningBadge = Boolean(cardIn('running', s1.id)?.textContent.includes('worktree'))
+    out.reviewCol = Boolean(await until(() => cardIn('review', s1.id), 15000))
+    await sleep(300)
+    out.reviewText = cardIn('review', s1.id)?.textContent ?? ''
+
+    // Revisar: el diff entero de la tarea.
+    btn('Revisar', cardIn('review', s1.id))?.click()
+    out.diffShows = Boolean(await until(() => modal()?.textContent.includes('tarea.txt') && modal().textContent.includes('Todo lo que ha cambiado la tarea')))
+    btn('Cerrar', modal())?.click()
+    await sleep(200)
+
+    // Hecha y, si le vuelves a escribir, sale de Hecho sola.
+    btn('Hecha', cardIn('review', s1.id))?.click()
+    out.doneCol = Boolean(await until(() => cardIn('done', s1.id)))
+    out.doneSaved = Boolean(await until(async () => (await api.sessions.get(s1.id)).data?.taskDone?.turns === 2))
+    const again = engine.sendTurn(s1.id, 'otra vuelta', await cfg())
+    out.reopenRunning = Boolean(await until(() => cardIn('running', s1.id), 5000))
+    await again
+    out.reopenReview = Boolean(await until(() => cardIn('review', s1.id), 8000))
+
+    // Pregunta: necesita tu respuesta, y se contesta desde la tarjeta.
+    const s2 = await engine.newSession('cli', { cliAgentId: 'tarea', projectId: 'proyecto-tareas' })
+    await engine.sendTurn(s2, 'haz la mitad y pregunta', await cfg())
+    const q = await until(() => cardIn('attention', s2))
+    out.questionReason = Boolean(q?.textContent.includes('Te ha preguntado algo'))
+    // Falla: también necesita tu respuesta.
+    const s3 = await engine.newSession('cli', { cliAgentId: 'tarea', projectId: 'proyecto-tareas' })
+    await engine.sendTurn(s3, 'esto falla', await cfg())
+    const f = await until(() => cardIn('attention', s3))
+    out.failReason = f?.textContent ?? ''
+    await sleep(200)
+    out.attn = document.querySelectorAll('[data-column="attention"] [data-task]').length
+    const navBtn = [...document.querySelectorAll('button')].find((x) => x.textContent.trim().startsWith('Tareas') && x.closest('.border-r'))
+    out.badge = navBtn?.textContent.trim().replace('Tareas', '')
+
+    btn('Responder', cardIn('attention', s2))?.click()
+    const ta = await until(() => cardIn('attention', s2)?.querySelector('textarea'))
+    if (ta) {
+      setValue(ta, 'sí, sigue')
+      await sleep(50)
+      btn('Enviar', cardIn('attention', s2))?.click()
+    }
+    await until(() => { const c = engine.peekChat(s2); return c && c.turns.length >= 4 && !c.runningRunId }, 10000)
+    out.replyPrompt = engine.peekChat(s2)?.turns[2]?.content
+    out.replyReview = Boolean(await until(() => cardIn('review', s2)))
+
+    // Un agente por API que pide permiso: se da desde la tarjeta.
+    const s4 = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba', projectId: 'proyecto-tareas', agentMode: true, permissionMode: 'manual', includeContext: false })
+    const apiRun = engine.sendTurn(s4, 'pon DOS en app.js', await cfg())
+    const pend = await until(() => (cardIn('attention', s4)?.textContent.includes('Espera tu permiso') ? cardIn('attention', s4) : null))
+    out.pendingShown = Boolean(pend) && pend.textContent.includes('app.js')
+    if (pend) btn('Permitir', pend)?.click()
+    const apiRes = await Promise.race([apiRun, sleep(15000).then(() => ({ error: 'no acabó' }))])
+    out.apiStatus = apiRes.run?.status ?? apiRes.error
+    out.apiReview = Boolean(await until(() => cardIn('review', s4)))
+
+    // La Arena de código sale como una tarjeta más mientras quede ganador por elegir.
+    engine.setArena({ prompt: 'compite', arenaId: 'arena-falsa', running: false, project: { id: 'proyecto-tareas', name: 'Repo tareas', path: repo },
+      contenders: [{ ...engine.emptyContender('cli'), cliAgentId: 'tarea', runId: 'r-falso', worktreePath: repo + '.worktrees/falso' }] })
+    out.arenaCard = (await until(() => cardIn('review', 'arena')))?.textContent ?? ''
+    engine.setArena({ project: undefined, arenaId: undefined, prompt: '', contenders: [] })
+    await sleep(150)
+    out.arenaGone = !document.querySelector('[data-task="arena"]')
+
+    out.chatHidden = !document.querySelector('[data-task="charla-suelta"]')
+    // Filtrar por otro proyecto deja fuera las de este.
+    const filter = document.querySelector('select[aria-label="Proyecto"]')
+    setValue(filter, 'proyecto-otro')
+    await sleep(150)
+    out.filtered = !document.querySelector('[data-task="' + s1.id + '"]') && !document.querySelector('[data-task="' + s2 + '"]')
+    setValue(filter, '')
+
+    out.ids = [s1.id, s2, s3, s4]
+    return out
+  })()`)
+  log(!b3.error && b3.worktreeOnByDefault && b3.wt?.includes('repo.worktrees'), 'NUEVA TAREA DESDE EL TABLERO, EN SU PROPIO WORKTREE', b3.error ?? b3.wt)
+  log(b3.runningCol && b3.runningBadge, 'mientras trabaja está en «En marcha», con su worktree')
+  log(
+    b3.reviewCol && (b3.reviewText ?? '').includes('+1') && (b3.reviewText ?? '').includes('1 fichero') && /acc\//.test(b3.reviewText ?? ''),
+    'AL ACABAR PASA A «PARA REVISAR» CON SU RAMA Y SUS LÍNEAS',
+    (b3.reviewText ?? '').slice(0, 140)
+  )
+  log(
+    Boolean(b3.wt) && fs.existsSync(path.join(b3.wt, 'tarea.txt')) && !fs.existsSync(path.join(REPO, 'tarea.txt')),
+    'el agente de la tarea trabaja en el worktree, no en tu carpeta'
+  )
+  log(b3.diffShows, 'REVISAR ENSEÑA TODO LO QUE HA CAMBIADO LA TAREA')
+  log(b3.doneCol && b3.doneSaved, 'DARLA POR HECHA LA LLEVA A «HECHO» Y SE GUARDA')
+  log(b3.reopenRunning && b3.reopenReview, 'si le vuelves a escribir, sale de «Hecho» sola')
+  log(b3.questionReason, 'UNA TAREA QUE ACABA PREGUNTANDO NECESITA TU RESPUESTA')
+  log((b3.failReason ?? '').includes('Falló'), 'una que falla, también', (b3.failReason ?? '').slice(0, 100))
+  log(Number(b3.badge) === b3.attn && b3.attn >= 2, 'el menú cuenta las que necesitan tu respuesta', `insignia ${b3.badge}, columna ${b3.attn}`)
+  log(
+    b3.replyPrompt === 'sí, sigue' && b3.replyReview && fs.existsSync(path.join(REPO, 'medio.txt')) && fs.readFileSync(path.join(REPO, 'medio.txt'), 'utf8').includes('entero'),
+    'SE LE CONTESTA DESDE LA TARJETA Y SIGUE',
+    JSON.stringify(b3.replyPrompt)
+  )
+  log(
+    b3.pendingShown && b3.apiStatus === 'ok' && b3.apiReview && fs.readFileSync(path.join(REPO, 'app.js'), 'utf8') === 'uno\nDOS\ntres\n',
+    'EL PERMISO QUE PIDE UN AGENTE POR API SE DA DESDE LA TARJETA',
+    String(b3.apiStatus)
+  )
+  log((b3.arenaCard ?? '').includes('Elige el ganador') && b3.arenaGone, 'la Arena de código sale mientras quede ganador por elegir')
+  log(b3.chatHidden && b3.filtered, 'las charlas sueltas no salen y el filtro de proyecto funciona')
+  await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    await api.providers.setBaseUrl('vllm', ${JSON.stringify(b3.prevBase ?? '')})
+    if (${JSON.stringify(b3.wt ?? '')}) await api.worktrees.remove(${JSON.stringify(b3.wt ?? '')}, { force: true, deleteBranch: true })
+    for (const id of ${JSON.stringify(b3.ids ?? [])}) await engine.deleteSession(id)
+    await engine.deleteSession('charla-suelta')
+    await api.agents.removeCli('tarea')
+    await api.projects.remove('proyecto-tareas')
+    await api.projects.remove('proyecto-otro')
+  })()`)
+  mockB3.close()
   git(['reset', '-q', '--hard', headB2])
   git(['clean', '-qfd'])
 

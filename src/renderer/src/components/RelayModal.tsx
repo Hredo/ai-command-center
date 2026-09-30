@@ -361,18 +361,5 @@ export function relaySourceOf(run: {
   return null
 }
 
-/**
- * ¿El turno acabó porque se agotó un cupo o un límite? Es cuando más sentido
- * tiene ofrecer el relevo sin que haya que ir a buscarlo.
- */
-export function endedByLimit(turn: {
-  error?: string
-  metrics?: { cliLimit?: { status: string }; status?: string }
-  content?: string
-}): boolean {
-  if (turn.metrics?.cliLimit?.status === 'rejected') return true
-  const text = `${turn.error ?? ''} ${turn.metrics?.status === 'error' ? turn.content ?? '' : ''}`
-  return /usage limit|session limit|rate.?limit|quota|429|credit balance|insufficient|límite|cupo|saldo|exceeded|too many requests/i.test(
-    text
-  )
-}
+/** ¿El turno acabó por un cupo o un límite? Vive con el tablero de Tareas, que también lo usa. */
+export { endedByLimit } from '../lib/tasks'
