@@ -23,6 +23,7 @@ import type {
 import { useStore } from './store'
 import { navigate } from './nav'
 import { attentionCount } from './tasks'
+import { resumeCaps } from '@shared/cliCaps'
 
 /* ------------------------------------------------------------------ *
  * Almacén mínimo                                                     *
@@ -1023,7 +1024,7 @@ export function patchSessionConfig(id: string, patch: Partial<StoredSession>): v
 }
 
 export async function renameSession(id: string, title: string): Promise<void> {
-  patchSessionConfig(id, { title })
+  patchSessionConfig(id, { title, titled: true })
 }
 
 /** Cerrar: se archiva y se descarga de memoria, pero no se pierde. */
@@ -1166,7 +1167,8 @@ export async function sendChat(
     .filter((t) => !t.error && t.content)
     .map((t) => ({ role: t.role, content: t.content }))
 
-  const first = state.turns.length === 0
+  // El primer prompt pone el título, salvo que ya tenga uno puesto a mano.
+  const first = state.turns.length === 0 && !state.session.titled
   chats.update((all) => {
     const st = all[sessionId]
     if (!st) return all
@@ -1257,12 +1259,16 @@ export async function sendCli(
   if (!state || state.runningRunId) return undefined
 
   const runId = uid()
-  const first = state.turns.length === 0
+  // El primer prompt pone el título, salvo que ya tenga uno puesto a mano.
+  const first = state.turns.length === 0 && !state.session.titled
   // Seguir en la sesión del propio agente: la de otro agente no vale, y si
   // has pedido empezar de cero (o bifurcar) se respeta.
   const sess = state.session
+  // Tras editar o regenerar un mensaje, lo que guarda el agente lleva lo
+  // descartado: se empieza una sesión nueva con la conversación en el prompt.
+  const rewound = Boolean(sess.cliRewound)
   const resumeSessionId =
-    sess.cliContinue !== false && sess.cliSessionAgentId === opts.agentId ? sess.cliSessionId : undefined
+    !rewound && sess.cliContinue !== false && sess.cliSessionAgentId === opts.agentId ? sess.cliSessionId : undefined
   const fork = Boolean(resumeSessionId && sess.cliForkNext)
   // Por si el CLI no sabe retomar: la conversación hasta ahora.
   const history =
@@ -1315,7 +1321,8 @@ export async function sendCli(
       kind: 'cli',
       resumeSessionId,
       fork,
-      history: history.length ? history : undefined
+      history: history.length ? history : undefined,
+      rewound: rewound || undefined
     },
     runId
   )
@@ -1328,10 +1335,11 @@ export async function sendCli(
     patchSessionConfig(sessionId, {
       cliSessionId: run.cliSessionId,
       cliSessionAgentId: opts.agentId,
-      cliForkNext: false
+      cliForkNext: false,
+      cliRewound: false
     })
-  } else if (fork) {
-    patchSessionConfig(sessionId, { cliForkNext: false })
+  } else if (fork || rewound) {
+    patchSessionConfig(sessionId, { cliForkNext: false, cliRewound: false })
   }
   return run
 }
@@ -1345,6 +1353,17 @@ export async function sendCli(
  * Si falta algo para poder mandarlo, devuelve el motivo (clave de i18n) sin
  * tocar nada; `onStart` se llama justo antes de lanzar, cuando ya no hay vuelta.
  */
+/** Por qué no se puede mandar un turno en esta conversación, o null si se puede. */
+function sendBlocker(session: StoredSession, config: AppConfig): string | null {
+  if (session.kind === 'cli') {
+    if (!session.cliAgentId) return 'Elige un agente de línea de comandos en el panel de la derecha'
+    if (!config.projects.some((p) => p.id === session.projectId)) return 'Un agente de línea de comandos necesita un proyecto donde trabajar'
+    return null
+  }
+  if (!session.providerId || !session.model) return 'Elige un modelo primero'
+  return null
+}
+
 export async function sendTurn(
   sessionId: string,
   prompt: string,
@@ -1358,10 +1377,10 @@ export async function sendTurn(
   const session = state.session
   const project = config.projects.find((p) => p.id === session.projectId)
   const effort: Effort = session.effort ?? 'auto'
+  const blocked = sendBlocker(session, config)
+  if (blocked) return { error: blocked }
 
-  if (session.kind === 'cli') {
-    if (!session.cliAgentId) return { error: 'Elige un agente de línea de comandos en el panel de la derecha' }
-    if (!project) return { error: 'Un agente de línea de comandos necesita un proyecto donde trabajar' }
+  if (session.kind === 'cli' && session.cliAgentId && project) {
     const cliAgent = config.cliAgents.find((a) => a.id === session.cliAgentId)
     opts.onStart?.()
     const run = await sendCli(sessionId, {
@@ -1441,6 +1460,166 @@ export async function setTaskDone(id: string, done: boolean): Promise<void> {
     const row = r.data as StoredSession
     sessions.update((list) => list.map((s) => (s.id === id ? row : s)))
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Editar, regenerar y bifurcar                                       *
+ * ------------------------------------------------------------------ */
+
+/** Lo que pasaría al volver a un mensaje: qué se quita y qué cambió en disco. */
+export interface RewindPlan {
+  /** Índice del mensaje del usuario desde el que se corta (él incluido). */
+  index: number
+  prompt: string
+  attachments?: Attachment[]
+  /** Mensajes que salen de la conversación, contando ese. */
+  dropped: number
+  /**
+   * Por repositorio, el punto de control del primer turno quitado que cambió
+   * archivos: deshacerlo deja el árbol como estaba antes de ese turno.
+   */
+  checkpoints: { root: string; runId: string }[]
+  /** Agente de consola: su propia sesión no puede volver atrás. */
+  isCli: boolean
+}
+
+/**
+ * Qué supone volver a `turnId`. Desde un mensaje tuyo se corta en él (para
+ * editarlo); desde una respuesta, en el mensaje que la pidió (para regenerarla).
+ */
+export function planRewind(sessionId: string, turnId: string): RewindPlan | null {
+  const st = chats.get()[sessionId]
+  if (!st) return null
+  let index = st.turns.findIndex((x) => x.id === turnId)
+  if (index === -1) return null
+  while (index >= 0 && st.turns[index].role !== 'user') index--
+  if (index < 0) return null
+  const user = st.turns[index]
+  const dropped = st.turns.slice(index)
+  const checkpoints: RewindPlan['checkpoints'] = []
+  for (const x of dropped) {
+    const ck = x.metrics?.checkpoint
+    if (!x.runId || !ck || !x.metrics?.filesChanged?.length || x.metrics.undone) continue
+    if (!checkpoints.some((c) => c.root === ck.root)) checkpoints.push({ root: ck.root, runId: x.runId })
+  }
+  return {
+    index,
+    prompt: user.content,
+    attachments: user.attachments,
+    dropped: dropped.length,
+    checkpoints,
+    isCli: st.session.kind === 'cli'
+  }
+}
+
+/** Una copia de la conversación con sus primeros `end` mensajes y los mismos ajustes. */
+async function copySession(sessionId: string, end: number, title: string, cliCommand?: string): Promise<string | null> {
+  const st = chats.get()[sessionId]
+  if (!st) return null
+  const src = st.session
+  const now = Date.now()
+  const kept = st.turns.slice(0, end)
+  // La sesión del agente de consola sólo vale si se copia hasta el final y su
+  // CLI sabe bifurcar: entonces el primer turno sigue desde ella en una nueva.
+  const whole = end >= st.turns.length
+  const canFork = Boolean(
+    src.kind === 'cli' && whole && src.cliSessionId && src.cliSessionAgentId === src.cliAgentId && cliCommand && resumeCaps(cliCommand).fork
+  )
+  const session: StoredSession = {
+    ...src,
+    id: uid(),
+    title,
+    createdAt: now,
+    updatedAt: now,
+    turns: kept.map(toStoredTurn),
+    titled: true,
+    pinned: false,
+    archived: false,
+    taskDone: undefined,
+    cliSessionId: canFork ? src.cliSessionId : undefined,
+    cliSessionAgentId: canFork ? src.cliSessionAgentId : undefined,
+    cliForkNext: canFork,
+    cliRewound: src.kind === 'cli' && !canFork && kept.length > 0
+  }
+  chats.update((all) => ({ ...all, [session.id]: fromStored(session) }))
+  const r = await window.api.sessions.save(session)
+  const saved = (r.ok && r.data ? r.data : session) as StoredSession
+  sessions.update((list) => [saved, ...list.filter((s) => s.id !== saved.id)])
+  return session.id
+}
+
+/**
+ * Bifurca desde una respuesta: una conversación nueva con todo hasta ella,
+ * para seguir por otro lado. La original se queda como está.
+ */
+export async function forkAt(sessionId: string, turnId: string, title: string, config: AppConfig): Promise<string | null> {
+  const st = chats.get()[sessionId]
+  if (!st) return null
+  const index = st.turns.findIndex((x) => x.id === turnId)
+  if (index === -1 || st.turns[index].streaming) return null
+  flushPendingText()
+  const cli = config.cliAgents.find((a) => a.id === st.session.cliAgentId)
+  return copySession(sessionId, index + 1, title, cli?.command)
+}
+
+/**
+ * Edita un mensaje tuyo o regenera una respuesta: la conversación vuelve a
+ * ese mensaje y se manda `prompt` en su lugar. Con `inCopy`, en una copia, y
+ * la original se queda como está; con `undoFiles`, antes se devuelven los
+ * archivos a como estaban antes del primer turno que se quita.
+ */
+export async function rewindAndSend(
+  sessionId: string,
+  turnId: string,
+  prompt: string,
+  config: AppConfig,
+  opts: { undoFiles?: boolean; inCopy?: boolean; copyTitle?: string; onStart?: (sessionId: string) => void } = {}
+): Promise<{ sessionId: string; run?: RunRecord; error?: string }> {
+  const st = chats.get()[sessionId]
+  if (!st) return { sessionId, error: 'La conversación ya no existe' }
+  if (st.runningRunId) return { sessionId, error: 'Ya está trabajando: espera a que acabe o detenlo' }
+  const plan = planRewind(sessionId, turnId)
+  if (!plan) return { sessionId, error: 'Ese mensaje ya no está en la conversación' }
+  if (!prompt.trim()) return { sessionId, error: 'Escribe algo para mandar' }
+  // Lo que impediría mandarlo se mira antes de quitar nada.
+  const blocked = sendBlocker(st.session, config)
+  if (blocked) return { sessionId, error: blocked }
+
+  // Primero los archivos: si no se pueden deshacer, la conversación no se toca.
+  if (opts.undoFiles) {
+    for (const ck of plan.checkpoints) {
+      const r = await window.api.checkpoints.undo(ck.root, ck.runId)
+      if (!r.ok) return { sessionId, error: r.error ?? 'No se pudo deshacer' }
+    }
+  }
+
+  let target = sessionId
+  if (opts.inCopy) {
+    const cli = config.cliAgents.find((a) => a.id === st.session.cliAgentId)
+    const id = await copySession(sessionId, plan.index, opts.copyTitle ?? st.session.title, cli?.command)
+    if (!id) return { sessionId, error: 'La conversación ya no existe' }
+    target = id
+  } else {
+    flushPendingText()
+    const isCli = st.session.kind === 'cli'
+    const patch: Partial<StoredSession> = {
+      taskDone: undefined,
+      ...(isCli ? { cliSessionId: undefined, cliForkNext: false, cliRewound: true } : {})
+    }
+    chats.update((all) => {
+      const cur = all[sessionId]
+      if (!cur) return all
+      return { ...all, [sessionId]: { ...cur, turns: cur.turns.slice(0, plan.index), session: { ...cur.session, ...patch } } }
+    })
+    sessions.update((list) => list.map((s) => (s.id === sessionId ? { ...s, ...patch } : s)))
+    schedulePersist(sessionId)
+  }
+
+  const r = await sendTurn(target, prompt.trim(), config, {
+    attachments: plan.attachments,
+    onStart: () => opts.onStart?.(target)
+  })
+  return { sessionId: target, ...r }
 }
 
 export function stopSession(sessionId: string): void {
@@ -1709,6 +1888,7 @@ if (typeof window !== 'undefined') {
   ;(window as unknown as Record<string, unknown>).__accEngine = {
     newSession, openSession, archiveSession, unarchiveSession, deleteSession,
     patchSessionConfig, renameSession, sendChat, sendCli, sendTurn, setTaskDone, stopSession, approveStep,
+    planRewind, rewindAndSend, forkAt,
     flushPersist, loadSessions, saveSessionNow, focusChat,
     openTerm, sendTermCommand, writeTerm, closeTerm, interruptTerm, clearTerm,
     resizeTerm, termScrollback, onTermData,

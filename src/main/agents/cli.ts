@@ -1066,7 +1066,7 @@ function startCliAgent(
     // Si su CLI no sabe, la conversación va dentro del prompt: nunca empieza
     // de cero sin decirlo.
     const resume =
-      opts.resumeSessionId || (opts.history?.length && resumeCaps(agent.command).byFolder)
+      !opts.rewound && (opts.resumeSessionId || (opts.history?.length && resumeCaps(agent.command).byFolder))
         ? resumeArgs(agent.command, opts.resumeSessionId, opts.fork)
         : null
     const fallbackHistory = !resume && Boolean(opts.history?.length)

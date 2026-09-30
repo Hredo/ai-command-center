@@ -12,7 +12,7 @@ import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
   ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw,
-  ArrowRightLeft, FileDiff, Lightbulb
+  ArrowRightLeft, FileDiff, Lightbulb, RefreshCw
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -31,8 +31,9 @@ import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
   unarchiveSession, deleteSession, sendTurn, stopSession, loadSessions, approveStep,
-  useChatFocus, useQuotas, markTurnUndone, type Turn
+  useChatFocus, useQuotas, markTurnUndone, forkAt, planRewind, rewindAndSend, type Turn
 } from '../lib/engine'
+import { RewindModal } from '../components/RewindModal'
 import { UndoTurn } from '../components/UndoTurn'
 import { WorktreeBox } from '../components/WorktreeBox'
 import { DiffReview } from '../components/DiffReview'
@@ -232,7 +233,10 @@ function TurnView({
   isCli,
   sessionId,
   onReview,
-  onAllow
+  onAllow,
+  onEdit,
+  onRegenerate,
+  onFork
 }: {
   turn: Turn
   isCli: boolean
@@ -241,6 +245,12 @@ function TurnView({
   onReview?: () => void
   /** Claude Code: seguir dándole permiso sólo para lo que le faltó. */
   onAllow?: (rules: string[]) => void
+  /** Mensaje tuyo: cambiarlo y volver a mandarlo desde ahí. */
+  onEdit?: () => void
+  /** Respuesta: volver a pedirla. */
+  onRegenerate?: () => void
+  /** Respuesta: seguir desde aquí en una conversación nueva. */
+  onFork?: () => void
 }): React.JSX.Element {
   const t = useT()
   // Lo que el agente quiso hacer y no pudo por falta de permiso. Lo que
@@ -249,10 +259,20 @@ function TurnView({
   const rules = [...new Set(denied.map((s) => s.rule).filter((r): r is string => Boolean(r)))]
   if (turn.role === 'user') {
     return (
-      <div className="flex gap-3 justify-end">
-        <div className="bg-raised border border-line rounded-xl rounded-tr-sm px-3.5 py-2.5 max-w-[78%] space-y-2">
-          <div className="whitespace-pre-wrap break-words text-[13px]">{turn.content}</div>
-          <AttachmentList items={turn.attachments} readOnly />
+      <div className="group flex gap-3 justify-end" data-turn={turn.id}>
+        <div className="max-w-[78%] flex flex-col items-end gap-1">
+          <div className="bg-raised border border-line rounded-xl rounded-tr-sm px-3.5 py-2.5 space-y-2">
+            <div className="whitespace-pre-wrap break-words text-[13px]">{turn.content}</div>
+            <AttachmentList items={turn.attachments} readOnly />
+          </div>
+          {onEdit ? (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              <Button size="sm" variant="ghost" onClick={onEdit} title={t('Cambiar este mensaje y volver a mandarlo desde aquí')} data-action="edit">
+                <Pencil size={12} /> {t('Editar')}
+              </Button>
+              <CopyBtn text={turn.content} />
+            </div>
+          ) : null}
         </div>
         <div className="w-6 h-6 rounded-md bg-[#1e2231] flex items-center justify-center shrink-0 mt-0.5">
           <User size={13} className="text-muted" />
@@ -262,7 +282,7 @@ function TurnView({
   }
 
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3" data-turn={turn.id}>
       <div
         className={cx(
           'w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5 border',
@@ -305,6 +325,16 @@ function TurnView({
                 undone={turn.metrics.undone}
                 onUndone={(v) => markTurnUndone(sessionId, turn.id, v)}
               />
+            ) : null}
+            {onRegenerate ? (
+              <Button size="sm" variant="ghost" onClick={onRegenerate} title={t('Volver a pedir esta respuesta')} data-action="regenerate">
+                <RefreshCw size={12} />
+              </Button>
+            ) : null}
+            {onFork ? (
+              <Button size="sm" variant="ghost" onClick={onFork} title={t('Seguir desde aquí en una conversación nueva; esta se queda como está')} data-action="fork">
+                <GitFork size={12} />
+              </Button>
             ) : null}
             {!turn.streaming && turn.content ? <CopyBtn text={turn.content} /> : null}
           </div>
@@ -420,6 +450,7 @@ export default function Chat(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState<StoredSession | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [review, setReview] = useState<{ runId: string; checkpoint: RunCheckpoint; untilRunId?: string } | null>(null)
+  const [rewind, setRewind] = useState<{ turnId: string; mode: 'edit' | 'regenerate' } | null>(null)
 
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -571,6 +602,42 @@ export default function Chat(): React.JSX.Element {
       })
     },
     [session, config, t, toast, reloadGit]
+  )
+
+  // Regenerar la última respuesta de un chat que no tocó archivos va directo;
+  // si hay algo más que decidir (turnos detrás, archivos, un CLI), se pregunta.
+  const regenerate = useCallback(
+    (turnId: string) => {
+      if (!session || !config) return
+      const plan = planRewind(session.id, turnId)
+      if (!plan) return
+      if (plan.dropped > 2 || plan.checkpoints.length || plan.isCli) {
+        setRewind({ turnId, mode: 'regenerate' })
+        return
+      }
+      void rewindAndSend(session.id, turnId, plan.prompt, config, {
+        onStart: () => {
+          stick.current = true
+        }
+      }).then((r) => {
+        if (r.error) toast('error', t(r.error))
+        else if (r.run?.status === 'error') toast('error', r.run.error ?? t('No se pudo completar'))
+      })
+    },
+    [session, config, toast, t]
+  )
+
+  const fork = useCallback(
+    async (turnId: string) => {
+      if (!session || !config) return
+      const id = await forkAt(session.id, turnId, t('{title} (bifurcada)', { title: session.title }), config)
+      if (!id) return
+      setActiveId(id)
+      setShowArchived(false)
+      stick.current = true
+      toast('ok', t('Conversación bifurcada: sigue desde aquí; la original se queda como estaba.'))
+    },
+    [session, config, toast, t]
   )
 
   // Un agente de API fija modelo, prompt de sistema y parámetros de golpe.
@@ -807,6 +874,9 @@ export default function Chat(): React.JSX.Element {
                       : undefined
                   }
                   onAllow={i === turns.length - 1 && !running && isClaudeCli ? allowAndContinue : undefined}
+                  onEdit={!running && t.role === 'user' ? () => setRewind({ turnId: t.id, mode: 'edit' }) : undefined}
+                  onRegenerate={!running && t.role === 'assistant' && i > 0 ? () => regenerate(t.id) : undefined}
+                  onFork={!running && t.role === 'assistant' && !t.streaming ? () => void fork(t.id) : undefined}
                 />
               )
             })}
@@ -922,6 +992,25 @@ export default function Chat(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      {rewind && session ? (
+        <RewindModal
+          key={rewind.turnId + rewind.mode}
+          sessionId={session.id}
+          turnId={rewind.turnId}
+          mode={rewind.mode}
+          title={session.title}
+          onClose={() => setRewind(null)}
+          onStarted={(id) => {
+            setRewind(null)
+            stick.current = true
+            if (id !== session.id) {
+              setActiveId(id)
+              setShowArchived(false)
+            }
+          }}
+        />
+      ) : null}
 
       <Modal open={recommending} onClose={() => setRecommending(false)} title={t('¿Qué modelo uso?')} width="max-w-4xl">
         {recommending && session ? (

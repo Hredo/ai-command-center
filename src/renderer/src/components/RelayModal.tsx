@@ -126,6 +126,7 @@ export function RelayModal({
         if (!proj) throw new Error(t('Un agente de línea de comandos necesita un proyecto donde trabajar'))
         const id = await newSession('cli', {
           title,
+          titled: true,
           cliAgentId: agent.id,
           cliModel: cliModel || undefined,
           projectId: proj.id
@@ -144,6 +145,7 @@ export function RelayModal({
       } else if (pick) {
         const id = await newSession('chat', {
           title,
+          titled: true,
           providerId: pick.providerId,
           model: pick.model,
           projectId: proj?.id,

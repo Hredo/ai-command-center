@@ -1141,6 +1141,12 @@ export interface CliRunOptions {
    * sesión: entonces va dentro del prompt para que no empiece de cero.
    */
   history?: { role: 'user' | 'assistant'; content: string }[]
+  /**
+   * La conversación se ha rebobinado: lo que el CLI guarda (por id o en la
+   * carpeta) lleva mensajes que ya no están, así que no se retoma y la
+   * conversación va en el prompt.
+   */
+  rewound?: boolean
 }
 
 export interface CliEvent {
@@ -1314,6 +1320,8 @@ export interface StoredSession {
   id: string
   kind: SessionKind
   title: string
+  /** El título se puso a mano (o es el de una copia): el primer prompt no lo cambia. */
+  titled?: boolean
   createdAt: number
   updatedAt: number
   /** Ajustes con los que se retoma la sesión. */
@@ -1347,6 +1355,11 @@ export interface StoredSession {
   cliContinue?: boolean
   /** El próximo turno retoma en una sesión nueva (bifurca). */
   cliForkNext?: boolean
+  /**
+   * Se editó o regeneró un mensaje: la sesión del agente tiene lo descartado,
+   * así que el próximo turno empieza una nueva con la conversación en el prompt.
+   */
+  cliRewound?: boolean
   /** Trabaja en un worktree aparte (su carpeta) en vez de en la del proyecto. */
   worktreePath?: string
   /**

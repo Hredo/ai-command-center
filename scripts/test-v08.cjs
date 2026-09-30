@@ -229,6 +229,15 @@ function startAgentMock() {
         const users = msgs.filter((m) => m.role === 'user')
         const lastUser = String(users[users.length - 1]?.content ?? '')
         const tools = msgs.filter((m) => m.role === 'tool')
+        // «eco: texto»: contesta sin herramientas, con cuántos mensajes tuyos le han llegado.
+        const eco = /eco: (.+)$/s.exec(lastUser)
+        if (eco) {
+          send({ choices: [{ delta: { content: `Eco ${users.length}: ${eco[1]}` } }] })
+          send({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 20, completion_tokens: 5 } })
+          res.write('data: [DONE]\n\n')
+          res.end()
+          return
+        }
         // «web: {args} || {args}…»: pide web_fetch con cada uno, en orden.
         const web = /web: (.+)$/s.exec(lastUser)
         if (web && offered.includes('web_fetch')) {
@@ -2486,6 +2495,175 @@ app.whenReady().then(async () => {
   log(d4.bypassStatus === 'ok' && d4.bypassSteps === 'ok:-' && webPaths.includes('/otra'), 'en «Sin límites» lee sin preguntar', d4.bypassSteps)
   mockD4.close()
   webServer.close()
+
+  /* -------------------------------------------------------------- *
+   * E1 · Editar y reenviar, regenerar y bifurcar                   *
+   * -------------------------------------------------------------- */
+  const mockE1 = await startAgentMock()
+  fs.rmSync(path.join(REPO, 'app.js'), { force: true })
+  const safetyRefs = () =>
+    git(['for-each-ref', '--format=%(refname)', 'refs/acc/checkpoints/'])
+      .split('\n')
+      .filter((l) => l.includes('-antes-de-deshacer-')).length
+  const safetyBefore = safetyRefs()
+  const e1 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${JSON.stringify(BINS)}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim().includes(text))
+    const type = (el, value) => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const idle = (sid, n) => until(() => { const c = engine.peekChat(sid); return c && !c.runningRunId && c.turns.length === n && !c.turns.some((x) => x.streaming) ? c : null }, 15000)
+    const out = {}
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.projects.save({ id: 'proyecto-e1', name: 'Repo e1', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(400)
+    const cfg = async () => (await api.config.get()).data
+    const ids = []
+
+    // 1 · Editar el primer mensaje de un agente que creó un archivo, deshaciendo también el archivo.
+    const s1 = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba', projectId: 'proyecto-e1', agentMode: true, permissionMode: 'acceptEdits', includeContext: false })
+    ids.push(s1)
+    await engine.sendTurn(s1, 'primero', await cfg())
+    await engine.sendTurn(s1, 'segundo', await cfg())
+    const before = engine.peekChat(s1).turns
+    out.firstChanged = (before[1].metrics?.filesChanged ?? []).map((f) => f.path).join(',')
+    const plan = engine.planRewind(s1, before[0].id)
+    out.plan = plan ? { index: plan.index, dropped: plan.dropped, cks: plan.checkpoints.length } : null
+    engine.focusChat(s1)
+    const editBtn = await until(() => document.querySelector('[data-turn="' + before[0].id + '"] [data-action="edit"]'))
+    editBtn?.click()
+    const box = await until(() => document.querySelector('[data-rewind]'))
+    out.boxText = box?.querySelector('textarea')?.value
+    out.dropText = box?.textContent.includes('los 3 que vienen detrás')
+    if (box) type(box.querySelector('textarea'), 'primero editado')
+    const toggle = await until(() => btn('Devolver también los archivos', box ?? document))
+    toggle?.click()
+    out.preview = (await until(() => { const f = document.querySelector('[data-rewind-files]'); return f && f.textContent.includes('app.js') ? f.textContent : null })) ?? ''
+    await sleep(100)
+    document.querySelector('[data-rewind-go]')?.click()
+    const after = await idle(s1, 2)
+    out.afterTurns = after?.turns.map((x) => x.role + ':' + x.content.slice(0, 30)).join(' | ')
+    out.afterChanged = (after?.turns[1].metrics?.filesChanged ?? []).map((f) => f.path).join(',')
+    out.modalGone = !document.querySelector('[data-rewind]')
+    await sleep(900)
+    out.stored = ((await api.sessions.get(s1)).data?.turns ?? []).map((x) => x.content.slice(0, 20)).join(' | ')
+
+    // 2 · Regenerar la última respuesta de un chat: directo, con la conversación de antes.
+    const s2 = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba' })
+    ids.push(s2)
+    await engine.sendTurn(s2, 'eco: hola', await cfg())
+    await engine.sendTurn(s2, 'eco: adiós', await cfg())
+    engine.focusChat(s2)
+    const t2 = engine.peekChat(s2).turns
+    const regen = await until(() => document.querySelector('[data-turn="' + t2[3].id + '"] [data-action="regenerate"]'))
+    regen?.click()
+    await sleep(300)
+    out.regenModal = Boolean(document.querySelector('[data-rewind]'))
+    const r2 = await until(() => { const c = engine.peekChat(s2); return c && !c.runningRunId && c.turns.length === 4 && c.turns[3].id !== t2[3].id ? c : null }, 10000)
+    out.regenTurns = r2?.turns.map((x) => x.content).join(' | ')
+
+    // 3 · Regenerar una respuesta anterior pide confirmación y se puede hacer en una copia.
+    const regen1 = document.querySelector('[data-turn="' + r2.turns[1].id + '"] [data-action="regenerate"]')
+    regen1?.click()
+    const box3 = await until(() => document.querySelector('[data-rewind]'))
+    out.box3Dropped = box3?.getAttribute('data-rewind-dropped') ?? box3?.querySelector('[data-rewind-dropped]')?.getAttribute('data-rewind-dropped')
+    btn('Hacerlo en una copia', box3 ?? document)?.click()
+    await sleep(100)
+    document.querySelector('[data-rewind-go]')?.click()
+    const copy = await until(() => engine.peekSessions().find((s) => s.title === 'eco: hola (copia)'))
+    out.copyId = copy?.id
+    if (copy) ids.push(copy.id)
+    const copyChat = copy ? await idle(copy.id, 2) : null
+    out.copyTurns = copyChat?.turns.map((x) => x.content).join(' | ')
+    out.originalTurns = engine.peekChat(s2)?.turns.map((x) => x.content).join(' | ')
+
+    // 4 · Bifurcar desde la primera respuesta.
+    engine.focusChat(s2)
+    const forkBtn = await until(() => document.querySelector('[data-turn="' + r2.turns[1].id + '"] [data-action="fork"]'))
+    forkBtn?.click()
+    const forked = await until(() => engine.peekSessions().find((s) => s.title === 'eco: hola (bifurcada)'))
+    if (forked) ids.push(forked.id)
+    out.forkTurns = forked ? engine.peekChat(forked.id)?.turns.map((x) => x.content).join(' | ') : null
+    if (forked) await engine.sendTurn(forked.id, 'eco: sigue', await cfg())
+    out.forkAnswer = forked ? engine.peekChat(forked.id)?.turns.at(-1)?.content : null
+    out.originalAfterFork = engine.peekChat(s2)?.turns.length
+
+    // 5 · Agente de consola: al rebobinar no retoma su sesión vieja; al bifurcar al final, sí (bifurcando).
+    await api.agents.saveCli({ id: 'claude-e1', name: 'Claude e1', type: 'cli', command: bins.claude, args: ['-p', '--output-format', 'stream-json', '--verbose'], parser: 'claude-stream-json', color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+    const s3 = await engine.newSession('cli', { cliAgentId: 'claude-e1', projectId: 'proyecto-e1' })
+    ids.push(s3)
+    await engine.sendTurn(s3, 'primero', await cfg())
+    await engine.sendTurn(s3, 'segundo', await cfg())
+    const c3 = engine.peekChat(s3)
+    const firstSid = c3.session.cliSessionId
+    const re = await engine.rewindAndSend(s3, c3.turns[3].id, 'segundo bis', await cfg())
+    out.cliRewound = re.run?.response ?? re.error
+    const c3b = engine.peekChat(s3)
+    out.cliAfter = { turns: c3b.turns.length, sid: c3b.session.cliSessionId, rewound: c3b.session.cliRewound, first: firstSid }
+    await engine.sendTurn(s3, 'tercero', await cfg())
+    out.cliNext = engine.peekChat(s3).turns.at(-1)?.content
+    const lastSid = engine.peekChat(s3).session.cliSessionId
+    const f1 = await engine.forkAt(s3, engine.peekChat(s3).turns.at(-1).id, 'fork final', await cfg())
+    ids.push(f1)
+    await engine.sendTurn(f1, 'cuarto', await cfg())
+    out.cliForkEnd = { answer: engine.peekChat(f1).turns.at(-1)?.content, lastSid }
+    const f2 = await engine.forkAt(s3, engine.peekChat(s3).turns[1].id, 'fork medio', await cfg())
+    ids.push(f2)
+    await engine.sendTurn(f2, 'otro camino', await cfg())
+    out.cliForkMid = engine.peekChat(f2).turns.at(-1)?.content
+
+    await api.providers.setBaseUrl('vllm', out.prevBase)
+    for (const id of ids) await engine.deleteSession(id)
+    await api.agents.removeCli('claude-e1')
+    await api.projects.remove('proyecto-e1')
+    return out
+  })()`)
+  const e1Reqs = mockE1.requests ?? []
+  const edited = e1Reqs.filter((b) => (b.messages ?? []).some((m) => m.role === 'user' && String(m.content).includes('primero editado')))
+  const editedUsers = edited[0] ? edited[0].messages.filter((m) => m.role === 'user').map((m) => String(m.content)) : []
+  const adiosReqs = e1Reqs.filter((b) => { const u = (b.messages ?? []).filter((m) => m.role === 'user'); return u.length && String(u.at(-1).content) === 'eco: adiós' })
+
+  log(
+    e1.plan?.index === 0 && e1.plan.dropped === 4 && e1.plan.cks === 1 && e1.firstChanged.includes('app.js') && e1.boxText === 'primero' && e1.dropText,
+    'EDITAR UN MENSAJE DICE CUÁNTO SE QUITA Y QUÉ ARCHIVOS CAMBIARON ESOS TURNOS',
+    JSON.stringify(e1.plan) + ' · ' + e1.firstChanged
+  )
+  log(e1.preview.includes('app.js') && e1.preview.includes('Se borran'), 'al marcarlo, enseña qué archivos vuelven atrás', e1.preview.slice(0, 120))
+  log(
+    e1.modalGone && e1.afterTurns?.startsWith('user:primero editado | assistant:') && editedUsers.length === 1 && e1.stored?.startsWith('primero editado'),
+    'SE REENVÍA EDITADO Y LO DE DETRÁS SALE DE LA CONVERSACIÓN (TAMBIÉN EN DISCO)',
+    `${e1.afterTurns} · usuarios en la petición: ${editedUsers.length}`
+  )
+  log(safetyRefs() > safetyBefore && e1.afterChanged.includes('app.js'), 'LOS ARCHIVOS SE DESHICIERON ANTES DE REENVIAR, CON FOTO DE SEGURIDAD', `${e1.afterChanged} · fotos ${safetyBefore}→${safetyRefs()}`)
+  log(
+    e1.regenModal === false && e1.regenTurns === 'eco: hola | Eco 1: hola | eco: adiós | Eco 2: adiós' && adiosReqs.length === 2 && adiosReqs.every((b) => b.messages.filter((m) => m.role === 'user').length === 2),
+    'REGENERAR LA ÚLTIMA RESPUESTA VA DIRECTO Y NO DUPLICA EL MENSAJE',
+    `${e1.regenTurns} · ${adiosReqs.length} peticiones`
+  )
+  log(
+    e1.box3Dropped === '4' && e1.copyTurns === 'eco: hola | Eco 1: hola' && e1.originalTurns === 'eco: hola | Eco 1: hola | eco: adiós | Eco 2: adiós',
+    'REGENERAR MÁS ATRÁS PREGUNTA, Y EN UNA COPIA LA ORIGINAL NO SE TOCA',
+    `copia: ${e1.copyTurns} · original: ${e1.originalTurns}`
+  )
+  log(e1.forkTurns === 'eco: hola | Eco 1: hola' && e1.forkAnswer === 'Eco 2: sigue' && e1.originalAfterFork === 4, 'BIFURCAR COPIA HASTA ESA RESPUESTA Y SIGUE DESDE AHÍ', `${e1.forkTurns} → ${e1.forkAnswer}`)
+  log(
+    String(e1.cliRewound).startsWith('resume=no fork=false prompt=Conversación anterior') && String(e1.cliRewound).includes('primero') && String(e1.cliRewound).includes('segundo bis') &&
+      e1.cliAfter.turns === 4 && e1.cliAfter.sid && e1.cliAfter.sid !== e1.cliAfter.first && e1.cliAfter.rewound === false,
+    'UN AGENTE DE CONSOLA REBOBINADO NO RETOMA SU SESIÓN VIEJA: EMPIEZA OTRA CON LA CONVERSACIÓN',
+    String(e1.cliRewound).slice(0, 140)
+  )
+  log(String(e1.cliNext).startsWith('resume=' + e1.cliAfter.sid), 'y el turno siguiente ya retoma la sesión nueva', String(e1.cliNext).slice(0, 60))
+  log(String(e1.cliForkEnd?.answer).startsWith('resume=' + e1.cliForkEnd?.lastSid + ' fork=true'), 'bifurcar al final usa la bifurcación del propio CLI', String(e1.cliForkEnd?.answer).slice(0, 60))
+  log(String(e1.cliForkMid).startsWith('resume=no') && String(e1.cliForkMid).includes('Conversación anterior'), 'bifurcar más atrás le pasa la conversación hasta ahí', String(e1.cliForkMid).slice(0, 80))
+  mockE1.close()
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *
