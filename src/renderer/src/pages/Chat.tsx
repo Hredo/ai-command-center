@@ -106,6 +106,8 @@ function SessionRow({
         'group relative mx-1.5 rounded-lg transition-colors',
         active ? 'bg-raised' : 'hover:bg-[#12151f]'
       )}
+      data-session-item={session.id}
+      data-active={active ? '' : undefined}
     >
       <button onClick={onOpen} className="w-full text-left px-2.5 py-2">
         {active ? <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-accent" /> : null}
@@ -484,6 +486,20 @@ export default function Chat(): React.JSX.Element {
     })
   }, [sessions, query, showArchived])
 
+  // Al entrar: se abre la última conversación viva, o se crea una. Va antes que
+  // la petición de abrir una concreta: si la Consola se monta por esa petición
+  // (desde la búsqueda o la paleta), la elegida tiene que ganar.
+  useEffect(() => {
+    if (activeId) return
+    const first = sessions.find((s) => !s.archived)
+    if (first) {
+      setActiveId(first.id)
+      void openSession(first.id)
+    } else if (sessions.length === 0) {
+      void newSession('chat').then(setActiveId)
+    }
+  }, [sessions, activeId])
+
   // Otra parte de la app (el relevo, la paleta) pide abrir una conversación.
   const focusReq = useChatFocus()
   const [flash, setFlash] = useState<string | null>(null)
@@ -507,18 +523,6 @@ export default function Chat(): React.JSX.Element {
     const timer = window.setTimeout(() => setFlash(null), 2600)
     return () => window.clearTimeout(timer)
   }, [flash, turns])
-
-  // Al entrar: se abre la última conversación viva, o se crea una.
-  useEffect(() => {
-    if (activeId) return
-    const first = sessions.find((s) => !s.archived)
-    if (first) {
-      setActiveId(first.id)
-      void openSession(first.id)
-    } else if (sessions.length === 0) {
-      void newSession('chat').then(setActiveId)
-    }
-  }, [sessions, activeId])
 
   // Autoscroll pegado al final salvo que hayas subido a leer.
   useEffect(() => {

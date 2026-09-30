@@ -3651,6 +3651,130 @@ app.whenReady().then(async () => {
   mockF3.close()
 
   /* -------------------------------------------------------------- *
+   * G1 · Paleta de comandos (Ctrl+K)                               *
+   * -------------------------------------------------------------- */
+  fs.writeFileSync(path.join(REPO, 'package.json'), JSON.stringify({ name: 'g1', scripts: { 'saluda-g1': 'echo hola-g1' } }))
+
+  const g1 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const setVal = (el, value) => {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const key = (el, k, extra = {}) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }))
+    const palette = () => document.querySelector('[data-palette]')
+    const input = () => document.querySelector('[data-palette-input]')
+    const first = () => document.querySelector('[data-palette-results] [data-palette-index="0"]')
+    const openP = async () => { key(window, 'k', { ctrlKey: true }); return until(() => input()) }
+    const search = async (text, id) => {
+      setVal(input(), text)
+      return until(() => { const f = first(); return f && (!id || f.getAttribute('data-palette-item') === id) ? f : null })
+    }
+    const out = {}
+
+    await api.projects.save({ id: 'proyecto-g1', name: 'Zanfaturas Gé', path: repo, color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'agente-g1', name: 'Xilófono G1', type: 'cli', command: 'true', args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    const sid = await engine.newSession('chat', { title: 'Canción del ñandú zq1' })
+    await sleep(400)
+
+    // Se abre y se cierra con Ctrl+K; sin texto enseña un poco de cada cosa, por grupos.
+    await openP()
+    out.opened = Boolean(palette())
+    out.groups = [...palette().querySelectorAll('[data-palette-results] > div')].map((d) => d.textContent.trim()).join('|')
+    key(window, 'k', { ctrlKey: true })
+    await sleep(150)
+    out.closedAgain = !palette()
+
+    // Un proyecto por un trozo de su nombre, marcado.
+    await openP()
+    const p = await search('zanfat', 'project:proyecto-g1')
+    out.project = p?.getAttribute('data-palette-item') ?? first()?.getAttribute('data-palette-item')
+    out.mark = p?.querySelector('mark')?.textContent ?? ''
+    // Y una de sus pestañas con dos palabras: Enter lleva a Proyectos › Git.
+    const tab = await search('zanfat git', 'project:proyecto-g1:git')
+    out.tab = tab?.getAttribute('data-palette-item') ?? first()?.getAttribute('data-palette-item')
+    key(input(), 'Enter')
+    await sleep(150)
+    out.closedOnEnter = !palette()
+    out.gitShown = Boolean(await until(() => { const b = document.querySelector('[data-ai-review-commit]'); return b && b.offsetParent ? b : null }))
+
+    // Una conversación sin tildes ni orden: «nandu cancion».
+    await openP()
+    const s = await search('nandu cancion', 'session:' + sid)
+    out.session = s?.getAttribute('data-palette-item') === 'session:' + sid
+    out.sessionMarks = s ? [...s.querySelectorAll('mark')].map((m) => m.textContent).join(',') : first()?.textContent
+    key(input(), 'Enter')
+    out.chatActive = Boolean(await until(() => document.querySelector('[data-session-item="' + sid + '"][data-active]')))
+
+    // Lo que acabas de elegir sale arriba, en Recientes, al volver a abrir.
+    await openP()
+    out.recent = palette().querySelector('[data-palette-results] > div')?.textContent.trim() + ':' + first()?.getAttribute('data-palette-item')
+
+    // Las iniciales valen: «cn» → Conversación nueva.
+    setVal(input(), 'cn')
+    await sleep(150)
+    out.initials = Boolean(document.querySelector('[data-palette-item="action:new-chat"]'))
+    // Sin nada que encaje queda buscar lo escrito en los mensajes.
+    setVal(input(), 'qwxzv')
+    await sleep(150)
+    out.fallback = [...document.querySelectorAll('[data-palette-item]')].map((b) => b.getAttribute('data-palette-item')).join(',')
+
+    // Un agente: abre una sesión nueva con él en la Consola.
+    const before = new Set(engine.peekSessions().map((x) => x.id))
+    await search('xilofono', 'cli:agente-g1')
+    key(input(), 'Enter')
+    const made = await until(() => engine.peekSessions().find((x) => !before.has(x.id)))
+    out.agentSession = made ? made.kind + ':' + made.cliAgentId : null
+    out.agentActive = made ? Boolean(await until(() => document.querySelector('[data-session-item="' + made.id + '"][data-active]'))) : false
+
+    // Un script del package.json: se lanza en la terminal del proyecto.
+    await openP()
+    const sc = await search('zanfat saluda', 'script:proyecto-g1:saluda-g1')
+    out.scriptDetail = sc?.textContent ?? first()?.textContent
+    key(input(), 'Enter')
+    const term = await until(() => Object.values(engine.peekTerms()).find((x) => x.info.projectId === 'proyecto-g1'), 10000)
+    out.scriptSent = term ? Boolean(await until(() => engine.termScrollback(term.info.id).includes('saluda-g1'), 15000)) : false
+    out.scriptOutput = term ? Boolean(await until(() => engine.termScrollback(term.info.id).includes('hola-g1'), 15000)) : false
+
+    // Limpieza.
+    if (term) await engine.closeTerm(term.info.id)
+    await engine.deleteSession(sid)
+    if (made) await engine.deleteSession(made.id)
+    await api.agents.removeCli('agente-g1')
+    await api.projects.remove('proyecto-g1')
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+    return out
+  })()`)
+  fs.rmSync(path.join(REPO, 'package.json'), { force: true })
+
+  log(
+    g1.opened && g1.groups.includes('Acciones') && g1.groups.includes('Secciones') && g1.closedAgain,
+    'G1: CTRL+K ABRE LA PALETA Y LA CIERRA; SIN TEXTO ENSEÑA UN POCO DE CADA COSA',
+    g1.groups
+  )
+  log(
+    g1.project === 'project:proyecto-g1' && g1.mark === 'Zanfat' && g1.tab === 'project:proyecto-g1:git' && g1.closedOnEnter && g1.gitShown,
+    'ENCUENTRA UN PROYECTO Y SU PESTAÑA DE GIT, Y ENTER LLEVA ALLÍ',
+    `${g1.project} · «${g1.mark}» · ${g1.tab} · git:${g1.gitShown}`
+  )
+  log(
+    g1.session && /Canción/.test(g1.sessionMarks) && /ñandú/.test(g1.sessionMarks) && g1.chatActive,
+    'ENCUENTRA UNA CONVERSACIÓN SIN TILDES NI ORDEN Y LA ABRE EN LA CONSOLA',
+    g1.sessionMarks
+  )
+  log(String(g1.recent).startsWith('Recientes:session:'), 'lo último que elegiste sale arriba, en Recientes', g1.recent)
+  log(g1.initials && g1.fallback === 'action:search-text', 'vale con las iniciales y, si nada encaja, queda buscar en los mensajes', g1.fallback)
+  log(g1.agentSession === 'cli:agente-g1' && g1.agentActive, 'UN AGENTE ABRE UNA SESIÓN NUEVA CON ÉL', String(g1.agentSession))
+  log(
+    /pnpm run saluda-g1/.test(g1.scriptDetail ?? '') && g1.scriptSent && g1.scriptOutput,
+    'UN SCRIPT DEL PACKAGE.JSON SE LANZA EN LA TERMINAL DEL PROYECTO',
+    `${(g1.scriptDetail ?? '').trim()} · enviado:${g1.scriptSent} · salida:${g1.scriptOutput}`
+  )
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

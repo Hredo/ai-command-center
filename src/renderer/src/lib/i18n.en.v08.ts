@@ -935,5 +935,20 @@ export const enV08: Record<string, string> = {
   "Revisar la rama con IA": "Review the branch with AI",
   "1 fallo": "1 bug",
   "1 riesgo": "1 risk",
-  "1 sugerencia": "1 suggestion"
+  "1 sugerencia": "1 suggestion",
+  "Ir a una sección, un proyecto, una conversación, un agente o un script (Ctrl+K)": "Go to a section, project, conversation, agent or script (Ctrl+K)",
+  "Ir a…": "Go to…",
+  "Sesión de agente nueva": "New agent session",
+  "conversaciones e histórico": "conversations and history",
+  "conversación nueva · {model}": "new conversation · {model}",
+  "sesión nueva · {command}": "new session · {command}",
+  "Buscar «{q}» en conversaciones e histórico": "Search “{q}” in conversations and history",
+  "Ir a una sección, un proyecto, una conversación, un agente o un script…": "Go to a section, project, conversation, agent or script…",
+  "Nada encaja.": "Nothing matches.",
+  "↑↓ elegir · Enter abrir · Esc cerrar": "↑↓ choose · Enter open · Esc close",
+  "Ctrl+K desde cualquier sitio": "Ctrl+K from anywhere",
+  "Recientes": "Recent",
+  "Acciones": "Actions",
+  "Secciones": "Sections",
+  "Scripts": "Scripts"
 }

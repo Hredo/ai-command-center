@@ -254,7 +254,8 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
   }, [tab, agentSession?.id])
 
   // Desde otra parte de la app (la paleta, un aviso): abrir un proyecto y, si
-  // se dice, una de sus pestañas.
+  // se dice, una de sus pestañas o lanzar una orden en su terminal.
+  const [pendingCmd, setPendingCmd] = useState<{ projectId: string; command: string } | null>(null)
   useEffect(() => {
     const go = (target: NavTarget | null): void => {
       if (target?.page !== 'projects') return
@@ -263,10 +264,26 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
         setShowClosed(false)
       }
       if (target.tab && (PROJECT_TABS as readonly string[]).includes(target.tab)) setTab(target.tab as Tab)
+      if (target.command && target.projectId) {
+        setTab('terminal')
+        setPendingCmd({ projectId: target.projectId, command: target.command })
+      }
     }
     go(lastNavTarget())
     return onNavigate(go)
   }, [])
+
+  // La orden sale en cuanto ese proyecto está elegido y su terminal abierta
+  // (la abre la pestaña de terminal si no la tenía).
+  useEffect(() => {
+    if (!pendingCmd || project?.id !== pendingCmd.projectId) return
+    if (projectTermId) {
+      sendTermCommand(projectTermId, pendingCmd.command)
+      setPendingCmd(null)
+    } else if (termError) {
+      setPendingCmd(null)
+    }
+  }, [pendingCmd, project?.id, projectTermId, termError])
 
   useEffect(() => {
     if (!selected && projects.length) setSelected(projects[0].id)

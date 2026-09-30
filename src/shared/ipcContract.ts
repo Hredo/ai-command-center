@@ -15,7 +15,7 @@ import type {
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
-  ProjectInfo, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
+  ProjectInfo, ProjectScripts, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
   RunOptions, RunRecord, Settings, SkillsReport, StatsBucket, StoredSession, StreamDelta, TermEvent, TermInfo,
   UsageSnapshot, WorktreeInfo, WorktreeSetup
 } from './types'
@@ -195,6 +195,7 @@ export interface IpcContract {
   'projects:remove': { args: [id: string]; result: AppConfig }
   'projects:save': { args: [p: Project]; result: AppConfig }
   'projects:scan': { args: [path: string]; result: ProjectInfo }
+  'projects:scripts': { args: [paths: string[]]; result: ProjectScripts }
   'providers:defs': { args: []; result: ProviderDef[] }
   'providers:keyPreview': { args: [id: string]; result: string }
   'providers:keyStatus': { args: []; result: Record<string, string> }

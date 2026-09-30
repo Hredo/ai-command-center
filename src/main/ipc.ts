@@ -8,7 +8,7 @@ import { runPrompt, abortRun, testProvider, answerApproval } from './providers/r
 import { runCliAgent, killCli } from './agents/cli'
 import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
-import { scanProject, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
+import { scanProject, projectScripts, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
 import {
   queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy, projectTotals, modelUsage, personalElo
 } from './runs'
@@ -210,6 +210,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   })
   handle('projects:remove', (id: string) => removeFrom('projects', id))
   handle('projects:scan', (path: string) => scanProject(path))
+  // Sólo de proyectos dados de alta: no sirve para leer el package.json de cualquier carpeta.
+  handle('projects:scripts', (paths: string[]) => {
+    const known = new Set(getConfig().projects.map((p) => p.path))
+    return projectScripts(Array.isArray(paths) ? paths.filter((x) => typeof x === 'string' && known.has(x)) : [])
+  })
   handle('projects:context', (path: string, opts: any) => projectContext(path, opts ?? {}))
   handle('projects:files', (path: string, query?: string) => listProjectFiles(path, query ?? ''))
   handle('projects:openEditor', (path: string) => openInEditor(path))

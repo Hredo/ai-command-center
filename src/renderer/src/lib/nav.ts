@@ -23,6 +23,8 @@ export interface NavTarget {
   projectId?: string
   /** Pestaña interna de la sección, si tiene. */
   tab?: string
+  /** Orden que hay que lanzar en la terminal del proyecto (un script, desde la paleta). */
+  command?: string
 }
 
 type Listener = (t: NavTarget) => void

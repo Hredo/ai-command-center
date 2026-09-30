@@ -597,6 +597,9 @@ export interface ProjectInfo {
   scripts?: Record<string, string>
 }
 
+/** Los scripts del package.json de cada proyecto, por su carpeta. */
+export type ProjectScripts = Record<string, { packageManager: string; scripts: Record<string, string> }>
+
 export type RunStatus = 'ok' | 'error' | 'aborted' | 'running'
 
 /** Una ejecución: la unidad de análisis de toda la app. */

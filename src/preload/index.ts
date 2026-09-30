@@ -92,6 +92,7 @@ const api = {
     save: (p: Project) => call('projects:save', p),
     remove: (id: string) => call('projects:remove', id),
     scan: (path: string) => call('projects:scan', path),
+    scripts: (paths: string[]) => call('projects:scripts', paths),
     context: (path: string, opts?: any) => call('projects:context', path, opts),
     files: (path: string, query?: string) => call('projects:files', path, query),
     openEditor: (path: string) => call('projects:openEditor', path),

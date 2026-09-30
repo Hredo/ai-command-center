@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react'
 import {
-  LayoutDashboard, MessageSquare, Swords, FolderGit2, Bot, Boxes, History, Settings2,
-  Radar, CheckCircle2, XCircle, Info, X, TerminalSquare, Activity, Home, PanelLeftClose,
-  PanelLeftOpen, SquareKanban, Search
+  Boxes, Radar, CheckCircle2, XCircle, Info, X, Activity, PanelLeftClose, PanelLeftOpen, Search, Compass
 } from 'lucide-react'
 import { StoreProvider, useStore } from './lib/store'
 import { PrefsProvider, usePrefs, usePaneSize } from './lib/prefs'
@@ -16,6 +14,8 @@ import { TITLEBAR_HEIGHT, TRAFFIC_LIGHTS_WIDTH } from '@shared/defaults'
 import { IS_MAC, modKey, withMod } from './lib/platform'
 import { navigate, onNavigate, type PageId } from './lib/nav'
 import { SearchModal, openSearch } from './components/SearchModal'
+import { CommandPalette, openPalette } from './components/CommandPalette'
+import { SECTIONS } from './lib/sections'
 /**
  * Cada sección se descarga la primera vez que se entra en ella.
  *
@@ -52,19 +52,7 @@ function PageLoading(): React.JSX.Element {
 
 export type { PageId }
 
-const NAV: { id: PageId; icon: React.ElementType; group: number }[] = [
-  { id: 'dashboard', icon: LayoutDashboard, group: 0 },
-  { id: 'chat', icon: MessageSquare, group: 0 },
-  { id: 'arena', icon: Swords, group: 0 },
-  { id: 'terminal', icon: TerminalSquare, group: 0 },
-  { id: 'tasks', icon: SquareKanban, group: 0 },
-  { id: 'projects', icon: FolderGit2, group: 1 },
-  { id: 'agents', icon: Bot, group: 1 },
-  { id: 'models', icon: Boxes, group: 1 },
-  { id: 'house', icon: Home, group: 1 },
-  { id: 'history', icon: History, group: 2 },
-  { id: 'settings', icon: Settings2, group: 2 }
-]
+const NAV = SECTIONS
 
 /** Por debajo de este ancho el menú se queda sólo con los iconos. */
 const ICONS_ONLY = 112
@@ -134,6 +122,16 @@ function TitleBar(): React.JSX.Element {
         className="flex items-center gap-4 text-[11.5px]"
         style={{ paddingRight: IS_MAC ? 0 : Math.round(140 / zoom) }}
       >
+        <button
+          type="button"
+          onClick={() => openPalette()}
+          className="no-drag flex items-center gap-1.5 h-6 px-2 rounded-md border border-line text-dim hover:text-ink hover:border-[#2c3346] transition-colors"
+          title={withMod(t('Ir a una sección, un proyecto, una conversación, un agente o un script (Ctrl+K)'))}
+          data-open-palette
+        >
+          <Compass size={12} /> {t('Ir a…')}
+          <span className="num text-[10px] opacity-70">{withMod('Ctrl+K')}</span>
+        </button>
         <button
           type="button"
           onClick={() => openSearch()}
@@ -400,6 +398,7 @@ function Shell(): React.JSX.Element {
       </div>
       <Toasts />
       <SearchModal />
+      <CommandPalette />
     </div>
   )
 }
