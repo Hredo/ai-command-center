@@ -269,6 +269,11 @@ const api = {
     removeRun: (id: string) => call('batteries:removeRun', id),
     judge: (model: string, input: { rubric: string; prompt: string; response: string }) => call('batteries:judge', model, input)
   },
+  /** Exportar e importar conversaciones (Markdown y JSON). */
+  exchange: {
+    export: (ids: string[], format: 'md' | 'json', lang?: 'es' | 'en') => call('sessions:export', ids, format, lang),
+    import: () => call('sessions:import')
+  },
   /** Búsqueda de texto completo en conversaciones e histórico. */
   search: {
     query: (q: SearchQuery) => call('search:query', q)

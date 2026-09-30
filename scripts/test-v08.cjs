@@ -609,7 +609,8 @@ app.whenReady().then(async () => {
     await api.projects.save(project)
     await api.external.refresh()
     await new Promise((r) => setTimeout(r, 300))
-    const rows = (await api.runs.query({ limit: 50 })).data.rows
+    // Por id: el histórico de las pruebas se queda entre pasadas y lo de fuera tiene fechas viejas.
+    const rows = (await api.runs.compare(['codex-${CODEX_ID}', 'opencode-ses_oc1', 'gemini-gem-sesion-1'])).data
     const codex = rows.find((r) => r.id === 'codex-${CODEX_ID}')
     const opencode = rows.find((r) => r.id === 'opencode-ses_oc1')
     const gemini = rows.find((r) => r.id === 'gemini-gem-sesion-1')
@@ -3054,6 +3055,130 @@ app.whenReady().then(async () => {
     JSON.stringify(settings)
   )
   mockE4.close()
+
+  /* -------------------------------------------------------------- *
+   * E5 · Exportar e importar conversaciones                        *
+   * -------------------------------------------------------------- */
+  // Los diálogos de guardar y abrir contestan solos con rutas de la carpeta de pruebas.
+  const { dialog: dlg } = require('electron')
+  const realSave = dlg.showSaveDialog
+  const realOpen = dlg.showOpenDialog
+  let nextSave = null
+  let nextOpen = null
+  dlg.showSaveDialog = async (...a) => (nextSave ? { canceled: false, filePath: nextSave } : realSave.apply(dlg, a))
+  dlg.showOpenDialog = async (...a) => (nextOpen ? { canceled: false, filePaths: nextOpen } : realOpen.apply(dlg, a))
+  const e5Dir = path.join(TMP, 'e5')
+  fs.mkdirSync(e5Dir, { recursive: true })
+  const mdFile = path.join(e5Dir, 'conversacion.md')
+  const jsonFile = path.join(e5Dir, 'conversacion.json')
+  const uiFile = path.join(e5Dir, 'desde-la-interfaz.md')
+  const badFile = path.join(e5Dir, 'roto.json')
+  fs.writeFileSync(badFile, '{ esto no es json')
+
+  const e5a = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const now = Date.now()
+    await api.projects.save({ id: 'proyecto-e5', name: 'Repo e5', path: repo, color: '#fff', createdAt: now })
+    const step = (id, tool) => ({ id, at: now, kind: 'tool', tool, status: 'ok' })
+    await api.sessions.save({
+      id: 'e5-conv', kind: 'chat', title: 'Plan de la migración', projectId: 'proyecto-e5', providerId: 'vllm', model: 'agente-de-prueba',
+      worktreePath: '/no/existe', cliSessionId: 'sesion-vieja', createdAt: now, updatedAt: now,
+      turns: [
+        { id: 'u1', role: 'user', content: 'Dime cómo migrar la tabla', attachments: [{ path: '/tmp/notas.txt', name: 'notas.txt', bytes: 10, text: true }] },
+        { id: 'r1', role: 'assistant', content: 'En **dos fases**: primero la columna, luego los datos.', model: 'agente-de-prueba', reasoning: 'Hay que evitar bloquear la tabla.',
+          steps: [step('s1', 'read_file'), step('s2', 'read_file'), step('s3', 'edit_file')],
+          metrics: { promptTokens: 1000, completionTokens: 500, totalTokens: 1500, costTotal: 0.0123, status: 'ok', checkpoint: { root: '/otro/equipo', head: 'abc' } } },
+        { id: 'u2', role: 'user', content: '¿Y si falla?' },
+        { id: 'r2', role: 'assistant', content: '', model: 'agente-de-prueba', error: 'límite de cupo' }
+      ]
+    })
+    await engine.loadSessions()
+    return true
+  })()`)
+  nextSave = mdFile
+  const e5b = await js(`(async () => {
+    const api = window.api
+    const out = {}
+    const md = await api.exchange.export(['e5-conv'], 'md', 'es')
+    out.md = md.ok ? md.data : md.error
+    return out
+  })()`)
+  nextSave = jsonFile
+  const e5c = await js(`(async () => {
+    const r = await window.api.exchange.export(['e5-conv'], 'json', 'es')
+    return r.ok ? r.data : r.error
+  })()`)
+  const mdOut = fs.existsSync(mdFile) ? fs.readFileSync(mdFile, 'utf8') : ''
+  let exported = null
+  try {
+    exported = JSON.parse(fs.readFileSync(jsonFile, 'utf8'))
+  } catch {}
+
+  nextOpen = [jsonFile, mdFile, badFile]
+  const e5d = await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    const r = await api.exchange.import()
+    const out = { result: r.ok ? r.data : r.error }
+    const list = (await api.sessions.list()).data
+    const fromJson = list.find((s) => s.id === r.data?.imported?.[0]?.id)
+    const fromMd = list.find((s) => s.id === r.data?.imported?.[1]?.id)
+    out.json = fromJson && {
+      sameId: fromJson.id === 'e5-conv', turns: fromJson.turns.length, projectId: fromJson.projectId, worktreePath: fromJson.worktreePath ?? null,
+      cliSessionId: fromJson.cliSessionId ?? null, checkpoint: fromJson.turns[1].metrics?.checkpoint ?? null, steps: fromJson.turns[1].steps?.length, titled: fromJson.titled
+    }
+    out.md = fromMd && { title: fromMd.title, turns: fromMd.turns.map((t) => t.role + ':' + t.content.slice(0, 26)).join(' | '), model: fromMd.turns[1]?.model }
+    out.ids = (r.data?.imported ?? []).map((x) => x.id)
+    return out
+  })()`)
+
+  // Desde la interfaz: el botón de la fila abre el diálogo y guarda en Markdown.
+  nextSave = uiFile
+  const e5e = await js(`(async () => {
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+    engine.focusChat('e5-conv')
+    const row = await until(() => [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Plan de la migración'))?.parentElement)
+    row?.querySelector('[data-action="export"]')?.click()
+    const pick = await until(() => document.querySelector('[data-export] [data-format="md"]'))
+    pick?.click()
+    await sleep(800)
+    return { modal: Boolean(pick) }
+  })()`)
+  const uiMd = fs.existsSync(uiFile) ? fs.readFileSync(uiFile, 'utf8') : ''
+  await js(`(async () => {
+    const engine = window.__accEngine
+    for (const id of ['e5-conv', ...${JSON.stringify(e5d.ids ?? [])}]) await engine.deleteSession(id)
+    await window.api.projects.remove('proyecto-e5')
+  })()`)
+  dlg.showSaveDialog = realSave
+  dlg.showOpenDialog = realOpen
+
+  log(
+    e5a && e5b.md?.count === 1 && mdOut.startsWith('# Plan de la migración') && mdOut.includes('- Proyecto: Repo e5') && mdOut.includes('- Modelo: vllm/agente-de-prueba') &&
+      mdOut.includes('## Tú\n\nDime cómo migrar la tabla') && mdOut.includes('## Respuesta · agente-de-prueba · 1.5k tokens · $0.0123') &&
+      mdOut.includes('<summary>Razonamiento</summary>') && mdOut.includes('_Herramientas: read_file ×2, edit_file_') && mdOut.includes('_Adjuntos: notas.txt_') && mdOut.includes('> **Error:** límite de cupo'),
+    'EXPORTAR EN MARKDOWN: MENSAJES, RAZONAMIENTO, HERRAMIENTAS, ADJUNTOS Y COSTE',
+    mdOut.split('\n').slice(0, 6).join(' ⏎ ')
+  )
+  log(e5c?.count === 1 && exported?.format === 'ai-command-center/conversations' && exported.sessions?.[0]?.id === 'e5-conv' && exported.sessions[0].turns.length === 4, 'exportar en JSON guarda la conversación entera', JSON.stringify(e5c))
+  log(
+    e5d.json && !e5d.json.sameId && e5d.json.turns === 4 && e5d.json.projectId === 'proyecto-e5' && e5d.json.worktreePath === null && e5d.json.cliSessionId === null &&
+      e5d.json.checkpoint === null && e5d.json.steps === 3 && e5d.json.titled === true,
+    'IMPORTAR EL JSON LA TRAE ENTERA, CON ID NUEVO Y SIN LO QUE SÓLO VALE EN EL OTRO EQUIPO',
+    JSON.stringify(e5d.json)
+  )
+  log(
+    e5d.md?.title === 'Plan de la migración' && e5d.md.turns === 'user:Dime cómo migrar la tabla | assistant:En **dos fases**: primero  | user:¿Y si falla? | assistant:> **Error:** límite de cup' && e5d.md.model === 'agente-de-prueba',
+    'IMPORTAR EL MARKDOWN RECUPERA LOS MENSAJES',
+    e5d.md?.turns
+  )
+  log((e5d.result?.skipped ?? []).length === 1 && e5d.result.skipped[0].file === 'roto.json' && e5d.result.skipped[0].reason.includes('JSON'), 'un fichero roto se salta y se dice por qué', JSON.stringify(e5d.result?.skipped))
+  log(e5e.modal && uiMd.startsWith('# Plan de la migración'), 'desde la fila de la conversación se exporta', uiMd.slice(0, 40))
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

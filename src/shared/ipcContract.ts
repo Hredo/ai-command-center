@@ -62,6 +62,8 @@ export interface IpcContract {
   'batteries:removeRun': { args: [id: string]; result: boolean }
   /** La nota de un juez local (Ollama) con una rúbrica: su opinión. */
   'search:query': { args: [q: SearchQuery]; result: SearchResult }
+  'sessions:export': { args: [ids: string[], format: 'md' | 'json', lang?: 'es' | 'en']; result: { path: string; count: number } | null }
+  'sessions:import': { args: []; result: { imported: { id: string; title: string }[]; skipped: { file: string; reason: string }[] } | null }
   'prompts:save': { args: [prompt: PromptTemplate]; result: AppConfig }
   'prompts:remove': { args: [id: string]; result: AppConfig }
   'prompts:used': { args: [id: string]; result: boolean }

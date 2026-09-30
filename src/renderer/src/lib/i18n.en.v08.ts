@@ -852,5 +852,16 @@ export const enV08: Record<string, string> = {
   "En todo": "Everywhere",
   "Siempre": "Any time",
   "Abrir la imagen": "Open the image",
-  "No se pudo pegar la imagen": "The image could not be pasted"
+  "No se pudo pegar la imagen": "The image could not be pasted",
+  "Exportar en Markdown o JSON": "Export as Markdown or JSON",
+  "No se pudo exportar": "Could not export",
+  "Exportadas {n} en {path}": "Exported {n} to {path}",
+  "No se pudo importar": "Could not import",
+  "Importadas {n} conversaciones": "Imported {n} conversations",
+  "Importar conversaciones (JSON o Markdown exportados por la app)": "Import conversations (JSON or Markdown exported by the app)",
+  "Exportar las conversaciones de esta lista": "Export the conversations in this list",
+  "Exportar {n} conversaciones": "Export {n} conversations",
+  "Exportar la conversación": "Export the conversation",
+  "Para leerla o compartirla: los mensajes, el razonamiento plegado, las herramientas que usó y lo que costó cada respuesta.": "To read or share it: the messages, the reasoning folded away, the tools it used and what each answer cost.",
+  "La conversación entera, tal cual se guarda: para llevarla a otro equipo o tener una copia. Se importa igual.": "The whole conversation, exactly as it is stored: to take it to another computer or keep a copy. It imports back the same."
 }

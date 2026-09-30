@@ -48,6 +48,7 @@ import { classifyWithOllama } from './recommend'
 import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryRun, judgeWithOllama } from './batteries'
 import { savePrompt, removePrompt, markPromptUsed } from './prompts'
 import { search } from './search'
+import { exportSessions, importSessions } from './exchange'
 import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
@@ -433,6 +434,14 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
       limit: typeof q?.limit === 'number' ? q.limit : undefined
     })
   )
+
+  /* ------------------------------- Exportar e importar ------------------------- */
+
+  handle('sessions:export', (ids: string[], format: 'md' | 'json', lang?: 'es' | 'en') => {
+    if (!Array.isArray(ids) || !ids.every((x) => typeof x === 'string')) throw new Error('Conversaciones no válidas')
+    return exportSessions(ids.slice(0, 1000), format === 'json' ? 'json' : 'md', lang === 'en' ? 'en' : 'es')
+  })
+  handle('sessions:import', () => importSessions())
 
   /* ------------------------------- Prompts ------------------------------------- */
 

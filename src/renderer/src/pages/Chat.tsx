@@ -12,7 +12,7 @@ import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
   ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw,
-  ArrowRightLeft, FileDiff, Lightbulb, RefreshCw
+  ArrowRightLeft, FileDiff, Lightbulb, RefreshCw, Download, Upload
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -31,11 +31,12 @@ import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
   unarchiveSession, deleteSession, sendTurn, stopSession, loadSessions, approveStep,
-  useChatFocus, useQuotas, markTurnUndone, forkAt, planRewind, rewindAndSend, type Turn
+  useChatFocus, useQuotas, markTurnUndone, forkAt, planRewind, rewindAndSend, saveSessionNow, type Turn
 } from '../lib/engine'
 import { RewindModal } from '../components/RewindModal'
 import { PromptTextarea, SavePromptButton } from '../components/PromptLibrary'
 import { openSearch } from '../components/SearchModal'
+import { usePrefs } from '../lib/prefs'
 import { UndoTurn } from '../components/UndoTurn'
 import { WorktreeBox } from '../components/WorktreeBox'
 import { DiffReview } from '../components/DiffReview'
@@ -81,7 +82,8 @@ function SessionRow({
   onArchive,
   onUnarchive,
   onDelete,
-  onPin
+  onPin,
+  onExport
 }: {
   session: StoredSession
   active: boolean
@@ -92,6 +94,7 @@ function SessionRow({
   onUnarchive: () => void
   onDelete: () => void
   onPin: () => void
+  onExport: () => void
 }): React.JSX.Element {
   const t = useT()
   const turns = session.turns?.filter((t) => t.role === 'assistant').length ?? 0
@@ -133,6 +136,9 @@ function SessionRow({
         </button>
         <button onClick={onRename} className="text-dim hover:text-ink p-0.5" title={t('Renombrar')}>
           <Pencil size={11} />
+        </button>
+        <button onClick={onExport} className="text-dim hover:text-accent p-0.5" title={t('Exportar en Markdown o JSON')} data-action="export">
+          <Download size={11} />
         </button>
         {session.archived ? (
           <button onClick={onUnarchive} className="text-dim hover:text-ok p-0.5" title={t('Reabrir')}>
@@ -455,6 +461,8 @@ export default function Chat(): React.JSX.Element {
   const [renaming, setRenaming] = useState<StoredSession | null>(null)
   const [renameText, setRenameText] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<StoredSession | null>(null)
+  const [exporting, setExporting] = useState<string[] | null>(null)
+  const { lang } = usePrefs()
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [review, setReview] = useState<{ runId: string; checkpoint: RunCheckpoint; untilRunId?: string } | null>(null)
   const [rewind, setRewind] = useState<{ turnId: string; mode: 'edit' | 'regenerate' } | null>(null)
@@ -581,6 +589,34 @@ export default function Chat(): React.JSX.Element {
   useEffect(() => {
     setAttachments([])
   }, [activeId])
+
+  const exportAs = async (format: 'md' | 'json'): Promise<void> => {
+    if (!exporting) return
+    const ids = exporting
+    setExporting(null)
+    // Lo último que ha llegado puede estar aún sin guardar: se guarda antes de leerlo.
+    for (const id of ids) await saveSessionNow(id)
+    const r = await window.api.exchange.export(ids, format, lang)
+    if (!r.ok) toast('error', r.error ?? t('No se pudo exportar'))
+    else if (r.data) toast('ok', t('Exportadas {n} en {path}', { n: r.data.count, path: r.data.path }))
+  }
+
+  const importSessions = async (): Promise<void> => {
+    const r = await window.api.exchange.import()
+    if (!r.ok) {
+      toast('error', r.error ?? t('No se pudo importar'))
+      return
+    }
+    if (!r.data) return
+    await loadSessions()
+    const { imported, skipped } = r.data
+    if (imported.length) {
+      setShowArchived(false)
+      void open(imported[0].id)
+      toast('ok', t('Importadas {n} conversaciones', { n: imported.length }))
+    }
+    for (const s of skipped.slice(0, 3)) toast('error', `${s.file}: ${s.reason}`)
+  }
 
   // Adjuntos que llegan pegando una imagen o arrastrando archivos a la caja.
   const addAttachments = useCallback((added: Attachment[]) => {
@@ -796,6 +832,25 @@ export default function Chat(): React.JSX.Element {
               {t('Cerradas')}
               <span className="num ml-1 text-dim">{sessions.filter((s) => s.archived).length}</span>
             </button>
+            <span className="ml-auto flex items-center gap-0.5">
+              <button
+                onClick={() => void importSessions()}
+                className="p-1 rounded-md text-dim hover:text-ink hover:bg-raised"
+                title={t('Importar conversaciones (JSON o Markdown exportados por la app)')}
+                data-import-sessions
+              >
+                <Upload size={12} />
+              </button>
+              <button
+                onClick={() => visible.length && setExporting(visible.map((s) => s.id))}
+                disabled={!visible.length}
+                className="p-1 rounded-md text-dim hover:text-ink hover:bg-raised disabled:opacity-40"
+                title={t('Exportar las conversaciones de esta lista')}
+                data-export-list
+              >
+                <Download size={12} />
+              </button>
+            </span>
           </div>
         </div>
 
@@ -824,6 +879,7 @@ export default function Chat(): React.JSX.Element {
                 onUnarchive={() => void unarchiveSession(s.id)}
                 onDelete={() => setConfirmDelete(s)}
                 onPin={() => patchSessionConfig(s.id, { pinned: !s.pinned })}
+                onExport={() => setExporting([s.id])}
               />
             ))
           )}
@@ -1432,6 +1488,35 @@ export default function Chat(): React.JSX.Element {
           </div>
         )}
       </Pane>
+
+      {/* Exportar */}
+      <Modal
+        open={Boolean(exporting)}
+        onClose={() => setExporting(null)}
+        title={exporting && exporting.length > 1 ? t('Exportar {n} conversaciones', { n: exporting.length }) : t('Exportar la conversación')}
+      >
+        <div className="space-y-2" data-export>
+          {(
+            [
+              ['md', 'Markdown', t('Para leerla o compartirla: los mensajes, el razonamiento plegado, las herramientas que usó y lo que costó cada respuesta.')],
+              ['json', 'JSON', t('La conversación entera, tal cual se guarda: para llevarla a otro equipo o tener una copia. Se importa igual.')]
+            ] as const
+          ).map(([format, label, hint]) => (
+            <button
+              key={format}
+              type="button"
+              data-format={format}
+              onClick={() => void exportAs(format)}
+              className="w-full text-left rounded-lg border border-line hover:border-[#2c3346] hover:bg-raised px-3.5 py-2.5"
+            >
+              <div className="text-[13px] font-medium flex items-center gap-2">
+                <Download size={13} className="text-accent" /> {label}
+              </div>
+              <div className="text-[11.5px] text-dim mt-0.5 leading-relaxed">{hint}</div>
+            </button>
+          ))}
+        </div>
+      </Modal>
 
       {/* Renombrar */}
       <Modal
