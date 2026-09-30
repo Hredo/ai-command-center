@@ -48,7 +48,7 @@ import { classifyWithOllama } from './recommend'
 import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryRun, judgeWithOllama } from './batteries'
 import { savePrompt, removePrompt, markPromptUsed } from './prompts'
 import { search } from './search'
-import { suggestCommitMessage } from './gitAi'
+import { suggestCommitMessage, reviewChanges } from './gitAi'
 import { pullsReport, pullChecks, createPull, describePull } from './pulls'
 import { exportSessions, importSessions } from './exchange'
 import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
@@ -181,6 +181,16 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     const r = await gitCommit(path, message, { all: Boolean(all) })
     pokeRepo(path)
     return r
+  })
+  handle('git:review', (path: string, scope: 'commit' | 'branch', base: string | undefined, pick: { providerId: string; model: string }, lang?: 'es' | 'en') => {
+    if (!pick?.providerId || !pick?.model) throw new Error('Elige qué modelo revisa')
+    return reviewChanges(
+      str(path, 'ruta'),
+      scope === 'branch' ? 'branch' : 'commit',
+      typeof base === 'string' ? base : undefined,
+      { providerId: String(pick.providerId), model: String(pick.model) },
+      lang === 'en' ? 'en' : 'es'
+    )
   })
   handle('pulls:report', (path: string) => pullsReport(str(path, 'ruta')))
   handle('pulls:checks', (path: string, num: number) => pullChecks(str(path, 'ruta'), Number(num)))

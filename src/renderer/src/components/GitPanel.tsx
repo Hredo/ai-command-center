@@ -10,8 +10,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   GitCommit, GitBranch, ArrowUp, ArrowDown, RefreshCw, Plus, Minus, Loader2, Terminal as TerminalIcon,
-  FileText, AlertTriangle, ChevronDown, Check, Archive, ArchiveRestore, Sparkles
+  FileText, AlertTriangle, ChevronDown, Check, Archive, ArchiveRestore, Sparkles, ShieldCheck
 } from 'lucide-react'
+import { AiReview } from './AiReview'
 import { Badge, Button, cx, Empty, Modal, Textarea } from './ui'
 import { cost, relTime, shortModel } from '../lib/format'
 import { BranchPicker, useGit } from './AgentPanel'
@@ -94,6 +95,7 @@ export function GitPanel({
   const [aiBusy, setAiBusy] = useState(false)
   const [aiNote, setAiNote] = useState<{ model: string; cost: number } | null>(null)
   const [prevMessage, setPrevMessage] = useState<string | null>(null)
+  const [reviewing, setReviewing] = useState(false)
 
   const writeWithAi = async (): Promise<void> => {
     if (!pick) {
@@ -396,6 +398,16 @@ export function GitPanel({
             </div>
             <Button
               size="sm"
+              variant="ghost"
+              onClick={() => setReviewing(true)}
+              disabled={!pick || changes.every((c) => c.status === '?')}
+              title={t('Un modelo revisa lo que vas a confirmar y comenta las líneas donde ve un fallo o un riesgo')}
+              data-ai-review-commit
+            >
+              <ShieldCheck size={12} /> {t('Revisar con IA')}
+            </Button>
+            <Button
+              size="sm"
               onClick={() => void writeWithAi()}
               disabled={aiBusy || !pick || changes.every((c) => c.status === '?')}
               title={t('Escribe el mensaje a partir de los cambios, al estilo de los commits del repositorio')}
@@ -452,6 +464,8 @@ export function GitPanel({
           </Button>
         </div>
       </div>
+
+      <AiReview open={reviewing} onClose={() => setReviewing(false)} path={path} scope="commit" pick={pick} />
 
       {/* --------------------------------------------- Pull requests y CI */}
       <PullRequests

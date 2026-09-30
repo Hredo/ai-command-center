@@ -183,6 +183,9 @@ const api = {
     diff: (path: string, file?: string, staged = false) => call('git:diff', path, file, staged),
     stage: (path: string, files: string[], stage: boolean) => call('git:stage', path, files, stage),
     commit: (path: string, message: string, all = false) => call('git:commit', path, message, all),
+    /** Un modelo revisa lo que vas a confirmar (`commit`) o la rama entera (`branch`). */
+    review: (path: string, scope: 'commit' | 'branch', base: string | undefined, pick: { providerId: string; model: string }, lang?: 'es' | 'en') =>
+      call('git:review', path, scope, base, pick, lang),
     /** Pull requests y CI del repositorio, por gh. */
     pulls: (path: string) => call('pulls:report', path),
     pullChecks: (path: string, num: number) => call('pulls:checks', path, num),

@@ -122,6 +122,16 @@ export interface IpcContract {
   'git:changes': { args: [path: string]; result: FileChange[] }
   'git:checkout': { args: [path: string, branch: string, create?: boolean]; result: { ok: boolean; detail: string; info?: GitInfo } }
   'git:commit': { args: [path: string, message: string, all?: boolean]; result: GitCmd }
+  'git:review': {
+    args: [path: string, scope: 'commit' | 'branch', base: string | undefined, pick: { providerId: string; model: string }, lang?: 'es' | 'en']
+    result: {
+      diff: string
+      truncated: boolean
+      summary: string
+      comments: { file: string; line?: number; severity: 'error' | 'warning' | 'info'; comment: string }[]
+      run: RunRecord
+    }
+  }
   'pulls:report': { args: [path: string]; result: PullsReport }
   'pulls:checks': { args: [path: string, num: number]; result: PullCheck[] }
   'pulls:create': { args: [path: string, input: { title: string; body: string; base: string; draft?: boolean }]; result: { url: string; pushed: boolean } }

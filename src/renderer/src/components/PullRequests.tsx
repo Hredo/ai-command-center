@@ -9,8 +9,9 @@
  */
 import React, { useCallback, useEffect, useState } from 'react'
 import {
-  GitPullRequest, Check, X, Clock, Loader2, RefreshCw, ExternalLink, ChevronRight, Sparkles, Workflow, CircleSlash
+  GitPullRequest, Check, X, Clock, Loader2, RefreshCw, ExternalLink, ChevronRight, Sparkles, Workflow, CircleSlash, ShieldCheck
 } from 'lucide-react'
+import { AiReview } from './AiReview'
 import { Badge, Button, Field, Input, Modal, Textarea, Toggle, cx } from './ui'
 import { useT } from '../lib/i18n'
 import { usePrefs } from '../lib/prefs'
@@ -141,6 +142,7 @@ export function PullRequests({
   const [form, setForm] = useState<{ base: string; title: string; body: string; draft: boolean } | null>(null)
   const [busy, setBusy] = useState<'ai' | 'create' | null>(null)
   const [aiNote, setAiNote] = useState<string | null>(null)
+  const [reviewing, setReviewing] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -309,7 +311,12 @@ export function PullRequests({
                 <Sparkles size={11} className="text-violet" /> {aiNote}
               </div>
             ) : null}
-            <Toggle checked={form.draft} onChange={(v) => setForm({ ...form, draft: v })} label={t('Como borrador')} />
+            <div className="flex items-center gap-3">
+              <Toggle checked={form.draft} onChange={(v) => setForm({ ...form, draft: v })} label={t('Como borrador')} />
+              <Button size="sm" variant="ghost" className="ml-auto" disabled={!pick || !form.base.trim()} onClick={() => setReviewing(true)} data-ai-review-branch>
+                <ShieldCheck size={12} /> {t('Revisar la rama con IA')}
+              </Button>
+            </div>
             {report.needsPush ? (
               <p className="text-[11.5px] text-warn leading-relaxed" data-needs-push>
                 {report.upstream
@@ -320,6 +327,8 @@ export function PullRequests({
           </div>
         ) : null}
       </Modal>
+      {/* Encima del diálogo de la PR: al cerrarla se sigue donde estabas. */}
+      <AiReview open={reviewing} onClose={() => setReviewing(false)} path={path} scope="branch" base={form?.base} pick={pick} />
     </div>
   )
 }

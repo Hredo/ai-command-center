@@ -240,6 +240,22 @@ function startAgentMock() {
           res.end()
           return
         }
+        // Una revisión: el JSON dentro de un bloque de código y con texto alrededor.
+        if (sysText.includes('revisor de código')) {
+          const review = {
+            summary: 'Hay una división por cero.',
+            comments: [
+              { file: 'calc.js', line: 2, severity: 'error', comment: 'Si b es 0 divide por cero.' },
+              { file: 'calc.js', line: 1, severity: 'info', comment: 'El nombre div es poco claro.' },
+              { file: 'otro/inexistente.js', line: 5, severity: 'warning', comment: 'Fichero que no está en el diff.' }
+            ]
+          }
+          send({ choices: [{ delta: { content: 'Aquí tienes la revisión:\n```json\n' + JSON.stringify(review) + '\n```\nEspero que ayude.' } }] })
+          send({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 500, completion_tokens: 80 } })
+          res.write('data: [DONE]\n\n')
+          res.end()
+          return
+        }
         // La descripción de una PR: con «Título:» delante, que hay que quitar.
         if (sysText.includes('descripciones de pull requests')) {
           send({ choices: [{ delta: { content: 'Título: Añade el panel de PR\n\n- Lista las PR abiertas con su CI\n- Abre la PR desde la app' } }] })
@@ -3546,6 +3562,93 @@ app.whenReady().then(async () => {
   )
   log(!/auth token|--with-token|GH_TOKEN/.test(ghCalls), 'la app nunca pide el token a gh', ghCalls.split('\n').length - 1 + ' llamadas')
   mockF2.close()
+
+  /* -------------------------------------------------------------- *
+   * F3 · Revisión con IA antes del commit o de la PR               *
+   * -------------------------------------------------------------- */
+  const mockF3 = await startAgentMock()
+  const headF3 = git(['rev-parse', 'HEAD'])
+  const branchBeforeF3 = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  fs.writeFileSync(path.join(REPO, 'calc.js'), 'function div(a, b) {\n  return a\n}\n')
+  git(['add', 'calc.js'])
+  git(['commit', '-qm', 'Añade div'])
+  const baseF3 = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  fs.writeFileSync(path.join(REPO, 'calc.js'), 'function div(a, b) {\n  return a / b\n}\n')
+
+  const f3 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const out = {}
+    const pick = { providerId: 'vllm', model: 'agente-de-prueba' }
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.config.settings({ gitModel: pick })
+    await api.projects.save({ id: 'proyecto-f3', name: 'Repo f3', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+
+    const r = await api.git.review(repo, 'commit', undefined, pick, 'es')
+    out.api = r.ok ? { summary: r.data.summary, comments: r.data.comments.map((c) => c.file + ':' + c.line + ':' + c.severity).join(','), diffHasCalc: r.data.diff.includes('+  return a / b'), kind: r.data.run.kind } : r.error
+
+    // Por la interfaz: Proyectos › Git › Revisar con IA.
+    engine.navigate({ page: 'projects', projectId: 'proyecto-f3', tab: 'git' })
+    const btn = await until(() => document.querySelector('[data-ai-review-commit]:not([disabled])'))
+    btn?.click()
+    const box = await until(() => document.querySelector('[data-ai-review] [data-ai-summary]'))
+    out.summary = box?.textContent
+    const errorBox = document.querySelector('[data-ai-review] [data-ai-comment="error"]')
+    // El comentario va justo debajo de la línea que cambió (la 2 nueva: «return a / b»).
+    out.errorAfter = errorBox?.previousElementSibling?.textContent ?? ''
+    out.loose = document.querySelector('[data-ai-review] [data-ai-loose]')?.textContent ?? ''
+    out.before = document.querySelectorAll('[data-ai-review] [data-ai-comment]').length
+    document.querySelector('[data-ai-review] [data-ai-comment="info"] button')?.click()
+    await sleep(150)
+    out.after = document.querySelectorAll('[data-ai-review] [data-ai-comment]').length
+    ;[...document.querySelectorAll('.fixed.inset-0 button')].find((b) => b.textContent.trim() === 'Cerrar')?.click()
+
+    for (const run of (await api.runs.query({ kind: 'git' })).data.rows) await api.runs.remove(run.id)
+    return out
+  })()`)
+  // La rama entera contra su base.
+  git(['stash', '-q'])
+  git(['checkout', '-q', '-b', 'rama-f3'])
+  git(['stash', 'pop', '-q'])
+  git(['commit', '-qam', 'Divide de verdad'])
+  const f3b = await js(`(async () => {
+    const api = window.api
+    const r = await api.git.review(${JSON.stringify(REPO)}, 'branch', ${JSON.stringify(baseF3)}, { providerId: 'vllm', model: 'agente-de-prueba' }, 'es')
+    const out = r.ok ? { diffHasCalc: r.data.diff.includes('+  return a / b'), n: r.data.comments.length } : { error: r.error }
+    const none = await api.git.review(${JSON.stringify(REPO)}, 'branch', 'rama-f3', { providerId: 'vllm', model: 'agente-de-prueba' }, 'es')
+    out.sameBranch = none.ok ? 'no falló' : none.error
+    for (const run of (await api.runs.query({ kind: 'git' })).data.rows) await api.runs.remove(run.id)
+    await api.config.settings({ gitModel: null })
+    await api.providers.setBaseUrl('vllm', ${JSON.stringify(f3.prevBase ?? '')})
+    await api.projects.remove('proyecto-f3')
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+    return out
+  })()`)
+  const f3Prompt = String(
+    (mockF3.requests ?? []).find((b) => String(b.messages?.find((m) => m.role === 'system')?.content ?? '').includes('revisor de código'))?.messages?.find((m) => m.role === 'user')?.content ?? ''
+  )
+  git(['checkout', '-q', branchBeforeF3])
+  git(['branch', '-q', '-D', 'rama-f3'])
+  git(['reset', '-q', '--hard', headF3])
+
+  log(
+    f3.api?.summary === 'Hay una división por cero.' && f3.api.comments === 'calc.js:2:error,calc.js:1:info,otro/inexistente.js:5:warning' && f3.api.diffHasCalc && f3.api.kind === 'git' &&
+      f3Prompt.includes('+  return a / b') && f3Prompt.includes('"severity"'),
+    'F3: UN MODELO REVISA EL DIFF Y SUS COMENTARIOS SE LEEN AUNQUE VENGAN ENVUELTOS EN TEXTO',
+    JSON.stringify(f3.api)
+  )
+  log(
+    f3.summary === 'Hay una división por cero.' && f3.errorAfter.includes('return a / b') && f3.loose.includes('otro/inexistente.js') && f3.before === 3 && f3.after === 2,
+    'EN EL PANEL, CADA COMENTARIO SALE DEBAJO DE SU LÍNEA; LO QUE NO ESTÁ EN EL DIFF, APARTE; Y SE PUEDEN DESCARTAR',
+    `${f3.errorAfter.trim()} · ${f3.before}→${f3.after}`
+  )
+  log(f3b.diffHasCalc && f3b.n === 3 && String(f3b.sameBranch).includes('no tiene cambios'), 'también revisa la rama entera contra su base antes de la PR', JSON.stringify(f3b))
+  mockF3.close()
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *
