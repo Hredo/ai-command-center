@@ -21,6 +21,7 @@ import { applyAnthropicEffort, applyGoogleEffort, applyOllamaEffort, applyOpenAi
 import { modelContextMax } from '../ollama'
 import { projectInstructions } from '../instructions'
 import { mcpToolsFor, callMcpTool } from '../mcp/client'
+import { fetchHost } from './webFetch'
 import type { AgentStep, ChatMessage, FileTouch, ProviderDef, RunOptions, UsageLimit } from '@shared/types'
 
 /** Rondas de herramientas por petición: un modelo que entra en bucle no gira para siempre. */
@@ -175,6 +176,7 @@ function providerError(def: ProviderDef, model: string, msg: string): Error {
 function agentInstructions(root: string, tools: AgentTool[], inProject: boolean): string {
   const canEdit = tools.some((t) => t.kind === 'edit' || t.kind === 'write')
   const canRun = tools.some((t) => t.kind === 'run')
+  const canFetch = tools.some((t) => t.kind === 'net')
   return [
     inProject
       ? `Eres un agente de programación que trabaja dentro del proyecto del usuario, en su equipo con ${osName()}.`
@@ -190,6 +192,9 @@ function agentInstructions(root: string, tools: AgentTool[], inProject: boolean)
       : 'Estás en modo sólo lectura: investiga y propone un plan concreto, con archivos y cambios, pero no puedes modificar nada.',
     canRun
       ? `Los comandos se ejecutan con ${COMMAND_SHELL} en la raíz del proyecto. El usuario puede tener que aprobarlos y puede rechazarlos.`
+      : '',
+    canFetch
+      ? 'Con web_fetch lees una página web (documentación, una incidencia, una API pública) cuando lo que necesitas no está en el proyecto. El usuario aprueba cada dominio. No metas en la URL datos del proyecto ni del usuario.'
       : '',
     'Si una herramienta devuelve un error, corrige la llamada y sigue. Al terminar, resume en pocas líneas qué has hecho y en qué archivos.'
   ]
@@ -718,6 +723,9 @@ function googleDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Diale
  * El bucle                                                           *
  * ------------------------------------------------------------------ */
 
+/** Dominios que el usuario ya dejó leer en esta ejecución: no se vuelve a preguntar por cada página. */
+const allowedHosts = new WeakMap<AgentCtx, Set<string>>()
+
 async function runCall(ctx: AgentCtx, tools: AgentTool[], call: ToolCall): Promise<ToolResult> {
   const tool = tools.find((t) => t.name === call.name)
   // Id propio: hay servidores compatibles que numeran las llamadas desde cero
@@ -745,7 +753,12 @@ async function runCall(ctx: AgentCtx, tools: AgentTool[], call: ToolCall): Promi
   }
 
   let approved: AgentStep['approval']
-  if (needsApproval(tool, ctx.opts.permissionMode)) {
+  const host = tool.kind === 'net' ? fetchHost(String(call.args?.url ?? '')) : null
+  const hosts = allowedHosts.get(ctx) ?? new Set<string>()
+  allowedHosts.set(ctx, hosts)
+  // Una URL que no es http(s) no sale de aquí: la herramienta la rechaza sin conectar.
+  const netSkip = tool.kind === 'net' && (!host || hosts.has(host))
+  if (needsApproval(tool, ctx.opts.permissionMode) && !netSkip) {
     // Primero se deja apuntada la espera y luego se anuncia: si la respuesta
     // llegara antes de apuntarla, se perdería y el agente esperaría para siempre.
     const answer = ctx.askApproval(step)
@@ -760,6 +773,7 @@ async function runCall(ctx: AgentCtx, tools: AgentTool[], call: ToolCall): Promi
       }
     }
     approved = 'approved'
+    if (host) hosts.add(host)
     ctx.onStep({ ...step, at: Date.now(), approval: approved })
   } else {
     ctx.onStep(step)

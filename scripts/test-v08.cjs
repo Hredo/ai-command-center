@@ -229,6 +229,22 @@ function startAgentMock() {
         const users = msgs.filter((m) => m.role === 'user')
         const lastUser = String(users[users.length - 1]?.content ?? '')
         const tools = msgs.filter((m) => m.role === 'tool')
+        // «web: {args} || {args}…»: pide web_fetch con cada uno, en orden.
+        const web = /web: (.+)$/s.exec(lastUser)
+        if (web && offered.includes('web_fetch')) {
+          const calls = web[1].split(' || ').map((x) => JSON.parse(x))
+          const i = tools.length
+          if (i < calls.length) {
+            send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_web_' + i, function: { name: 'web_fetch', arguments: JSON.stringify(calls[i]) } }] } }] })
+            send({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 60, completion_tokens: 10 } })
+          } else {
+            send({ choices: [{ delta: { content: `Leídas ${i} direcciones.` } }] })
+            send({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 90, completion_tokens: 6 } })
+          }
+          res.write('data: [DONE]\n\n')
+          res.end()
+          return
+        }
         const mcpCall = /suma/.test(lastUser)
           ? ['mcp__calc__sumar', { a: 2, b: 3, detalle: { unidades: 'm' } }]
           : /borra la memoria/.test(lastUser)
@@ -2299,6 +2315,177 @@ app.whenReady().then(async () => {
     window.__accEngine.setArena({ prompt: '', contenders: [] })
   })()`)
   judgeMock.close()
+
+  /* -------------------------------------------------------------- *
+   * D4 · web_fetch en los agentes por API                          *
+   * -------------------------------------------------------------- */
+  const webLog = []
+  const webServer = http.createServer((req, res) => {
+    webLog.push({ path: req.url, ua: req.headers['user-agent'] ?? '' })
+    const port = webServer.address().port
+    const u = new URL(req.url, 'http://x')
+    if (u.pathname === '/doc' || u.pathname === '/otra') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(`<!doctype html><html><head><title>Página &amp; prueba</title><style>body { color: red }</style>
+<script>console.log('no debe salir')</script></head><body>
+<nav><a href="/otra">otra página</a> <a href="#arriba">arriba</a></nav>
+<h1>Cabecera</h1><p>Texto con &aacute;cento, &#x2713; y &amp;.</p>
+<ul><li>uno</li><li>dos <b>fuerte</b></li></ul>
+<img src="l.png" alt="logo"><pre>  sangría
+    más</pre><p>Ver <a href="https://ejemplo.com/x">https://ejemplo.com/x</a></p>
+<noscript>activa js</noscript></body></html>`)
+      return
+    }
+    if (u.pathname === '/redir-mismo') {
+      res.writeHead(302, { location: '/doc?via=mismo' })
+      res.end()
+      return
+    }
+    if (u.pathname === '/redir-otro') {
+      res.writeHead(302, { location: `http://localhost:${port}/doc?desde=otro` })
+      res.end()
+      return
+    }
+    if (u.pathname === '/largo') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end(Array.from({ length: 5000 }, (_, i) => 'linea ' + String(i).padStart(4, '0')).join('\n'))
+      return
+    }
+    if (u.pathname === '/pdf') {
+      res.writeHead(200, { 'content-type': 'application/pdf' })
+      res.end(Buffer.from('%PDF-1.4\n\u0000\u0001binario'))
+      return
+    }
+    if (u.pathname === '/latin1') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=iso-8859-1' })
+      res.end(Buffer.from('<p>Canción de año</p>', 'latin1'))
+      return
+    }
+    res.writeHead(404, { 'content-type': 'text/html' })
+    res.end('<title>No está</title><p>No existe</p>')
+  })
+  await new Promise((r) => webServer.listen(0, '127.0.0.1', r))
+  const WEB = `http://127.0.0.1:${webServer.address().port}`
+  const mockD4 = await startAgentMock()
+  const webPrompt = (...calls) => 'web: ' + calls.map((c) => JSON.stringify(c)).join(' || ')
+  const d4Prompts = {
+    main: webPrompt(
+      { url: WEB + '/doc' },
+      { url: WEB + '/redir-mismo' },
+      { url: WEB + '/redir-otro' },
+      { url: WEB + '/largo' },
+      { url: WEB + '/largo', offset: 20000, max_chars: 60000 },
+      { url: WEB + '/pdf' },
+      { url: WEB + '/404' },
+      { url: WEB + '/latin1' },
+      { url: 'ftp://ejemplo.com/x' }
+    ),
+    plan: webPrompt({ url: WEB + '/doc?plan=1' }),
+    bypass: webPrompt({ url: WEB + '/otra' })
+  }
+  const d4 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const prompts = ${JSON.stringify(d4Prompts)}
+    const out = {}
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.projects.save({ id: 'proyecto-web', name: 'Repo web', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(400)
+    const cfg = async () => (await api.config.get()).data
+    const session = (permissionMode) => engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba', projectId: 'proyecto-web', agentMode: true, permissionMode, includeContext: false })
+    const stepsOf = (sid) => (engine.peekChat(sid)?.turns.at(-1)?.steps ?? []).filter((st) => st.tool === 'web_fetch')
+
+    // «Acepta ediciones»: el primer dominio se aprueba y el resto del turno no pregunta.
+    const s1 = await session('acceptEdits')
+    const p1 = engine.sendTurn(s1, prompts.main, await cfg())
+    const pend = await until(() => stepsOf(s1).find((st) => st.approval === 'pending'))
+    out.pendingTarget = pend?.target
+    engine.focusChat(s1)
+    const txt = await until(() => [...document.querySelectorAll('span')].find((x) => x.textContent.includes('Quiere leer esta página'))?.textContent)
+    out.pendingText = txt ?? ''
+    if (pend) engine.approveStep(engine.peekChat(s1).runningRunId, pend.id, true)
+    const r1 = await p1
+    out.status = r1.run?.status ?? r1.error
+    out.answer = engine.peekChat(s1)?.turns.at(-1)?.content
+    out.steps = stepsOf(s1).map((st) => st.status + ':' + (st.approval ?? '-')).join(' ')
+    out.summaries = stepsOf(s1).map((st) => st.detail ?? '').join(' | ')
+
+    // «Sólo plan»: se ofrece, pregunta, y si dices que no, no sale nada.
+    const s2 = await session('plan')
+    const p2 = engine.sendTurn(s2, prompts.plan, await cfg())
+    const pend2 = await until(() => stepsOf(s2).find((st) => st.approval === 'pending'))
+    out.planPending = Boolean(pend2)
+    if (pend2) engine.approveStep(engine.peekChat(s2).runningRunId, pend2.id, false)
+    await p2
+    out.planSteps = stepsOf(s2).map((st) => st.status + ':' + (st.approval ?? '-')).join(' ')
+
+    // «Sin límites»: no pregunta.
+    const s3 = await session('bypassPermissions')
+    const r3 = await engine.sendTurn(s3, prompts.bypass, await cfg())
+    out.bypassStatus = r3.run?.status ?? r3.error
+    out.bypassSteps = stepsOf(s3).map((st) => st.status + ':' + (st.approval ?? '-')).join(' ')
+
+    await api.providers.setBaseUrl('vllm', out.prevBase)
+    for (const id of [s1, s2, s3]) await engine.deleteSession(id)
+    await api.projects.remove('proyecto-web')
+    return out
+  })()`)
+  const d4Reqs = mockD4.requests ?? []
+  const lastFor = (prompt) =>
+    d4Reqs
+      .filter((b) => (b.messages ?? []).some((m) => m.role === 'user' && String(m.content).includes(prompt)))
+      .sort((a, b) => b.messages.length - a.messages.length)[0]
+  const mainReq = lastFor(d4Prompts.main)
+  const webResults = (mainReq?.messages ?? []).filter((m) => m.role === 'tool').map((m) => String(m.content))
+  const [rDoc, rMismo, rOtro, rLargo1, rLargo2, rPdf, r404, rLatin, rFtp] = webResults
+  const planReq = lastFor(d4Prompts.plan)
+  const planOffered = (planReq?.tools ?? []).map((t) => t.function?.name)
+  const planResult = (planReq?.messages ?? []).filter((m) => m.role === 'tool').map((m) => String(m.content)).join(' ')
+  const webPaths = webLog.map((l) => l.path)
+  const webSys = String(mainReq?.messages?.[0]?.content ?? '')
+
+  log(
+    webResults.length === 9 && d4.status === 'ok' && d4.answer?.includes('Leídas 9') && d4.steps.split(' ').filter((s) => s.endsWith(':approved')).length === 1,
+    'WEB_FETCH: SE APRUEBA EL DOMINIO UNA VEZ Y EL RESTO DEL TURNO NO PREGUNTA',
+    `${d4.status} · ${d4.steps}`
+  )
+  log(d4.pendingTarget === WEB + '/doc' && d4.pendingText.includes('podrá leer más de 127.0.0.1'), 'el aviso de permiso dice qué dominio queda aprobado', d4.pendingText.slice(0, 120))
+  log(
+    Boolean(rDoc) && rDoc.includes('Título: Página & prueba') && rDoc.includes('# Cabecera') && rDoc.includes('Texto con ácento, ✓ y &.') && rDoc.includes('- uno') &&
+      rDoc.includes(`otra página (${WEB}/otra)`) && rDoc.includes('[imagen: logo]') && rDoc.includes('```\n  sangría\n    más\n```') && rDoc.includes('Ver https://ejemplo.com/x') &&
+      !rDoc.includes('no debe salir') && !rDoc.includes('color: red') && !rDoc.includes('activa js') && !rDoc.includes('#arriba'),
+    'EL HTML LLEGA COMO TEXTO: SIN SCRIPTS NI ESTILOS, CON TÍTULOS, LISTAS, CÓDIGO Y ENLACES',
+    (rDoc ?? '').replace(/\n/g, '⏎').slice(0, 200)
+  )
+  log(Boolean(rMismo) && rMismo.includes(`URL: ${WEB}/doc?via=mismo`) && rMismo.includes('# Cabecera'), 'una redirección dentro del mismo dominio se sigue', (rMismo ?? '').slice(0, 80))
+  log(
+    Boolean(rOtro) && rOtro.includes(`a otro dominio: http://localhost:${webServer.address().port}/doc?desde=otro`) && !webPaths.some((p) => p.includes('desde=otro')),
+    'UNA REDIRECCIÓN A OTRO DOMINIO NO SE SIGUE SOLA: SE LE DICE AL AGENTE',
+    (rOtro ?? '').slice(0, 120)
+  )
+  log(
+    Boolean(rLargo1) && rLargo1.includes('caracteres 0–20000 de 54999') && rLargo1.includes('offset=20000') && Boolean(rLargo2) && rLargo2.includes('caracteres 20000–54999 de 54999. Es el final.') &&
+      rLargo2.trimEnd().endsWith('linea 4999') && webPaths.filter((p) => p === '/largo').length === 1,
+    'UN TEXTO LARGO LLEGA POR TROZOS CON OFFSET, SIN VOLVER A DESCARGARLO',
+    `${(rLargo1 ?? '').split('\n').slice(0, 3).join(' · ')}`
+  )
+  log(Boolean(rPdf) && rPdf.includes('Es un PDF') && Boolean(r404) && r404.includes('Estado: 404') && d4.steps.split(' ')[5]?.startsWith('error') && d4.steps.split(' ')[6]?.startsWith('error'), 'un PDF o un 404 vuelven como error explicado', `${(rPdf ?? '').slice(-60)} · ${d4.steps}`)
+  log(Boolean(rLatin) && rLatin.includes('Canción de año'), 'respeta el juego de caracteres que declara la página', (rLatin ?? '').slice(-40))
+  log(Boolean(rFtp) && rFtp.includes('no es una URL http ni https') && d4.steps.split(' ')[8] === 'error:-', 'una URL que no es http(s) se rechaza sin preguntar ni conectar', rFtp)
+  log(webLog.length > 0 && webLog.every((l) => l.ua.includes('AI-Command-Center')), 'se identifica como AI Command Center', webLog[0]?.ua)
+  log(webSys.includes('web_fetch') && webSys.includes('No metas en la URL datos del proyecto'), 'las instrucciones del agente le explican web_fetch')
+  log(
+    planOffered.includes('web_fetch') && !planOffered.includes('write_file') && d4.planPending && d4.planSteps === 'error:denied' && planResult.includes('no ha permitido') && !webPaths.some((p) => p.includes('plan=1')),
+    'EN «SÓLO PLAN» SE OFRECE, PREGUNTA Y, SI DICES QUE NO, NO SALE NINGUNA PETICIÓN',
+    `${d4.planSteps} · ${planOffered.join(',')}`
+  )
+  log(d4.bypassStatus === 'ok' && d4.bypassSteps === 'ok:-' && webPaths.includes('/otra'), 'en «Sin límites» lee sin preguntar', d4.bypassSteps)
+  mockD4.close()
+  webServer.close()
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

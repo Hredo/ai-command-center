@@ -777,5 +777,8 @@ export const enV08: Record<string, string> = {
   "Es JSON válido": "Is valid JSON",
   "Pasan las pruebas del repo": "The repo's tests pass",
   "texto": "text",
-  "rúbrica: qué tiene que cumplir": "rubric: what it has to meet"
+  "rúbrica: qué tiene que cumplir": "rubric: what it has to meet",
+  "Quiere leer esta página. Si lo permites, podrá leer más de {host} en este turno sin volver a preguntar.": "It wants to read this page. If you allow it, it can read more of {host} during this turn without asking again.",
+  "Quiere leer esta página.": "It wants to read this page.",
+  "Quiere usar esta herramienta de un servidor MCP.": "It wants to use this tool from an MCP server."
 }

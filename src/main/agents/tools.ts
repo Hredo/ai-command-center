@@ -17,9 +17,13 @@ import { dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { guardPath } from '../security'
 import { IS_WIN, killTree, osName } from '../platform'
 import type { FileTouch } from '@shared/types'
+import { webFetchTool } from './webFetch'
 
-/** `mcp`: herramienta de un servidor MCP que puede cambiar cosas; pide permiso como un comando. */
-export type ToolKind = 'read' | 'search' | 'edit' | 'write' | 'run' | 'mcp'
+/**
+ * `mcp`: herramienta de un servidor MCP que puede cambiar cosas; pide permiso como un comando.
+ * `net`: sale a internet; no cambia nada, pero lo que pide puede llevar datos fuera, así que se aprueba.
+ */
+export type ToolKind = 'read' | 'search' | 'edit' | 'write' | 'run' | 'mcp' | 'net'
 
 /**
  * Con qué se ejecutan los comandos del agente. En Windows, PowerShell; en
@@ -145,6 +149,21 @@ export const AGENT_TOOLS: AgentTool[] = [
       },
       required: ['command']
     }
+  },
+  {
+    name: 'web_fetch',
+    kind: 'net',
+    description:
+      'Lee una página web o un recurso de texto por http(s) y lo devuelve como texto: el HTML sin scripts ni estilos, con los títulos marcados con # y los enlaces como «texto (url)». Sirve para documentación, incidencias o API públicas. El usuario aprueba cada dominio. Si el texto es largo llega por trozos: sigue con offset.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL completa, con http:// o https://.' },
+        offset: { type: 'integer', description: 'Carácter desde el que seguir leyendo un texto largo. Por omisión 0.' },
+        max_chars: { type: 'integer', description: 'Cuántos caracteres devolver como máximo. Por omisión 20000, máximo 60000.' }
+      },
+      required: ['url']
+    }
   }
 ]
 
@@ -157,7 +176,7 @@ export const AGENT_TOOLS: AgentTool[] = [
  * que modifican algo: es más fiable que dárselas y rechazarlas después.
  */
 export function toolsFor(mode?: string): AgentTool[] {
-  if (mode === 'plan') return AGENT_TOOLS.filter((t) => t.kind === 'read' || t.kind === 'search')
+  if (mode === 'plan') return AGENT_TOOLS.filter((t) => t.kind === 'read' || t.kind === 'search' || t.kind === 'net')
   return AGENT_TOOLS
 }
 
@@ -166,12 +185,14 @@ export function toolsFor(mode?: string): AgentTool[] {
  * lo necesitan; editar sólo en «Pregunta»; ejecutar siempre, salvo «Sin
  * límites». Las de MCP que cambian algo, como ejecutar; las de sólo lectura,
  * como leer, salvo en «Pregunta», donde también se preguntan: vienen de fuera.
+ * Leer una web, como ejecutar, también en «Sólo plan»: la aprobación es por
+ * dominio y el agente la recuerda el resto del turno.
  */
 export function needsApproval(tool: AgentTool, mode?: string): boolean {
   if (tool.kind === 'read' || tool.kind === 'search') return mode === 'manual' && Boolean(tool.mcp)
   if (mode === 'bypassPermissions') return false
   if (mode === 'manual') return true
-  return tool.kind === 'run' || tool.kind === 'mcp'
+  return tool.kind === 'run' || tool.kind === 'mcp' || tool.kind === 'net'
 }
 
 /* ------------------------------------------------------------------ *
@@ -783,6 +804,8 @@ export async function executeTool(name: string, args: any, root: string, signal:
         return editFileTool(root, input)
       case 'run_command':
         return await runCommandTool(root, input, signal)
+      case 'web_fetch':
+        return await webFetchTool(input, signal)
       default:
         return {
           output: `No existe la herramienta «${name}». Las disponibles son: ${AGENT_TOOLS.map((t) => t.name).join(', ')}.`,
@@ -802,6 +825,7 @@ export function describeCall(name: string, args: any): string {
     return t.length > max ? t.slice(0, max - 1) + '…' : t
   }
   if (name === 'run_command') return one(str(a.command))
+  if (name === 'web_fetch') return one(str(a.url) + (int(a.offset, 0) > 0 ? ` (desde ${int(a.offset, 0)})` : ''), 160)
   if (name === 'find_files') return one(str(a.pattern))
   if (name === 'search_text') return one(str(a.pattern) + (a.path ? ' en ' + str(a.path) : '') + (a.glob ? ` (${str(a.glob)})` : ''))
   if (name === 'list_dir') return one(str(a.path) || '.')

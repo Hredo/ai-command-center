@@ -59,6 +59,25 @@ function isPending(step: AgentStep): boolean {
   return step.approval === 'pending' && step.status === 'running'
 }
 
+/** Qué se está pidiendo permiso para hacer, en una frase. */
+function pendingText(step: AgentStep, t: ReturnType<typeof useT>): string {
+  const tool = (step.tool ?? '').toLowerCase()
+  if (tool === 'web_fetch') {
+    let host = ''
+    try {
+      host = new URL(step.target ?? '').hostname.replace(/^www\./, '')
+    } catch {
+      /* sin dominio */
+    }
+    return host
+      ? t('Quiere leer esta página. Si lo permites, podrá leer más de {host} en este turno sin volver a preguntar.', { host })
+      : t('Quiere leer esta página.')
+  }
+  if (tool.startsWith('mcp__')) return t('Quiere usar esta herramienta de un servidor MCP.')
+  if (RUN_TOOL.test(tool)) return t('Quiere ejecutar este comando en el proyecto.')
+  return t('Quiere modificar este archivo.')
+}
+
 /* ------------------------------------------------------------------ *
  * Una fila                                                           *
  * ------------------------------------------------------------------ */
@@ -152,9 +171,7 @@ function Row({
       {pending ? (
         <div className="ml-[26px] mr-2 mb-1.5 mt-0.5 px-2.5 py-2 rounded border border-[#4a3512] bg-[#1a1409] flex items-center gap-2 flex-wrap">
           <span className="text-[11.5px] text-warn">
-            {RUN_TOOL.test((step.tool ?? '').toLowerCase())
-              ? t('Quiere ejecutar este comando en el proyecto.')
-              : t('Quiere modificar este archivo.')}
+            {pendingText(step, t)}
           </span>
           {onApprove ? (
             <span className="ml-auto flex items-center gap-1.5">
