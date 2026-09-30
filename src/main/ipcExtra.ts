@@ -46,11 +46,12 @@ import { mcpReport, planMcpCopy, copyMcpServer, setAppMcpEnabled, removeAppMcp, 
 import { testAppMcp, pruneMcp } from './mcp/client'
 import { classifyWithOllama } from './recommend'
 import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryRun, judgeWithOllama } from './batteries'
+import { savePrompt, removePrompt, markPromptUsed } from './prompts'
 import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource, McpClient,
-  Battery, BatteryRun
+  Battery, BatteryRun, PromptTemplate
 } from '@shared/types'
 
 export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
@@ -405,6 +406,12 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
       response: String(input?.response ?? '')
     })
   )
+
+  /* ------------------------------- Prompts ------------------------------------- */
+
+  handle('prompts:save', (p: PromptTemplate) => savePrompt(p))
+  handle('prompts:remove', (id: string) => removePrompt(str(id, 'prompt')))
+  handle('prompts:used', (id: string) => markPromptUsed(str(id, 'prompt')))
 
   /* ------------------------------- Recomendador -------------------------------- */
 

@@ -5,12 +5,13 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ListChecks, Play, Square, Plus, Pencil, Trash2, Check, X, Gavel } from 'lucide-react'
-import { Button, Badge, Select, Input, Textarea, Modal, Field, cx } from './ui'
+import { Button, Badge, Select, Input, Modal, Field, cx } from './ui'
 import { useStore } from '../lib/store'
 import { useT } from '../lib/i18n'
 import { cost, ms, relTime } from '../lib/format'
 import { uid, useArena, stopArena, type Contender } from '../lib/engine'
 import { runBattery, type BatteryProgress } from '../lib/battery'
+import { PromptTextarea } from './PromptLibrary'
 import type { Battery, BatteryCheck, BatteryCheckKind, BatteryRun } from '@shared/types'
 
 const KINDS: { id: BatteryCheckKind; label: string; placeholder?: string }[] = [
@@ -303,7 +304,13 @@ export function BatteryPanel({ names }: { names: (c: Contender) => string }): Re
                     </button>
                   ) : null}
                 </div>
-                <Textarea rows={2} value={c.prompt} placeholder={t('El prompt')} onChange={(e) => patchCase(i, { prompt: e.target.value })} />
+                <PromptTextarea
+                  rows={2}
+                  value={c.prompt}
+                  placeholder={t('El prompt (escribe / para la biblioteca)')}
+                  placement="below"
+                  onValue={(v) => patchCase(i, { prompt: v })}
+                />
                 {c.checks.map((k, j) => {
                   const kind = KINDS.find((x) => x.id === k.kind)!
                   return (

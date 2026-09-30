@@ -150,7 +150,7 @@ export function Input({
 export function Textarea({
   className,
   ...rest
-}: React.TextareaHTMLAttributes<HTMLTextAreaElement>): React.JSX.Element {
+}: React.ComponentProps<'textarea'>): React.JSX.Element {
   return (
     <textarea
       {...rest}

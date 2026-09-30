@@ -2666,6 +2666,152 @@ app.whenReady().then(async () => {
   mockE1.close()
 
   /* -------------------------------------------------------------- *
+   * E2 · Biblioteca de prompts con variables                       *
+   * -------------------------------------------------------------- */
+  const branchE2 = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const e2 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    const setVal = (el, value) => {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
+    const out = {}
+
+    const now = Date.now()
+    await api.prompts.save({ id: 'p-rev', name: '  Revisar PR  ', text: 'Revisa la rama {{rama}} de {{proyecto}} buscando {{foco:fallos}} y dime {{formato}}. Otra vez: {{Formato}}.', createdAt: now })
+    await api.prompts.save({ id: 'p-res', name: 'Resumen', text: 'Resume esto en tres frases.', description: 'Tres frases', createdAt: now })
+    const cfg1 = (await api.prompts.save({ id: 'p-fecha', name: 'Fecha', text: 'Hoy es {{fecha}}.', createdAt: now })).data
+    out.saved = cfg1.prompts.filter((p) => p.id.startsWith('p-')).map((p) => p.name).join(',')
+    const bad = await api.prompts.save({ id: 'p-vacio', name: 'x', text: '   ', createdAt: now })
+    out.emptyRejected = !bad.ok
+
+    await api.projects.save({ id: 'proyecto-e2', name: 'Repo e2', path: repo, color: '#fff', createdAt: now })
+    await sleep(300)
+    const sid = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba', projectId: 'proyecto-e2' })
+    engine.focusChat(sid)
+    await until(() => document.querySelector('textarea[placeholder*="agente-de-prueba"]'))
+    const box = document.querySelector('textarea[placeholder*="agente-de-prueba"]')
+    await sleep(600)
+
+    // «/res» + Enter: sin variables, entra tal cual.
+    box.focus()
+    setVal(box, '/res')
+    const first = await until(() => document.querySelector('[data-slash] [data-prompt]'))
+    out.firstMatch = first?.getAttribute('data-prompt')
+    key(box, 'Enter')
+    await sleep(150)
+    out.afterEnter = box.value
+
+    // «Oye /rev»: pide lo que falta, con proyecto y rama ya puestos.
+    setVal(box, 'Oye /rev')
+    const row = await until(() => document.querySelector('[data-slash] [data-prompt="p-rev"]'))
+    row?.click()
+    const fill = await until(() => document.querySelector('[data-prompt-fill]'))
+    out.fields = fill ? [...fill.querySelectorAll('[data-var]')].map((f) => f.getAttribute('data-var') + '=' + f.value).join(' | ') : null
+    const formato = fill?.querySelector('[data-var="formato"]')
+    if (formato) setVal(formato, 'una lista')
+    await sleep(100)
+    out.preview = document.querySelector('[data-prompt-preview]')?.textContent
+    document.querySelector('[data-prompt-insert]')?.click()
+    await sleep(200)
+    out.afterFill = box.value
+    out.modalClosed = !document.querySelector('[data-prompt-fill]')
+
+    // Sólo con variables que se rellenan solas: entra directo.
+    setVal(box, '/fech')
+    await until(() => document.querySelector('[data-slash] [data-prompt="p-fecha"]'))
+    key(box, 'Enter')
+    await sleep(150)
+    out.afterDate = box.value
+    out.noModalForDate = !document.querySelector('[data-prompt-fill]')
+
+    // Esc cierra la lista sin tocar nada; una ruta no la abre.
+    setVal(box, 'mira /r')
+    out.openBeforeEsc = Boolean(await until(() => document.querySelector('[data-slash]')))
+    key(box, 'Escape')
+    await sleep(120)
+    out.closedByEsc = !document.querySelector('[data-slash]') && box.value === 'mira /r'
+    setVal(box, 'mira src/re')
+    await sleep(150)
+    out.pathNoSlash = !document.querySelector('[data-slash]')
+
+    // Guardar lo escrito como prompt nuevo.
+    setVal(box, 'Traduce {{texto}} al inglés')
+    await sleep(100)
+    document.querySelector('[data-save-prompt]')?.click()
+    const nameInput = await until(() => document.querySelector('[data-prompt-name]'))
+    out.saveText = document.querySelector('[data-prompt-text]')?.value
+    out.saveVars = document.querySelector('[data-vars]')?.textContent
+    if (nameInput) setVal(nameInput, 'Traducir')
+    await sleep(100)
+    document.querySelector('[data-prompt-save]')?.click()
+    await until(async () => ((await api.config.get()).data.prompts ?? []).some((p) => p.name === 'Traducir'))
+    const cfg2 = (await api.config.get()).data
+    out.uses = cfg2.prompts.filter((p) => p.id.startsWith('p-')).map((p) => p.name + ':' + (p.uses ?? 0)).sort().join(',')
+    out.traducir = cfg2.prompts.find((p) => p.name === 'Traducir')?.text
+
+    // Agentes › Prompts: editar y borrar.
+    btn('Agentes')?.click()
+    const tab = await until(() => [...document.querySelectorAll('button')].find((x) => x.textContent.trim().startsWith('Prompts')))
+    tab?.click()
+    const lib = await until(() => document.querySelector('[data-prompt-library]'))
+    out.rows = lib ? lib.querySelectorAll('[data-library-row]').length : 0
+    lib?.querySelector('[data-library-row="p-res"]')?.click()
+    await sleep(150)
+    const text = lib?.querySelector('[data-prompt-text]')
+    if (text) setVal(text, 'Resume esto en dos frases.')
+    await sleep(100)
+    lib?.querySelector('[data-prompt-save]')?.click()
+    await until(async () => ((await api.config.get()).data.prompts ?? []).find((p) => p.id === 'p-res')?.text.includes('dos frases'))
+    out.edited = (await api.config.get()).data.prompts.find((p) => p.id === 'p-res')?.text
+    btn('Borrar', lib)?.click()
+    const confirm = await until(() => [...document.querySelectorAll('div.fixed.inset-0')].find((m) => m.textContent.includes('sale de la biblioteca')))
+    if (confirm) [...confirm.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Borrar')?.click()
+    await until(async () => !((await api.config.get()).data.prompts ?? []).some((p) => p.id === 'p-res'))
+    out.afterDelete = ((await api.config.get()).data.prompts ?? []).map((p) => p.id).sort().join(',')
+
+    // En la Arena también.
+    btn('Arena')?.click()
+    const arenaBox = await until(() => document.querySelector('textarea[placeholder*="Ctrl"]'))
+    if (arenaBox) {
+      arenaBox.focus()
+      setVal(arenaBox, '/fech')
+      await until(() => document.querySelector('[data-slash] [data-prompt="p-fecha"]'))
+      key(arenaBox, 'Enter')
+      await sleep(150)
+    }
+    out.arena = engine.peekArena().prompt
+    engine.setArena({ prompt: '' })
+
+    await engine.deleteSession(sid)
+    for (const p of (await api.config.get()).data.prompts ?? []) await api.prompts.remove(p.id)
+    await api.projects.remove('proyecto-e2')
+    btn('Consola')?.click()
+    return out
+  })()`)
+  const today = await js(`new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })`)
+  log(e2.saved === 'Revisar PR,Resumen,Fecha' && e2.emptyRejected, 'LA BIBLIOTECA GUARDA PROMPTS (Y NO UNO VACÍO)', e2.saved)
+  log(e2.firstMatch === 'p-res' && e2.afterEnter === 'Resume esto en tres frases.', '«/» ABRE LA BIBLIOTECA Y ENTER INSERTA EL PROMPT', e2.afterEnter)
+  log(
+    e2.fields === `rama=${branchE2} | proyecto=Repo e2 | foco=fallos | formato=` &&
+      e2.afterFill === `Oye Revisa la rama ${branchE2} de Repo e2 buscando fallos y dime una lista. Otra vez: una lista.` && e2.modalClosed,
+    'CON VARIABLES PIDE LO QUE FALTA; PROYECTO Y RAMA VIENEN PUESTOS',
+    `${e2.fields} → ${e2.afterFill}`
+  )
+  log(e2.afterDate === `Hoy es ${today}.` && e2.noModalForDate, 'si sólo tiene variables que se rellenan solas, entra directo', e2.afterDate)
+  log(e2.openBeforeEsc && e2.closedByEsc && e2.pathNoSlash, 'Esc cierra la lista y una ruta como src/… no la abre')
+  log(e2.saveText === 'Traduce {{texto}} al inglés' && (e2.saveVars ?? '').includes('texto') && e2.traducir === 'Traduce {{texto}} al inglés', 'LO ESCRITO SE GUARDA COMO PROMPT, CON SUS VARIABLES A LA VISTA', e2.saveVars)
+  log(e2.uses === 'Fecha:1,Resumen:1,Revisar PR:1', 'cada inserción cuenta como uso', e2.uses)
+  log(e2.rows === 4 && e2.edited === 'Resume esto en dos frases.' && !e2.afterDelete.includes('p-res'), 'EN AGENTES › PROMPTS SE EDITAN Y SE BORRAN', `${e2.rows} filas · ${e2.afterDelete}`)
+  log(e2.arena === `Hoy es ${today}.`, 'y en la Arena «/» también inserta', e2.arena)
+
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

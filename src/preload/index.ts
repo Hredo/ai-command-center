@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type {
   AppConfig, Settings, Agent, CliAgent, Project, RunOptions, CliRunOptions, RunRecord, StoredSession,
-  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun
+  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun, PromptTemplate
 } from '@shared/types'
 import type { IpcChannel, IpcArgs, IpcResult, IpcRes, IpcEvent, IpcEvents } from '@shared/ipcContract'
 
@@ -260,6 +260,12 @@ const api = {
     saveRun: (run: BatteryRun) => call('batteries:saveRun', run),
     removeRun: (id: string) => call('batteries:removeRun', id),
     judge: (model: string, input: { rubric: string; prompt: string; response: string }) => call('batteries:judge', model, input)
+  },
+  /** Biblioteca de prompts con variables. */
+  prompts: {
+    save: (prompt: PromptTemplate) => call('prompts:save', prompt),
+    remove: (id: string) => call('prompts:remove', id),
+    used: (id: string) => call('prompts:used', id)
   },
   /** El recomendador: un modelo local de Ollama clasifica la tarea. */
   recommend: {

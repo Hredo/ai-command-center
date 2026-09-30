@@ -319,6 +319,23 @@ export interface BatteryCase {
   checks: BatteryCheck[]
 }
 
+/**
+ * Un prompt de la biblioteca. `{{nombre}}` o `{{nombre:valor por omisión}}`
+ * son variables que se piden al insertarlo; `{{proyecto}}`, `{{rama}}` y
+ * `{{fecha}}` se rellenan solas.
+ */
+export interface PromptTemplate {
+  id: string
+  name: string
+  text: string
+  description?: string
+  createdAt: number
+  updatedAt?: number
+  /** Veces que se ha insertado. */
+  uses?: number
+  lastUsedAt?: number
+}
+
 export interface Battery {
   id: string
   name: string
@@ -727,6 +744,8 @@ export interface AppConfig {
   mcpServers?: Record<string, AppMcpServer>
   /** Baterías de prompts con sus comprobaciones, para relanzarlas en la Arena. */
   batteries?: Battery[]
+  /** Biblioteca de prompts: se insertan con «/» en la Consola, la Arena y las baterías. */
+  prompts?: PromptTemplate[]
 }
 
 export interface ProviderOverride {

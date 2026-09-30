@@ -7,6 +7,7 @@ import { ModelPicker, type Pick } from '../components/ModelPicker'
 import { EFFORT_LABEL, EffortPicker } from '../components/AgentPanel'
 import { useStore } from '../lib/store'
 import { SkillsMatrix } from '../components/SkillsMatrix'
+import { PromptLibrary } from '../components/PromptLibrary'
 import { McpCenter } from '../components/McpCenter'
 import { uid, shortModel } from '../lib/format'
 import { API_PERMISSION_MODES, type Agent, type CliAgent, type CliParser, type DetectedCli, type Effort } from '@shared/types'
@@ -327,7 +328,7 @@ function CliEditor({
 export default function Agents(): React.JSX.Element {
   const t = useT()
   const { config, reload, toast, defs } = useStore()
-  const [tab, setTab] = useState<'api' | 'cli' | 'mcp' | 'skills'>('api')
+  const [tab, setTab] = useState<'api' | 'cli' | 'mcp' | 'skills' | 'prompts'>('api')
   const [editing, setEditing] = useState<Agent | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [cliEditing, setCliEditing] = useState<CliAgent | null>(null)
@@ -394,10 +395,11 @@ export default function Agents(): React.JSX.Element {
                 { id: 'api', label: t('Por API'), count: agents.length },
                 { id: 'cli', label: t('Línea de comandos'), count: cliAgents.length },
                 { id: 'mcp', label: 'MCP' },
-                { id: 'skills', label: 'Skills' }
+                { id: 'skills', label: 'Skills' },
+                { id: 'prompts', label: 'Prompts', count: config?.prompts?.length ?? 0 }
               ]}
             />
-            {tab === 'skills' || tab === 'mcp' ? null : tab === 'api' ? (
+            {tab === 'skills' || tab === 'mcp' || tab === 'prompts' ? null : tab === 'api' ? (
               <Button
                 variant="primary"
                 onClick={() => {
@@ -620,6 +622,13 @@ export default function Agents(): React.JSX.Element {
         {tab === 'mcp' ? (
           <Panel className="p-4">
             <McpCenter />
+          </Panel>
+        ) : null}
+
+        {/* ------------------------------------------------ Prompts */}
+        {tab === 'prompts' ? (
+          <Panel className="p-4">
+            <PromptLibrary />
           </Panel>
         ) : null}
 

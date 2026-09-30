@@ -34,6 +34,7 @@ import {
   useChatFocus, useQuotas, markTurnUndone, forkAt, planRewind, rewindAndSend, type Turn
 } from '../lib/engine'
 import { RewindModal } from '../components/RewindModal'
+import { PromptTextarea, SavePromptButton } from '../components/PromptLibrary'
 import { UndoTurn } from '../components/UndoTurn'
 import { WorktreeBox } from '../components/WorktreeBox'
 import { DiffReview } from '../components/DiffReview'
@@ -912,9 +913,10 @@ export default function Chat(): React.JSX.Element {
         <div className="px-5 py-3.5 border-t border-line bg-void shrink-0">
           <div className="max-w-[860px] mx-auto">
             <div className="relative">
-              <Textarea
+              <PromptTextarea
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onValue={setInput}
+                context={{ project: project?.name, branch: git?.branch }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                     e.preventDefault()
@@ -961,6 +963,7 @@ export default function Chat(): React.JSX.Element {
                     })
                   }
                 />
+                <SavePromptButton text={input} />
                 <span className="text-dim">{t('Esfuerzo')}</span>
                 <EffortPicker
                   value={effort}
@@ -987,7 +990,7 @@ export default function Chat(): React.JSX.Element {
               <span className="num">{t('common.chars', { n: input.length })}</span>
             </div>
             <div className="mt-1 text-[11px] text-dim">
-              {withMod(t('Ctrl + Enter para enviar · la respuesta sigue llegando si cambias de pantalla'))}
+              {withMod(t('Ctrl + Enter para enviar · / para la biblioteca de prompts · la respuesta sigue llegando si cambias de pantalla'))}
             </div>
           </div>
         </div>
