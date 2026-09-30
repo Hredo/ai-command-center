@@ -25,6 +25,7 @@ import { watchExternal, stopWatchingExternal } from './external'
 import { startQuotas, stopQuotas, pokeQuotas } from './quotas'
 import { initTray, onWindowClose, markQuitting, showWindow, destroyTray } from './tray'
 import { initQuick, unregisterQuickHotkey } from './quick'
+import { startUpdateChecks, stopUpdateChecks } from './updates'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
@@ -281,6 +282,9 @@ app.whenReady().then(async () => {
   // La poda del histórico: sin frenar el arranque y de vez en cuando.
   if (!SELFTEST) startMaintenance()
 
+  // ¿Hay versión nueva en GitHub? Sólo se avisa: ver updates.ts.
+  if (!SELFTEST) startUpdateChecks((u) => emit(mainWindow, 'updates:status', u))
+
   // El catálogo de modelos se refresca en segundo plano: la app abre igual
   // aunque no haya red.
   const cfg = getConfig()
@@ -315,6 +319,7 @@ app.on('before-quit', () => {
   stopWatchingExternal()
   stopWatchingAttention()
   stopQuotas()
+  stopUpdateChecks()
   closeAllTerms()
 })
 

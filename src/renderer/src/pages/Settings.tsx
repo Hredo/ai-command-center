@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { ModelPicker } from '../components/ModelPicker'
 import { formatAccelerator, toAccelerator } from '../lib/hotkeys'
+import { UpdatesPanel } from '../components/UpdatesPanel'
 import { OllamaPanel } from '../components/OllamaPanel'
 import { QuotasSettings } from '../components/QuotasSettings'
 import { lastNavTarget, onNavigate } from '../lib/nav'
@@ -592,6 +593,8 @@ export default function Settings(): React.JSX.Element {
         {/* ------------------------------------------------ Preferencias */}
         {tab === 'prefs' && s ? (
           <div className="space-y-3">
+            <UpdatesPanel s={s} setSetting={setSetting} />
+
             <Panel>
               <PanelHeader
                 title={t('Notificaciones del sistema')}

@@ -9,6 +9,7 @@ import { runCliAgent, killCli } from './agents/cli'
 import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
 import { refreshTray, setBusy, type Busy } from './tray'
+import { checkForUpdate, lastUpdate } from './updates'
 import {
   bindQuick, failQuick, hideQuick, openQuickInConsole, quickFinished, quickStatus, quickTap, registerQuickHotkey,
   showQuick, submitQuick
@@ -334,6 +335,20 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
    * franja o dejan de cuadrar con la barra que pinta la aplicación.
    */
   handle('app:busy', (b: Busy) => setBusy(b))
+
+  // ---------------- Versiones nuevas ----------------
+  handle('updates:get', () => lastUpdate())
+  handle('updates:check', async () => {
+    const u = await checkForUpdate()
+    emit(getWindow(), 'updates:status', u)
+    return u
+  })
+  handle('updates:skip', (version: string | null) => {
+    updateSettings({ skippedVersion: typeof version === 'string' && version ? version : undefined })
+    const u = lastUpdate()
+    if (u) emit(getWindow(), 'updates:status', u)
+    return u
+  })
 
   // ---------------- Prompt rápido ----------------
   handle('quick:submit', (req) => {

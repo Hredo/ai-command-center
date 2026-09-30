@@ -16,6 +16,7 @@ import { navigate, onNavigate, type PageId } from './lib/nav'
 import { SearchModal, openSearch } from './components/SearchModal'
 import { CommandPalette, openPalette } from './components/CommandPalette'
 import { SECTIONS } from './lib/sections'
+import { updateAvailable, useUpdate } from './lib/updates'
 /**
  * Cada sección se descarga la primera vez que se entra en ella.
  *
@@ -87,6 +88,7 @@ function TitleBar(): React.JSX.Element {
   const zoom = Math.min(2, Math.max(0.5, appearance.uiScale / 100))
   const busy = useBusyCount()
   const version = useRunsVersion()
+  const update = useUpdate()
   const [spend, setSpend] = useState(0)
   // Lo que está generando ahora mismo, estimado: el gasto del mes se mueve
   // mientras trabaja y no sólo al terminar.
@@ -117,6 +119,17 @@ function TitleBar(): React.JSX.Element {
         <div className="w-[18px] h-[18px] rounded-[5px] bg-gradient-to-br from-accent to-violet shrink-0" />
         <span className="text-[12.5px] font-medium tracking-tight">AI Command Center</span>
         <span className="num text-[10.5px] text-dim opacity-70">v{info?.version ?? '0.1.0'}</span>
+        {updateAvailable(update) ? (
+          <button
+            type="button"
+            onClick={() => navigate({ page: 'settings', tab: 'prefs' })}
+            className="no-drag num text-[10.5px] px-1.5 h-5 rounded-md border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20"
+            title={t('Hay una versión nueva: v{v}', { v: update?.latest ?? '' })}
+            data-update-chip
+          >
+            {t('v{v} disponible', { v: update?.latest ?? '' })}
+          </button>
+        ) : null}
       </div>
       <div
         className="flex items-center gap-4 text-[11.5px]"
@@ -313,11 +326,28 @@ function useQuotaAlerts(): void {
   )
 }
 
+/** Una versión nueva se anuncia una vez por sesión, con un botón a Ajustes. */
+function useUpdateToast(): void {
+  const { toast } = useStore()
+  const t = useT()
+  const update = useUpdate()
+  const told = React.useRef<string | null>(null)
+  useEffect(() => {
+    if (!updateAvailable(update) || !update?.latest || told.current === update.latest) return
+    told.current = update.latest
+    toast('info', t('Hay una versión nueva: v{v}', { v: update.latest }), {
+      label: t('Ver'),
+      run: () => navigate({ page: 'settings', tab: 'prefs' })
+    })
+  }, [update, toast, t])
+}
+
 function Shell(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('dashboard')
   const windowVisible = useDocumentVisible()
   useWindowChrome()
   useQuotaAlerts()
+  useUpdateToast()
 
   // Lo que hay en marcha llega al icono de la bandeja, que además pregunta
   // antes de salir si algo se iba a cortar.

@@ -356,6 +356,13 @@ const api = {
     uninstall: () => call('attention:uninstall'),
     onChanged: (cb: (list: IpcEvents['attention:changed']) => void) => on('attention:changed', cb)
   },
+  /** Versiones nuevas publicadas en GitHub (sólo avisa: no descarga ni instala). */
+  updates: {
+    get: () => call('updates:get'),
+    check: () => call('updates:check'),
+    skip: (version: string | null) => call('updates:skip', version),
+    onStatus: (cb: (u: IpcEvents['updates:status']) => void) => on('updates:status', cb)
+  },
   /** Prompt rápido: la ventanita del atajo global y la principal que lo lanza. */
   quick: {
     submit: (req: { prompt: string; providerId: string; model: string; sessionId?: string }) => call('quick:submit', req),

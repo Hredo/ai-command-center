@@ -3964,6 +3964,107 @@ app.whenReady().then(async () => {
   log(g3.paletteFirst === 'action:quick' && g3.fromPalette && g3.escHides, 'se abre desde la paleta y Esc la esconde', String(g3.paletteFirst))
   log(g3.empty === 'Escribe algo', 'no se lanza un prompt vacío', String(g3.empty))
   /* -------------------------------------------------------------- *
+   * G4 · Aviso de versión nueva (GitHub Releases, sin instalar)    *
+   * -------------------------------------------------------------- */
+  const currentG4 = app.getVersion()
+  let replyG4 = null
+  const hitsG4 = []
+  const ghG4 = http.createServer((req, res) => {
+    hitsG4.push({ url: req.url, ua: req.headers['user-agent'] ?? '' })
+    const r = replyG4 ?? { status: 404, body: {} }
+    res.writeHead(r.status, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(r.body))
+  })
+  await new Promise((r) => ghG4.listen(0, '127.0.0.1', r))
+  process.env.ACC_RELEASES_URL = `http://127.0.0.1:${ghG4.address().port}/repos/x/y/releases/latest`
+  const asset = (name) => ({ name, size: 123456789, browser_download_url: `https://github.com/Hredo/ai-command-center/releases/download/v99.0.0/${name}` })
+  const release = (tag) => ({
+    status: 200,
+    body: {
+      tag_name: tag,
+      html_url: `https://github.com/Hredo/ai-command-center/releases/tag/${tag}`,
+      published_at: '2026-10-01T10:00:00Z',
+      draft: false,
+      body: '## Novedades\n\n- Paleta de comandos\n- Prompt rápido',
+      assets: [
+        asset('AI-Command-Center-Setup-99.0.0.exe'),
+        asset('AI-Command-Center-99.0.0-x64.zip'),
+        asset('AI-Command-Center-99.0.0-mac-arm64.dmg'),
+        asset('AI-Command-Center-99.0.0-mac-x64.dmg'),
+        asset('AI-Command-Center-99.0.0-linux-x86_64.AppImage'),
+        asset('AI-Command-Center-99.0.0-linux-amd64.deb'),
+        asset('AI-Command-Center-99.0.0-linux-arm64.AppImage'),
+        asset('SHA256SUMS.txt')
+      ]
+    }
+  })
+
+  replyG4 = release('v99.0.0')
+  const g4 = await js(`(async () => {
+    const api = window.api
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 6000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    await api.config.settings({ skippedVersion: undefined, checkUpdates: true })
+    const u = (await api.updates.check()).data
+    out.api = { newer: u.newer, latest: u.latest, kinds: u.downloads.map((d) => d.kind).join(','), url: u.url, notes: u.notes.includes('Prompt rápido') }
+    const chip = await until(() => document.querySelector('[data-update-chip]'))
+    out.chip = chip?.textContent ?? ''
+    out.toast = Boolean(await until(() => [...document.querySelectorAll('.fixed.bottom-4 span')].some((s) => s.textContent.includes('Hay una versión nueva: v99.0.0'))))
+
+    window.__accEngine.navigate({ page: 'settings', tab: 'prefs' })
+    await until(() => document.querySelector('[data-updates] [data-update-latest]'))
+    out.panelLatest = document.querySelector('[data-update-latest]')?.textContent
+    out.primary = document.querySelector('[data-update-download]')?.getAttribute('data-update-download')
+    document.querySelector('[data-update-notes-toggle]')?.click()
+    out.notesShown = Boolean(await until(() => document.querySelector('[data-update-notes]')?.textContent.includes('Paleta de comandos')))
+
+    // Omitir esta versión: deja de anunciarse sin volver a preguntar a GitHub.
+    document.querySelector('[data-update-skip]')?.click()
+    out.chipGone = Boolean(await until(() => !document.querySelector('[data-update-chip]')))
+    out.skippedText = (await until(() => { const s = document.querySelector('[data-update-state]')?.textContent ?? ''; return s.includes('Omitiste') ? s : null })) ?? document.querySelector('[data-update-state]')?.textContent
+    document.querySelector('[data-update-unskip]')?.click()
+    out.chipBack = Boolean(await until(() => document.querySelector('[data-update-chip]')))
+    return out
+  })()`)
+
+  replyG4 = release('v' + currentG4)
+  g4.same = await js(`window.api.updates.check().then((r) => ({ newer: r.data.newer, state: null }))`)
+  g4.sameState = await js(`(async () => { await new Promise((r) => setTimeout(r, 300)); return document.querySelector('[data-update-state]')?.textContent + '|' + Boolean(document.querySelector('[data-update-chip]')) })()`)
+  replyG4 = release('v0.0.1')
+  g4.older = await js(`window.api.updates.check().then((r) => r.data.newer)`)
+  replyG4 = { status: 500, body: {} }
+  g4.error = await js(`window.api.updates.check().then((r) => r.data.error)`)
+  replyG4 = { status: 403, body: { message: 'API rate limit exceeded' } }
+  g4.limited = await js(`window.api.updates.check().then((r) => r.data.error)`)
+  g4.ua = hitsG4[0]?.ua ?? ''
+
+  await js(`(async () => {
+    await window.api.config.settings({ skippedVersion: undefined })
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+  })()`)
+  delete process.env.ACC_RELEASES_URL
+  ghG4.close()
+
+  log(
+    g4.api.newer && g4.api.latest === '99.0.0' && g4.api.kinds === 'appimage,deb,checksums' && /releases\/tag\/v99\.0\.0$/.test(g4.api.url) && g4.api.notes,
+    'G4: DETECTA UNA VERSIÓN NUEVA EN GITHUB Y ELIGE LA DESCARGA DE ESTE SISTEMA',
+    JSON.stringify(g4.api)
+  )
+  log(/v99\.0\.0 disponible/.test(g4.chip) && g4.toast, 'LA BARRA DE ARRIBA Y UN AVISO LO DICEN', `${g4.chip} · aviso:${g4.toast}`)
+  log(g4.panelLatest === 'v99.0.0' && g4.primary === 'appimage' && g4.notesShown, 'en Ajustes salen la versión, la descarga recomendada y las notas', `${g4.panelLatest} · ${g4.primary}`)
+  log(g4.chipGone && /Omitiste la v99\.0\.0/.test(g4.skippedText ?? '') && g4.chipBack, '«Omitir esta versión» deja de anunciarla y se puede deshacer', String(g4.skippedText))
+  log(
+    g4.same.newer === false && /Tienes la última versión/.test(g4.sameState) && g4.sameState.endsWith('|false') && g4.older === false,
+    'con la misma versión o una más vieja no avisa',
+    g4.sameState
+  )
+  log(
+    g4.error === 'GitHub respondió con un error' && /limitado/.test(g4.limited ?? '') && g4.ua.startsWith('ai-command-center/'),
+    'si GitHub falla o limita las consultas lo dice, sin inventar nada',
+    `${g4.error} · ${g4.limited}`
+  )
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

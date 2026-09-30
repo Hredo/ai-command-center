@@ -15,7 +15,7 @@ import type {
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
-  ProjectInfo, ProjectScripts, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
+  ProjectInfo, ProjectScripts, UpdateInfo, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
   RunOptions, RunRecord, Settings, SkillsReport, StatsBucket, StoredSession, StreamDelta, TermEvent, TermInfo,
   UsageSnapshot, WorktreeInfo, WorktreeSetup
 } from './types'
@@ -81,6 +81,9 @@ export interface IpcContract {
   'agents:save': { args: [a: Agent]; result: AppConfig }
   'agents:saveCli': { args: [a: CliAgent]; result: AppConfig }
   'agents:workspace': { args: [id?: string]; result: string }
+  'updates:get': { args: []; result: UpdateInfo | null }
+  'updates:check': { args: []; result: UpdateInfo }
+  'updates:skip': { args: [version: string | null]; result: UpdateInfo | null }
   'quick:submit': { args: [req: Omit<QuickRun, 'requestId'>]; result: string }
   'quick:bind': { args: [requestId: string, sessionId: string]; result: void }
   'quick:fail': { args: [requestId: string, error: string]; result: void }
@@ -307,6 +310,8 @@ export interface IpcEvents {
   'detect:localChanged': DetectedServer[]
   /** Los avisos de Claude Code en una terminal (su hook Notification). */
   'attention:changed': TerminalAttention[]
+  /** Lo último que se sabe de las versiones publicadas (al mirar, solo o a mano). */
+  'updates:status': UpdateInfo
   /** Prompt rápido: a la ventana principal, que lo lanza en la Consola. */
   'quick:run': QuickRun
   /** Prompt rápido: abrir en la Consola la conversación que salió de él. */

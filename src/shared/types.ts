@@ -711,6 +711,32 @@ export interface StreamDelta {
   touched?: FileTouch[]
 }
 
+/** Un fichero de una versión publicada, para este sistema. */
+export interface UpdateDownload {
+  name: string
+  url: string
+  size: number
+  kind: 'installer' | 'portable' | 'dmg' | 'appimage' | 'deb' | 'checksums'
+}
+
+/** Lo último que se sabe de las versiones publicadas en GitHub. */
+export interface UpdateInfo {
+  current: string
+  latest?: string
+  /** La publicada es más nueva que la instalada. */
+  newer: boolean
+  /** Es más nueva, pero pediste no volver a anunciarla. */
+  skipped?: boolean
+  /** Página de la versión en GitHub. */
+  url?: string
+  publishedAt?: string
+  /** Notas de la versión (markdown). */
+  notes?: string
+  downloads: UpdateDownload[]
+  checkedAt: number
+  error?: string
+}
+
 /** Un prompt lanzado desde la ventana del prompt rápido, camino de la Consola. */
 export interface QuickRun {
   requestId: string
@@ -873,6 +899,10 @@ export interface Settings {
   quickHotkey?: string
   /** El modelo que usó el prompt rápido la última vez. */
   quickModel?: { providerId: string; model: string } | null
+  /** Mirar en GitHub si hay versión nueva (por omisión, sí). */
+  checkUpdates?: boolean
+  /** Versión que pediste no volver a anunciar. */
+  skippedVersion?: string
   /** Ejecutable de la shell para las terminales integradas. */
   shellPath?: string
   /** Segundos entre sondeos automáticos de motores locales. 0 lo desactiva. */
