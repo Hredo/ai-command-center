@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import type {
   AppConfig, Settings, Agent, CliAgent, Project, RunOptions, CliRunOptions, RunRecord, StoredSession,
-  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun, PromptTemplate, SearchQuery
+  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun, PromptTemplate, SearchQuery,
+  ScheduledTask
 } from '@shared/types'
 import type { IpcChannel, IpcArgs, IpcResult, IpcRes, IpcEvent, IpcEvents } from '@shared/ipcContract'
 
@@ -356,6 +357,16 @@ const api = {
     uninstall: () => call('attention:uninstall'),
     onChanged: (cb: (list: IpcEvents['attention:changed']) => void) => on('attention:changed', cb)
   },
+  /** Tareas que se lanzan solas a su hora. */
+  schedules: {
+    list: () => call('schedules:list'),
+    save: (task: ScheduledTask) => call('schedules:save', task),
+    remove: (id: string) => call('schedules:remove', id),
+    runNow: (id: string) => call('schedules:runNow', id),
+    started: (runId: string, sessionId: string) => call('schedules:started', runId, sessionId),
+    finished: (runId: string, ok: boolean, error?: string) => call('schedules:finished', runId, ok, error),
+    onRun: (cb: (r: IpcEvents['schedules:run']) => void) => on('schedules:run', cb)
+  },
   /** Versiones nuevas publicadas en GitHub (sólo avisa: no descarga ni instala). */
   updates: {
     get: () => call('updates:get'),
@@ -409,6 +420,9 @@ const api = {
      * del puente; el proceso principal se entera para recolocar los botones de
      * Windows, que los pinta el sistema y no se enteran del zoom por su cuenta.
      */
+    /** Abrir la app al iniciar sesión, escondida en la bandeja. */
+    loginItem: () => call('app:loginItem'),
+    setLoginItem: (enabled: boolean) => call('app:setLoginItem', enabled),
     /** Lo que hay en marcha, para el icono de la bandeja y para avisar antes de salir. */
     setBusy: (busy: { chats: number; arena: number; terms: number }) => call('app:busy', busy),
     setChrome: (opts: { zoom?: number; background?: string; symbol?: string }) => {

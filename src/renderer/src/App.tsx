@@ -17,6 +17,7 @@ import { SearchModal, openSearch } from './components/SearchModal'
 import { CommandPalette, openPalette } from './components/CommandPalette'
 import { SECTIONS } from './lib/sections'
 import { updateAvailable, useUpdate } from './lib/updates'
+import { launchTask } from './lib/launchTask'
 /**
  * Cada sección se descarga la primera vez que se entra en ella.
  *
@@ -342,12 +343,53 @@ function useUpdateToast(): void {
   }, [update, toast, t])
 }
 
+/**
+ * Las tareas programadas: main avisa cuando le toca a una y aquí se lanza
+ * como una del tablero. Después se le cuenta en qué conversación va y cómo
+ * acabó, que es lo que enseña la lista de programadas.
+ */
+function useScheduleRunner(): void {
+  const { config, toast } = useStore()
+  const t = useT()
+  const cfg = React.useRef(config)
+  cfg.current = config
+  useEffect(
+    () =>
+      window.api.schedules.onRun((r) => {
+        void (async () => {
+          const c = cfg.current
+          if (!c) {
+            await window.api.schedules.finished(r.runId, false, t('La configuración todavía no estaba cargada'))
+            return
+          }
+          const res = await launchTask({ ...r.task, title: r.task.name }, c, t)
+          if (res.sessionId) await window.api.schedules.started(r.runId, res.sessionId)
+          if (res.error) {
+            await window.api.schedules.finished(r.runId, false, res.error)
+            toast('error', t('La tarea programada «{name}» no se pudo lanzar: {error}', { name: r.task.name, error: res.error }))
+            return
+          }
+          if (res.warning) toast('error', res.warning)
+          toast('info', t('Tarea programada en marcha: {name}', { name: r.task.name }), {
+            label: t('Ver'),
+            run: () => navigate('tasks')
+          })
+          const done = await res.done
+          const failed = done.error ?? (done.run?.status === 'error' ? (done.run.error ?? t('El agente falló')) : undefined)
+          await window.api.schedules.finished(r.runId, !failed, failed)
+        })()
+      }),
+    [t, toast]
+  )
+}
+
 function Shell(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('dashboard')
   const windowVisible = useDocumentVisible()
   useWindowChrome()
   useQuotaAlerts()
   useUpdateToast()
+  useScheduleRunner()
 
   // Lo que hay en marcha llega al icono de la bandeja, que además pregunta
   // antes de salir si algo se iba a cortar.

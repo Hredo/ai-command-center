@@ -15,7 +15,7 @@ import type {
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
-  ProjectInfo, ProjectScripts, UpdateInfo, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
+  ProjectInfo, ProjectScripts, UpdateInfo, ScheduledTask, ScheduledTaskView, ScheduleRun, LoginItemStatus, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
   RunOptions, RunRecord, Settings, SkillsReport, StatsBucket, StoredSession, StreamDelta, TermEvent, TermInfo,
   UsageSnapshot, WorktreeInfo, WorktreeSetup
 } from './types'
@@ -81,6 +81,14 @@ export interface IpcContract {
   'agents:save': { args: [a: Agent]; result: AppConfig }
   'agents:saveCli': { args: [a: CliAgent]; result: AppConfig }
   'agents:workspace': { args: [id?: string]; result: string }
+  'schedules:list': { args: []; result: ScheduledTaskView[] }
+  'schedules:save': { args: [task: ScheduledTask]; result: AppConfig }
+  'schedules:remove': { args: [id: string]; result: AppConfig }
+  'schedules:runNow': { args: [id: string]; result: string }
+  'schedules:started': { args: [runId: string, sessionId: string]; result: void }
+  'schedules:finished': { args: [runId: string, ok: boolean, error?: string]; result: void }
+  'app:loginItem': { args: []; result: LoginItemStatus }
+  'app:setLoginItem': { args: [enabled: boolean]; result: LoginItemStatus }
   'updates:get': { args: []; result: UpdateInfo | null }
   'updates:check': { args: []; result: UpdateInfo }
   'updates:skip': { args: [version: string | null]; result: UpdateInfo | null }
@@ -310,6 +318,8 @@ export interface IpcEvents {
   'detect:localChanged': DetectedServer[]
   /** Los avisos de Claude Code en una terminal (su hook Notification). */
   'attention:changed': TerminalAttention[]
+  /** Le toca a una tarea programada: la ventana la lanza como una del tablero. */
+  'schedules:run': ScheduleRun
   /** Lo último que se sabe de las versiones publicadas (al mirar, solo o a mano). */
   'updates:status': UpdateInfo
   /** Prompt rápido: a la ventana principal, que lo lanza en la Consola. */

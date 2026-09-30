@@ -13,10 +13,40 @@ import { Panel, PanelHeader, Button, Badge, Input, Field, Select, Toggle, cx, Do
 import { AppearanceTab, EditorTab, SecurityTab } from './Appearance'
 import { useStore } from '../lib/store'
 import { relTime, bytes } from '../lib/format'
-import type { DetectionResult, NotifyHookInfo, ProviderStatus, QuickHotkeyStatus, Settings as AppSettings } from '@shared/types'
+import type { DetectionResult, LoginItemStatus, NotifyHookInfo, ProviderStatus, QuickHotkeyStatus, Settings as AppSettings } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 import { IS_LINUX, IS_MAC, perOs } from '../lib/platform'
+
+/**
+ * Abrir la app al iniciar sesión, escondida en la bandeja: lo que necesitan
+ * las tareas programadas de la noche. Sólo en la app instalada.
+ */
+function LoginItemToggle(): React.JSX.Element {
+  const t = useT()
+  const [status, setStatus] = useState<LoginItemStatus | null>(null)
+  useEffect(() => {
+    void window.api.app.loginItem().then((r) => r.ok && r.data && setStatus(r.data))
+  }, [])
+  return (
+    <div className="space-y-1.5 pt-1" data-login-item>
+      <div className={cx(!status?.supported && 'opacity-50 pointer-events-none')}>
+      <Toggle
+        checked={Boolean(status?.enabled)}
+        onChange={(v) => void window.api.app.setLoginItem(v).then((r) => r.ok && r.data && setStatus(r.data))}
+        label={t('Abrir la app al iniciar sesión, en la bandeja')}
+      />
+      </div>
+      <p className="text-[11.5px] text-dim leading-relaxed">
+        {status && !status.supported
+          ? t('Sólo en la app instalada: en desarrollo no se registra nada.')
+          : IS_LINUX
+            ? t('Para que las tareas programadas corran aunque no la abras. En Linux se hace con un fichero en ~/.config/autostart que se borra al quitarlo.')
+            : t('Para que las tareas programadas corran aunque no la abras.')}
+      </p>
+    </div>
+  )
+}
 
 /**
  * El prompt rápido: su atajo global (se graba pulsándolo), si se pudo
@@ -643,6 +673,7 @@ export default function Settings(): React.JSX.Element {
                     {t('Si tu escritorio no enseña iconos de bandeja, abrir la app otra vez desde el lanzador trae la ventana que ya estaba.')}
                   </p>
                 ) : null}
+                <LoginItemToggle />
               </div>
             </Panel>
 

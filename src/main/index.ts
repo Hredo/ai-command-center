@@ -23,9 +23,11 @@ import { runSelfTest } from './selftest'
 import { startMaintenance, stopMaintenance } from './maintenance'
 import { watchExternal, stopWatchingExternal } from './external'
 import { startQuotas, stopQuotas, pokeQuotas } from './quotas'
-import { initTray, onWindowClose, markQuitting, showWindow, destroyTray } from './tray'
+import { initTray, onWindowClose, markQuitting, showWindow, destroyTray, hasTray } from './tray'
 import { initQuick, unregisterQuickHotkey } from './quick'
 import { startUpdateChecks, stopUpdateChecks } from './updates'
+import { startScheduler, stopScheduler } from './schedules'
+import { startedHidden } from './loginItem'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
@@ -46,6 +48,8 @@ if (SELFTEST) app.setPath('userData', mkdtempSync(join(tmpdir(), 'acc-selftest-'
 const shellEnvReady = loadShellEnv()
 
 let mainWindow: BrowserWindow | null = null
+/** Abierta por el sistema al iniciar sesión: la primera ventana se queda en la bandeja. */
+let hideFirstWindow = startedHidden()
 
 /**
  * La barra de título la pinta la app en los tres sistemas. En Windows y
@@ -98,7 +102,13 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => {
+    if (hideFirstWindow && (hasTray() || IS_MAC)) {
+      hideFirstWindow = false
+      return
+    }
+    mainWindow?.show()
+  })
   // Cerrar esconde la ventana en la bandeja (o sale, según Ajustes): ver tray.ts.
   const win = mainWindow
   win.on('close', (e) => {
@@ -282,6 +292,9 @@ app.whenReady().then(async () => {
   // La poda del histórico: sin frenar el arranque y de vez en cuando.
   if (!SELFTEST) startMaintenance()
 
+  // Las tareas programadas: el reloj aquí, la tarea la lanza la ventana.
+  if (!SELFTEST) startScheduler(() => mainWindow)
+
   // ¿Hay versión nueva en GitHub? Sólo se avisa: ver updates.ts.
   if (!SELFTEST) startUpdateChecks((u) => emit(mainWindow, 'updates:status', u))
 
@@ -320,6 +333,7 @@ app.on('before-quit', () => {
   stopWatchingAttention()
   stopQuotas()
   stopUpdateChecks()
+  stopScheduler()
   closeAllTerms()
 })
 

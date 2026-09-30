@@ -474,6 +474,8 @@ process.env.CLAUDE_CONFIG_DIR = CLAUDE_DIR
 // Una clave de mentira: sólo para que el freno de presupuesto llegue a mirar
 // (con el freno puesto no sale ninguna petición).
 process.env.GROQ_API_KEY = 'clave-de-prueba'
+// Las tareas programadas miran el reloj cada medio segundo en vez de cada 30.
+process.env.ACC_SCHEDULE_TICK_MS = '500'
 
 // Un catálogo de modelos de mentira (y reciente, para que no se descargue):
 // el mismo modelo en models.dev, con sus capacidades, y en OpenRouter, con
@@ -4064,6 +4066,135 @@ app.whenReady().then(async () => {
     'si GitHub falla o limita las consultas lo dice, sin inventar nada',
     `${g4.error} · ${g4.limited}`
   )
+  /* -------------------------------------------------------------- *
+   * G5 · Tareas programadas                                        *
+   * -------------------------------------------------------------- */
+  const headG5 = git(['rev-parse', 'HEAD'])
+  const g5 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const bins = ${JSON.stringify(BINS)}
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(150) } return null }
+    const get = async (id) => (await api.schedules.list()).data.find((s) => s.id === id)
+    const out = {}
+    for (const s of (await api.config.get()).data.schedules ?? []) if (s.id.startsWith('g5-')) await api.schedules.remove(s.id)
+    await api.projects.save({ id: 'proyecto-g5', name: 'Repo g5', path: repo, color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'tarea-g5', name: 'Tarea G5', type: 'cli', command: bins.task, args: [], parser: 'plain', color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+    const before = new Set(engine.peekSessions().map((s) => s.id))
+    const base = { enabled: true, projectId: 'proyecto-g5', agent: 'cli:tarea-g5', worktree: true, prompt: 'programada zq5', catchUp: true }
+
+    // Lo que no vale no se guarda.
+    out.noPrompt = (await api.schedules.save({ ...base, id: 'g5-mal', name: 'x', prompt: '  ', repeat: 'daily', createdAt: Date.now() })).error
+    out.noProject = (await api.schedules.save({ ...base, id: 'g5-mal', name: 'x', projectId: 'no-existe', repeat: 'daily', createdAt: Date.now() })).error
+
+    // La próxima hora de cada tipo.
+    const now = Date.now()
+    await api.schedules.save({ ...base, enabled: true, id: 'g5-diaria', name: 'Diaria', repeat: 'daily', time: '03:00', createdAt: now })
+    await api.schedules.save({ ...base, id: 'g5-laborables', name: 'Laborables', repeat: 'weekdays', time: '07:30', createdAt: now })
+    await api.schedules.save({ ...base, id: 'g5-semanal', name: 'Semanal', repeat: 'weekly', time: '09:15', weekday: 0, createdAt: now })
+    await api.schedules.save({ ...base, id: 'g5-horas', name: 'Horas', repeat: 'hourly', everyHours: 6, createdAt: now })
+    // Guardadas apagadas: esto es sólo para ver sus horas, no para que corran.
+    for (const id of ['g5-diaria', 'g5-laborables', 'g5-semanal', 'g5-horas']) {
+      const s = (await api.config.get()).data.schedules.find((x) => x.id === id)
+      out[id] = await get(id).then((v) => v.nextRunAt)
+      await api.schedules.save({ ...s, enabled: false })
+    }
+    out.next = {
+      diaria: (() => { const d = new Date(out['g5-diaria']); return d.getHours() === 3 && d.getMinutes() === 0 && out['g5-diaria'] > now && out['g5-diaria'] <= now + 86400000 })(),
+      laborables: (() => { const d = new Date(out['g5-laborables']); return d.getHours() === 7 && d.getMinutes() === 30 && d.getDay() >= 1 && d.getDay() <= 5 && out['g5-laborables'] > now })(),
+      semanal: (() => { const d = new Date(out['g5-semanal']); return d.getDay() === 0 && d.getHours() === 9 && d.getMinutes() === 15 && out['g5-semanal'] <= now + 7 * 86400000 })(),
+      horas: out['g5-horas'] === now + 6 * 3600000
+    }
+
+    // Una que tocaba hace una hora (la app «estaba cerrada»): se lanza sola al mirar el reloj.
+    const hace2h = Date.now() - 2 * 3600000
+    await api.schedules.save({ ...base, id: 'g5-toca', name: 'Toca zq5', repeat: 'hourly', everyHours: 1, createdAt: hace2h })
+    // La que pidió no recuperarse se apunta como saltada; la apagada no hace nada.
+    await api.schedules.save({ ...base, id: 'g5-salta', name: 'Salta zq5', repeat: 'hourly', everyHours: 1, catchUp: false, createdAt: hace2h })
+    await api.schedules.save({ ...base, id: 'g5-apagada', name: 'Apagada zq5', enabled: false, repeat: 'hourly', everyHours: 1, createdAt: hace2h })
+
+    const ran = await until(async () => { const s = await get('g5-toca'); return s?.lastStatus === 'ok' || s?.lastStatus === 'error' ? s : null }, 30000)
+    out.ran = ran ? { status: ran.lastStatus, error: ran.lastError, session: ran.lastSessionId, next: ran.nextRunAt - ran.lastRunAt } : null
+    const session = ran?.lastSessionId ? engine.peekSessions().find((s) => s.id === ran.lastSessionId) : null
+    out.session = session ? { title: session.title, kind: session.kind, worktree: Boolean(session.worktreePath), wt: session.worktreePath } : null
+    out.tareaTxt = session?.worktreePath ? (await api.files.read(session.worktreePath, 'tarea.txt')).data?.text ?? null : null
+    await sleep(1500)
+    out.onlyOnce = engine.peekSessions().filter((s) => !before.has(s.id) && s.title === 'Toca zq5').length
+    out.salta = await get('g5-salta').then((s) => s.lastStatus)
+    out.apagada = await get('g5-apagada').then((s) => s.lastRunAt ?? null)
+    out.saltaSessions = engine.peekSessions().filter((s) => !before.has(s.id) && s.title === 'Salta zq5').length
+
+    // «Lanzar ahora», con una que falla: queda el fallo apuntado.
+    await api.schedules.save({ ...base, id: 'g5-falla', name: 'Falla zq5', enabled: false, repeat: 'daily', time: '03:00', worktree: false, prompt: 'esto falla', createdAt: Date.now() })
+    out.runNow = (await api.schedules.runNow('g5-falla')).ok
+    const failed = await until(async () => { const s = await get('g5-falla'); return s?.lastStatus === 'error' ? s : null })
+    out.failed = failed ? failed.lastError : null
+
+    // En Tareas: la tira de programadas y la tarjeta de lo que corrió.
+    engine.navigate('tasks')
+    const row = await until(() => document.querySelector('[data-schedules] [data-schedule="g5-toca"]'))
+    out.row = row ? row.querySelector('[data-schedule-cadence]')?.textContent + ' | ' + row.querySelector('[data-schedule-status]')?.textContent.trim() : null
+    out.card = Boolean(await until(() => [...document.querySelectorAll('[data-column]')].some((c) => c.textContent.includes('Toca zq5'))))
+
+    // El formulario: «Programar» guarda en vez de lanzar.
+    document.querySelector('[data-open-schedule]')?.click()
+    const fields = await until(() => document.querySelector('[data-schedule-fields]'))
+    const set = (el, v) => { Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })) }
+    const modal = fields?.closest('.fixed')
+    const selects = modal ? [...modal.querySelectorAll('select')] : []
+    const projectSel = selects[0]
+    if (projectSel) { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(projectSel, 'proyecto-g5'); projectSel.dispatchEvent(new Event('change', { bubbles: true })) }
+    await sleep(100)
+    const agentSel = selects[1]
+    if (agentSel) { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(agentSel, 'cli:tarea-g5'); agentSel.dispatchEvent(new Event('change', { bubbles: true })) }
+    set(document.querySelector('[data-task-prompt]'), 'desde el formulario zq5')
+    set(document.querySelector('[data-schedule-name]'), 'Formulario zq5')
+    set(document.querySelector('[data-schedule-time]'), '22:45')
+    await sleep(150)
+    out.formNext = document.querySelector('[data-form-next]')?.textContent ?? ''
+    document.querySelector('[data-task-submit]')?.click()
+    const saved = await until(async () => (await api.config.get()).data.schedules?.find((s) => s.name === 'Formulario zq5'))
+    out.form = saved ? { repeat: saved.repeat, time: saved.time, agent: saved.agent, worktree: saved.worktree, project: saved.projectId } : null
+    out.formLaunched = engine.peekSessions().some((s) => !before.has(s.id) && s.title.includes('Formulario zq5'))
+    out.login = (await api.app.loginItem()).data
+
+    // Limpieza.
+    for (const s of (await api.config.get()).data.schedules ?? []) if (s.id.startsWith('g5-') || s.name === 'Formulario zq5') await api.schedules.remove(s.id)
+    for (const s of engine.peekSessions()) if (!before.has(s.id)) await engine.deleteSession(s.id)
+    await api.agents.removeCli('tarea-g5')
+    await api.projects.remove('proyecto-g5')
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+    return out
+  })()`)
+  for (const line of git(['worktree', 'list', '--porcelain']).split('\n')) {
+    const wt = line.startsWith('worktree ') ? line.slice(9) : null
+    if (wt && wt !== REPO && !wt.endsWith('/repo')) {
+      try {
+        git(['worktree', 'remove', '--force', wt])
+      } catch {}
+    }
+  }
+  git(['reset', '-q', '--hard', headG5])
+
+  log(/Escribe qué tiene que hacer/.test(g5.noPrompt ?? '') && /Elige un proyecto/.test(g5.noProject ?? ''), 'G5: UNA TAREA PROGRAMADA SIN TAREA O SIN PROYECTO NO SE GUARDA', `${g5.noPrompt} · ${g5.noProject}`)
+  log(g5.next.diaria && g5.next.laborables && g5.next.semanal && g5.next.horas, 'CALCULA LA PRÓXIMA HORA: CADA DÍA, LABORABLES, SEMANAL Y POR HORAS', JSON.stringify(g5.next))
+  log(
+    g5.ran?.status === 'ok' && g5.session?.title === 'Toca zq5' && g5.session.kind === 'cli' && g5.session.worktree && /hecho por la tarea/.test(g5.tareaTxt ?? '') && g5.ran.next === 3600000 && g5.onlyOnce === 1,
+    'LA QUE TOCABA SE LANZA SOLA, EN SU WORKTREE, UNA SOLA VEZ, Y QUEDA APUNTADO CÓMO FUE',
+    JSON.stringify({ ran: g5.ran && { status: g5.ran.status, error: g5.ran.error }, session: g5.session?.title, txt: Boolean(g5.tareaTxt), veces: g5.onlyOnce })
+  )
+  log(g5.salta === 'missed' && g5.saltaSessions === 0 && g5.apagada === null, 'la que pidió no recuperarse se salta y la apagada no hace nada', `${g5.salta} · ${g5.apagada}`)
+  log(g5.runNow && Boolean(g5.failed), '«Lanzar ahora» funciona y un fallo queda apuntado', String(g5.failed))
+  log(/Cada hora/.test(g5.row ?? '') && /bien/.test(g5.row ?? '') && g5.card, 'EN TAREAS SALEN LAS PROGRAMADAS Y LA TARJETA DE LO QUE CORRIÓ', String(g5.row))
+  log(
+    g5.form?.repeat === 'daily' && g5.form.time === '22:45' && g5.form.agent === 'cli:tarea-g5' && g5.form.worktree && !g5.formLaunched && /La próxima/.test(g5.formNext),
+    'EL FORMULARIO PROGRAMA EN VEZ DE LANZAR Y DICE CUÁNDO TOCA',
+    `${JSON.stringify(g5.form)} · ${g5.formNext}`
+  )
+  log(g5.login?.supported === false && g5.login.reason === 'dev', 'abrir al iniciar sesión sólo se ofrece en la app instalada', JSON.stringify(g5.login))
   /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */

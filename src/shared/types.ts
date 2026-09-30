@@ -711,6 +711,62 @@ export interface StreamDelta {
   touched?: FileTouch[]
 }
 
+/** Cada cuánto se repite una tarea programada. */
+export type ScheduleRepeat = 'daily' | 'weekdays' | 'weekly' | 'hourly'
+
+/**
+ * Una tarea que se lanza sola a su hora, como las del tablero de Tareas: un
+ * agente sobre un proyecto, normalmente en un worktree aparte, y queda para
+ * revisar. Sólo corre con la app abierta (vale en la bandeja).
+ */
+export interface ScheduledTask {
+  id: string
+  name: string
+  enabled: boolean
+  projectId: string
+  /** 'cli:<id>', 'api:<id>' o 'model' (un modelo por API como agente, el de `pick`). */
+  agent: string
+  pick?: { providerId: string; model: string }
+  permissionMode?: string
+  /** En un worktree aparte: tu carpeta no se toca. */
+  worktree: boolean
+  prompt: string
+  repeat: ScheduleRepeat
+  /** Hora local HH:MM (diaria, laborables y semanal). */
+  time?: string
+  /** Día de la semana, 0 domingo … 6 sábado (semanal). */
+  weekday?: number
+  /** Cada cuántas horas (repetición por horas). */
+  everyHours?: number
+  /** Si la app estaba cerrada a su hora, lanzarla al abrir (por omisión, sí). */
+  catchUp?: boolean
+  createdAt: number
+  lastRunAt?: number
+  lastStatus?: 'running' | 'ok' | 'error' | 'missed'
+  lastError?: string
+  /** La conversación de la última vez, para revisarla. */
+  lastSessionId?: string
+}
+
+/** Abrir la app al iniciar sesión (en la bandeja). */
+export interface LoginItemStatus {
+  /** Sólo en la app instalada. */
+  supported: boolean
+  enabled: boolean
+  /** dev: en desarrollo no se registra nada. */
+  reason?: 'dev'
+}
+
+/** Una tarea programada con su próxima hora ya calculada. */
+export type ScheduledTaskView = ScheduledTask & { nextRunAt: number | null; running: boolean }
+
+/** Main pide a la ventana que lance una tarea programada. */
+export interface ScheduleRun {
+  runId: string
+  reason: 'time' | 'catchup' | 'manual'
+  task: ScheduledTask
+}
+
 /** Un fichero de una versión publicada, para este sistema. */
 export interface UpdateDownload {
   name: string
@@ -936,6 +992,8 @@ export interface AppConfig {
   batteries?: Battery[]
   /** Biblioteca de prompts: se insertan con «/» en la Consola, la Arena y las baterías. */
   prompts?: PromptTemplate[]
+  /** Tareas que se lanzan solas a su hora (Tareas › Programadas). */
+  schedules?: ScheduledTask[]
 }
 
 export interface ProviderOverride {

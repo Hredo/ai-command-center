@@ -10,6 +10,8 @@ import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
 import { refreshTray, setBusy, type Busy } from './tray'
 import { checkForUpdate, lastUpdate } from './updates'
+import { listSchedules, removeSchedule, runScheduleNow, saveSchedule, scheduleFinished, scheduleStarted } from './schedules'
+import { loginItemStatus, setLoginItem } from './loginItem'
 import {
   bindQuick, failQuick, hideQuick, openQuickInConsole, quickFinished, quickStatus, quickTap, registerQuickHotkey,
   showQuick, submitQuick
@@ -27,7 +29,7 @@ import { runMaintenance } from './maintenance'
 import { refreshExternal } from './external'
 import { importClaudeSessions } from './claudeSessions'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
-import type { RunOptions, CliRunOptions, Agent, CliAgent, Project } from '@shared/types'
+import type { RunOptions, CliRunOptions, Agent, CliAgent, Project, ScheduledTask } from '@shared/types'
 import type { IpcChannel, IpcArgs, IpcResult } from '@shared/ipcContract'
 
 /** El servidor de desarrollo, si lo hay: es el otro origen de confianza. */
@@ -335,6 +337,18 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
    * franja o dejan de cuadrar con la barra que pinta la aplicación.
    */
   handle('app:busy', (b: Busy) => setBusy(b))
+
+  // ---------------- Tareas programadas ----------------
+  handle('schedules:list', () => listSchedules())
+  handle('schedules:save', (task: ScheduledTask) => saveSchedule(task))
+  handle('schedules:remove', (id: string) => removeSchedule(String(id)))
+  handle('schedules:runNow', (id: string) => runScheduleNow(String(id)))
+  handle('schedules:started', (runId: string, sessionId: string) => scheduleStarted(String(runId), String(sessionId)))
+  handle('schedules:finished', (runId: string, ok: boolean, error?: string) =>
+    scheduleFinished(String(runId), ok === true, typeof error === 'string' ? error : undefined)
+  )
+  handle('app:loginItem', () => loginItemStatus())
+  handle('app:setLoginItem', (enabled: boolean) => setLoginItem(enabled === true))
 
   // ---------------- Versiones nuevas ----------------
   handle('updates:get', () => lastUpdate())

@@ -193,6 +193,11 @@ export function setBusy(next: Busy): void {
   refresh()
 }
 
+/** Hay icono en la bandeja (en un Linux sin iconos de estado puede no haberlo). */
+export function hasTray(): boolean {
+  return Boolean(tray && !tray.isDestroyed())
+}
+
 /** El idioma cambió: el menú se rehace. */
 export function refreshTray(): void {
   refresh()
