@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webFrame } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import type {
   AppConfig, Settings, Agent, CliAgent, Project, RunOptions, CliRunOptions, RunRecord, StoredSession,
   GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun, PromptTemplate, SearchQuery
@@ -226,7 +226,15 @@ const api = {
   },
   attach: {
     pick: () => call('attach:pick'),
-    describe: (path: string) => call('attach:describe', path)
+    describe: (path: string) => call('attach:describe', path),
+    /** Una imagen pegada: se guarda en la carpeta de datos y vuelve como adjunto. */
+    paste: (data: Uint8Array, mime: string) => call('attach:paste', data, mime),
+    /** Miniatura en data URL de una imagen adjunta. */
+    thumb: (path: string) => call('attach:thumb', path),
+    /** Abre un adjunto con el programa del sistema. */
+    open: (path: string) => call('attach:open', path),
+    /** La ruta en disco de un archivo arrastrado a la ventana. */
+    pathOf: (file: File): string => webUtils.getPathForFile(file)
   },
   /** Relevo: pasar un trabajo a medias de una IA a otra con todo su contexto. */
   relay: {

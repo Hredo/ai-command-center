@@ -227,7 +227,9 @@ function startAgentMock() {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
         const send = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`)
         const users = msgs.filter((m) => m.role === 'user')
-        const lastUser = String(users[users.length - 1]?.content ?? '')
+        // Con imágenes el contenido llega en partes: el texto es la parte «text».
+        const textOf = (c) => (Array.isArray(c) ? c.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(c ?? ''))
+        const lastUser = textOf(users[users.length - 1]?.content)
         const tools = msgs.filter((m) => m.role === 'tool')
         // «eco: texto»: contesta sin herramientas, con cuántos mensajes tuyos le han llegado.
         const eco = /eco: (.+)$/s.exec(lastUser)
@@ -453,7 +455,8 @@ fs.writeFileSync(CATALOG, JSON.stringify({
       caps: { tools: true, reasoning: true, openWeights: false }, knowledge: '2025-03' },
     { id: 'vendor/modelo-prueba-4.5', providerId: 'openrouter', name: 'Modelo prueba', source: 'catalog', priceIn: 1, priceOut: 5,
       caps: { tools: true }, bench: { intelligence: 61, coding: 55, design: [{ arena: 'models', category: 'website', elo: 1300, rank: 3 }] } },
-    { id: 'otro-modelo', providerId: 'openrouter', name: 'Otro', source: 'catalog', priceIn: 0, priceOut: 0 }
+    { id: 'otro-modelo', providerId: 'openrouter', name: 'Otro', source: 'catalog', priceIn: 0, priceOut: 0 },
+    { id: 'agente-sin-vision', providerId: 'vllm', name: 'Sin visión', source: 'catalog', modalities: ['text'] }
   ]
 }), 'utf8')
 
@@ -2864,14 +2867,16 @@ app.whenReady().then(async () => {
     out.goneRunId = goneRun.run?.id
     await engine.deleteSession(gone)
     const kept = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba' })
-    await engine.sendTurn(kept, 'eco: zanahoria morada', cfg)
+    // Una palabra que no haya salido en otra pasada de las pruebas.
+    const word = 'zanahoria' + Date.now().toString(36)
+    const keptRun = await engine.sendTurn(kept, 'eco: ' + word + ' morada', cfg)
     await engine.flushPersist()
     await sleep(900)
     const r2 = await q('cancion VERANO', { scope: 'runs' })
     out.run = r2.hits.map((h) => h.kind + ':' + h.field + ':' + (h.runId === out.goneRunId)).join(' | ')
     out.runSnippet = r2.hits[0]?.snippet
-    out.keptAll = (await q('zanahoria')).hits.map((h) => h.kind + ':' + h.role).sort().join(' | ')
-    out.keptRuns = (await q('zanahoria', { scope: 'runs' })).total
+    out.keptAll = (await q(word)).hits.map((h) => h.kind + ':' + h.role).sort().join(' | ')
+    out.keptRuns = (await q(word, { scope: 'runs' })).total
 
     // Por la interfaz: botón de arriba, resultados y abrir el mensaje.
     document.querySelector('[data-open-search]')?.click()
@@ -2897,6 +2902,7 @@ app.whenReady().then(async () => {
 
     await api.providers.setBaseUrl('vllm', out.prevBase)
     await engine.deleteSession(kept)
+    if (keptRun.run?.id) await api.runs.remove(keptRun.run.id)
     for (const id of ['e3-a', 'e3-b', 'e3-c']) await engine.deleteSession(id)
     if (out.goneRunId) await api.runs.remove(out.goneRunId)
     await api.projects.remove('proyecto-e3')
@@ -2916,6 +2922,138 @@ app.whenReady().then(async () => {
   log(e3.uiHits === 2 && e3.uiMark?.toLowerCase().startsWith('factura') && e3.flashed && e3.modalClosed, 'DESDE LA BARRA DE ARRIBA: ELEGIR UN RESULTADO LLEVA AL MENSAJE Y LO MARCA', `${e3.uiHits} resultados · ${e3.uiMark}`)
   log(e3.shortcut && e3.detail, 'Ctrl+Mayús+F lo abre y un resultado del histórico abre la ejecución')
   mockE3.close()
+
+  /* -------------------------------------------------------------- *
+   * E4 · Imágenes pegadas y mensajes multimodales                  *
+   * -------------------------------------------------------------- */
+  const mockE4 = await startAgentMock()
+  const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  const notesE4 = path.join(TMP, 'notas-e4.txt')
+  fs.writeFileSync(notesE4, 'CONTENIDO-SECRETO-42\n')
+  // Un Claude Code falso que enseña el fichero de ajustes que recibe (tiene que llamarse claude).
+  const e4Dir = path.join(FIXTURES, 'e4')
+  fs.mkdirSync(e4Dir, { recursive: true })
+  fs.writeFileSync(
+    path.join(e4Dir, 'claude-e4.js'),
+    [
+      "const fs = require('node:fs')",
+      "const out = (o) => process.stdout.write(JSON.stringify(o) + String.fromCharCode(10))",
+      'const args = process.argv.slice(2)',
+      "const s = args.indexOf('--settings')",
+      "let prompt = ''",
+      "process.stdin.on('data', (c) => (prompt += c))",
+      "process.stdin.on('end', () => {",
+      "  const sid = 'e4-' + Math.random().toString(16).slice(2, 8)",
+      "  out({ type: 'system', subtype: 'init', session_id: sid, model: 'claude-falso', cwd: process.cwd() })",
+      "  const settings = s !== -1 ? fs.readFileSync(args[s + 1], 'utf8') : 'ninguno'",
+      "  const text = 'ajustes=' + settings + ' prompt=' + prompt",
+      "  out({ type: 'assistant', session_id: sid, message: { model: 'claude-falso', content: [{ type: 'text', text }], usage: { input_tokens: 10, output_tokens: 5 } } })",
+      "  out({ type: 'result', session_id: sid, total_cost_usd: 0, duration_ms: 5, num_turns: 1, result: text })",
+      '})'
+    ].join('\n')
+  )
+  let e4Bin
+  if (process.platform === 'win32') {
+    e4Bin = path.join(e4Dir, 'claude.cmd')
+    fs.writeFileSync(e4Bin, `@node "${path.join(e4Dir, 'claude-e4.js')}" %*\r\n`)
+  } else {
+    e4Bin = path.join(e4Dir, 'claude')
+    fs.writeFileSync(e4Bin, `#!/bin/sh\nexec node "${path.join(e4Dir, 'claude-e4.js')}" "$@"\n`)
+    fs.chmodSync(e4Bin, 0o755)
+  }
+
+  const e4 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    const bytes = Uint8Array.from(atob(${JSON.stringify(PNG_1PX)}), (c) => c.charCodeAt(0))
+
+    const pasted = await api.attach.paste(bytes, 'image/png')
+    out.pasted = pasted.ok ? { image: pasted.data.image, mime: pasted.data.mime, dir: pasted.data.path.includes('pegados'), text: pasted.data.text } : pasted.error
+    const img = pasted.data
+    const thumb = await api.attach.thumb(img.path)
+    out.thumb = thumb.ok ? String(thumb.data).slice(0, 22) : thumb.error
+    const bmp = await api.attach.paste(bytes, 'image/bmp')
+    out.bmpRejected = !bmp.ok
+    const notes = (await api.attach.describe(${JSON.stringify(notesE4)})).data
+
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.projects.save({ id: 'proyecto-e4', name: 'Repo e4', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+    const cfg = async () => (await api.config.get()).data
+    const ids = []
+
+    // Con visión (sin dato en el catálogo se intenta): la imagen va como imagen, y vuelve en el turno siguiente con el archivo de texto.
+    const s1 = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba' })
+    ids.push(s1)
+    await engine.sendTurn(s1, 'eco: mira esto', await cfg(), { attachments: [img, notes] })
+    out.first = engine.peekChat(s1).turns.at(-1)?.content
+    await engine.sendTurn(s1, 'eco: y ahora qué', await cfg())
+    out.second = engine.peekChat(s1).turns.at(-1)?.content
+
+    // Un modelo que el catálogo dice que sólo lee texto: la imagen va como ruta.
+    const s2 = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-sin-vision' })
+    ids.push(s2)
+    await engine.sendTurn(s2, 'eco: sin vista', await cfg(), { attachments: [img] })
+
+    // En la Consola: la miniatura sale en el mensaje enviado.
+    engine.focusChat(s1)
+    out.thumbInTurn = Boolean(await until(() => document.querySelector('[data-turn] [data-attachment-image] img[data-thumb]')))
+
+    // Un agente de consola recibe la ruta, y Claude Code puede leer la carpeta de la imagen.
+    await api.agents.saveCli({ id: 'claude-e4', name: 'Claude e4', type: 'cli', command: ${JSON.stringify(e4Bin)}, args: ['-p', '--output-format', 'stream-json', '--verbose'], parser: 'claude-stream-json', color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+    const s3 = await engine.newSession('cli', { cliAgentId: 'claude-e4', projectId: 'proyecto-e4', permissionMode: 'acceptEdits' })
+    ids.push(s3)
+    const r3 = await engine.sendTurn(s3, 'describe la imagen', await cfg(), { attachments: [img] })
+    out.cli = r3.run?.response ?? r3.error
+    out.imgDir = img.path.replace(/[\\\\/][^\\\\/]+$/, '')
+
+    await api.providers.setBaseUrl('vllm', out.prevBase)
+    for (const id of ids) await engine.deleteSession(id)
+    await api.agents.removeCli('claude-e4')
+    await api.projects.remove('proyecto-e4')
+    return out
+  })()`)
+  const e4Reqs = mockE4.requests ?? []
+  const reqWith = (text) => e4Reqs.find((b) => (b.messages ?? []).some((m) => m.role === 'user' && JSON.stringify(m.content).includes(text)) && JSON.stringify(b.messages.filter((m) => m.role === 'user').at(-1).content).includes(text))
+  const r1 = reqWith('eco: mira esto')
+  const u1 = r1?.messages.filter((m) => m.role === 'user').at(-1)?.content
+  const parts1 = Array.isArray(u1) ? u1.map((p) => p.type).join(',') : typeof u1
+  const img1 = Array.isArray(u1) ? u1.find((p) => p.type === 'image_url')?.image_url?.url ?? '' : ''
+  const text1 = Array.isArray(u1) ? u1.find((p) => p.type === 'text')?.text ?? '' : String(u1)
+  const r2 = reqWith('eco: y ahora qué')
+  const hist = r2?.messages.filter((m) => m.role === 'user')[0]?.content
+  const r3 = reqWith('eco: sin vista')
+  const u3 = r3?.messages.filter((m) => m.role === 'user').at(-1)?.content
+  let settings = null
+  try {
+    settings = JSON.parse(String(e4.cli).split('ajustes=')[1].split(' prompt=')[0])
+  } catch {}
+
+  log(e4.pasted?.image === true && e4.pasted.mime === 'image/png' && e4.pasted.dir && e4.pasted.text === false && e4.bmpRejected, 'UNA IMAGEN PEGADA SE GUARDA EN LA CARPETA DE LA APP COMO ADJUNTO', JSON.stringify(e4.pasted))
+  log(e4.thumb === 'data:image/png;base64,' && e4.thumbInTurn, 'y se ve en miniatura, también en el mensaje enviado', `${e4.thumb} · ${e4.thumbInTurn}`)
+  log(
+    parts1 === 'text,image_url' && img1.startsWith('data:image/png;base64,iVBOR') && text1.includes('CONTENIDO-SECRETO-42'),
+    'CON VISIÓN, LA IMAGEN VA COMO IMAGEN Y EL ARCHIVO DE TEXTO DENTRO DEL MENSAJE',
+    `${parts1} · ${img1.slice(0, 30)}`
+  )
+  log(
+    Array.isArray(hist) && hist.some((p) => p.type === 'image_url') && JSON.stringify(hist).includes('CONTENIDO-SECRETO-42') && String(e4.second).startsWith('Eco 2'),
+    'EN EL TURNO SIGUIENTE LOS ADJUNTOS VUELVEN CON EL HISTORIAL',
+    Array.isArray(hist) ? hist.map((p) => p.type).join(',') : String(hist).slice(0, 80)
+  )
+  log(typeof u3 === 'string' && u3.includes('este modelo no acepta imágenes') && u3.includes('pegados'), 'si el catálogo dice que el modelo no ve imágenes, va la ruta', typeof u3 === 'string' ? u3.slice(-120) : typeof u3)
+  log(
+    String(e4.cli).includes('Archivos adjuntos') && String(e4.cli).includes('pegados') && settings?.permissions?.additionalDirectories?.[0] === e4.imgDir,
+    'A CLAUDE CODE LE LLEGA LA RUTA Y PERMISO PARA LEER ESA CARPETA',
+    JSON.stringify(settings)
+  )
+  mockE4.close()
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

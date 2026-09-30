@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative, isAbsolute } from 'node:path'
+import { dirname, join, relative, isAbsolute, resolve } from 'node:path'
 import { paths } from '../paths'
 import { randomUUID } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
@@ -922,17 +922,34 @@ function injectArgs(template: string[], extra: string[]): string[] {
  * que evita cualquier problema de escapado con textos largos.
  */
 /** Las reglas se validan: texto corto, sin saltos de línea, como mucho veinte. */
-function allowSettingsFile(runId: string, rules?: unknown): string | null {
-  if (!Array.isArray(rules)) return null
-  const clean = rules
+function allowSettingsFile(runId: string, rules?: unknown, dirs: string[] = []): string | null {
+  const clean = (Array.isArray(rules) ? rules : [])
     .filter((r): r is string => typeof r === 'string' && r.length > 0 && r.length <= 400 && !/[\r\n]/.test(r))
     .slice(0, 20)
-  if (!clean.length) return null
+  if (!clean.length && !dirs.length) return null
   const dir = join(paths.dir, 'cli-settings')
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `${runId.replace(/[^\w-]/g, '_')}.json`)
-  writeFileSync(file, JSON.stringify({ permissions: { allow: clean } }))
+  // Las carpetas de los adjuntos que están fuera del proyecto (una imagen
+  // pegada vive en la carpeta de datos de la app): sin esto, leerlas le pide
+  // un permiso que en modo -p nadie puede darle.
+  const permissions: Record<string, string[]> = {}
+  if (clean.length) permissions.allow = clean
+  if (dirs.length) permissions.additionalDirectories = dirs
+  writeFileSync(file, JSON.stringify({ permissions }))
   return file
+}
+
+/** Carpetas de los adjuntos que no están dentro de la del proyecto. */
+function outsideDirs(attachments: CliRunOptions['attachments'], cwd: string | undefined): string[] {
+  const root = cwd ? resolve(cwd) : ''
+  const out = new Set<string>()
+  for (const a of attachments ?? []) {
+    const d = dirname(resolve(a.path))
+    const rel = root ? relative(root, d) : '..'
+    if (rel.startsWith('..') || isAbsolute(rel)) out.add(d)
+  }
+  return [...out].slice(0, 10)
 }
 
 export async function runCliAgent(
@@ -1081,7 +1098,8 @@ function startCliAgent(
     // Lo que le faltó en el turno anterior, sólo para esta ejecución. Va en un
     // fichero de ajustes aparte (`--settings`): un solo argumento, sin comillas
     // que escapar y sin tocar tu settings.json.
-    const allowFile = permissionArgs !== null ? allowSettingsFile(runId, opts.allowTools) : null
+    const allowFile =
+      permissionArgs !== null ? allowSettingsFile(runId, opts.allowTools, outsideDirs(opts.attachments, opts.projectPath)) : null
     const extra = [
       ...(resume && !resume.beforePrompt ? resume.args : []),
       ...(effortArgs ?? []),

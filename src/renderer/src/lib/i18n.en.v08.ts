@@ -850,5 +850,7 @@ export const enV08: Record<string, string> = {
   "Filtra la lista. Enter busca en todos los mensajes y en el histórico.": "Filters the list. Enter searches every message and the history.",
   "Buscar también en las conversaciones, con frases exactas y filtros (Ctrl+Mayús+F)": "Also search the conversations, with exact phrases and filters (Ctrl+Shift+F)",
   "En todo": "Everywhere",
-  "Siempre": "Any time"
+  "Siempre": "Any time",
+  "Abrir la imagen": "Open the image",
+  "No se pudo pegar la imagen": "The image could not be pasted"
 }

@@ -966,6 +966,27 @@ export function AttachButton({ onAdd }: { onAdd: (a: Attachment[]) => void }): R
   )
 }
 
+/** Miniaturas ya pedidas: una imagen no se vuelve a leer del disco cada vez que se pinta. */
+const thumbs = new Map<string, Promise<string | null>>()
+
+function Thumb({ path, size }: { path: string; size: number }): React.JSX.Element | null {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    let p = thumbs.get(path)
+    if (!p) {
+      p = window.api.attach.thumb(path).then((r) => (r.ok ? (r.data ?? null) : null))
+      thumbs.set(path, p)
+    }
+    void p.then((s) => alive && setSrc(s))
+    return () => {
+      alive = false
+    }
+  }, [path])
+  if (!src) return null
+  return <img src={src} alt="" className="rounded-[3px] object-cover shrink-0" style={{ width: size, height: size }} data-thumb />
+}
+
 export function AttachmentList({
   items,
   onRemove,
@@ -975,10 +996,37 @@ export function AttachmentList({
   onRemove?: (path: string) => void
   readOnly?: boolean
 }): React.JSX.Element | null {
+  const t = useT()
   if (!items?.length) return null
   return (
     <div className="flex flex-wrap gap-1.5">
-      {items.map((a) => (
+      {items.map((a) =>
+        a.image ? (
+          <span
+            key={a.path}
+            title={`${a.path}${a.skipped ? ' · ' + a.skipped : ''}`}
+            className={cx(
+              'inline-flex items-center gap-1.5 p-1 pr-1.5 rounded border text-[11px]',
+              a.skipped ? 'bg-[#241a09] border-[#4a3512] text-warn' : 'bg-raised border-line text-muted'
+            )}
+            data-attachment-image
+          >
+            <button
+              type="button"
+              onClick={() => void window.api.attach.open(a.path)}
+              title={t('Abrir la imagen')}
+              className="flex items-center gap-1.5"
+            >
+              <Thumb path={a.path} size={readOnly ? 72 : 36} />
+              <span className="font-mono max-w-[160px] truncate">{a.name}</span>
+            </button>
+            {!readOnly && onRemove ? (
+              <button onClick={() => onRemove(a.path)} className="text-dim hover:text-bad">
+                <X size={11} />
+              </button>
+            ) : null}
+          </span>
+        ) : (
         <span
           key={a.path}
           title={`${a.path}${a.skipped ? ' · ' + a.skipped : ''}`}
@@ -997,7 +1045,8 @@ export function AttachmentList({
             </button>
           ) : null}
         </span>
-      ))}
+        )
+      )}
     </div>
   )
 }

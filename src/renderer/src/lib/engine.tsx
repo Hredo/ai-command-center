@@ -1163,9 +1163,11 @@ export async function sendChat(
   if (!state || state.runningRunId) return undefined
 
   const runId = uid()
+  // Con sus adjuntos: el modelo no guarda nada entre peticiones y una imagen o
+  // un archivo de un turno anterior se perdería en el siguiente.
   const history: ChatMessage[] = state.turns
     .filter((t) => !t.error && t.content)
-    .map((t) => ({ role: t.role, content: t.content }))
+    .map((t) => ({ role: t.role, content: t.content, attachments: t.role === 'user' && t.attachments?.length ? t.attachments : undefined }))
 
   // El primer prompt pone el título, salvo que ya tenga uno puesto a mano.
   const first = state.turns.length === 0 && !state.session.titled

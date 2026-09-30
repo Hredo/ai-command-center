@@ -582,6 +582,48 @@ export default function Chat(): React.JSX.Element {
     setAttachments([])
   }, [activeId])
 
+  // Adjuntos que llegan pegando una imagen o arrastrando archivos a la caja.
+  const addAttachments = useCallback((added: Attachment[]) => {
+    setAttachments((list) => {
+      const seen = new Set(list.map((a) => a.path))
+      return [...list, ...added.filter((a) => !seen.has(a.path))]
+    })
+  }, [])
+
+  const onPaste = useCallback(
+    async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      // Si hay texto, se pega el texto: copiar de una hoja de cálculo trae
+      // también una imagen de la selección y no es lo que se quiere adjuntar.
+      if (e.clipboardData.getData('text/plain')) return
+      const images = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
+      if (!images.length) return
+      e.preventDefault()
+      for (const f of images) {
+        const r = await window.api.attach.paste(new Uint8Array(await f.arrayBuffer()), f.type)
+        if (r.ok && r.data) addAttachments([r.data])
+        else toast('error', r.error ?? t('No se pudo pegar la imagen'))
+      }
+    },
+    [addAttachments, toast, t]
+  )
+
+  const onDrop = useCallback(
+    async (e: React.DragEvent) => {
+      const files = [...e.dataTransfer.files]
+      if (!files.length) return
+      e.preventDefault()
+      const found: Attachment[] = []
+      for (const f of files) {
+        const path = window.api.attach.pathOf(f)
+        if (!path) continue
+        const r = await window.api.attach.describe(path)
+        if (r.ok && r.data) found.push(r.data)
+      }
+      if (found.length) addAttachments(found)
+    },
+    [addAttachments]
+  )
+
   // Con `override` se manda ese texto en vez de lo escrito (la revisión de un
   // diff): lo que tengas a medias en la caja y sus adjuntos se quedan.
   const send = useCallback(async (override?: string) => {
@@ -937,8 +979,15 @@ export default function Chat(): React.JSX.Element {
         {/* Entrada */}
         <div className="px-5 py-3.5 border-t border-line bg-void shrink-0">
           <div className="max-w-[860px] mx-auto">
-            <div className="relative">
+            <div
+              className="relative"
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+              }}
+              onDrop={(e) => void onDrop(e)}
+            >
               <PromptTextarea
+                onPaste={(e) => void onPaste(e)}
                 value={input}
                 onValue={setInput}
                 context={{ project: project?.name, branch: git?.branch }}
@@ -980,14 +1029,7 @@ export default function Chat(): React.JSX.Element {
 
             <div className="flex items-center justify-between gap-3 mt-1.5 text-[11px] text-dim flex-wrap">
               <div className="flex items-center gap-2">
-                <AttachButton
-                  onAdd={(added) =>
-                    setAttachments((list) => {
-                      const seen = new Set(list.map((a) => a.path))
-                      return [...list, ...added.filter((a) => !seen.has(a.path))]
-                    })
-                  }
-                />
+                <AttachButton onAdd={addAttachments} />
                 <SavePromptButton text={input} />
                 <span className="text-dim">{t('Esfuerzo')}</span>
                 <EffortPicker

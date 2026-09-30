@@ -393,6 +393,15 @@ export function priceFor(providerId: string, modelId: string): Price {
  * el usuario haya fijado a mano, el catálogo, o nada. Sin dato no se dibuja
  * ningún porcentaje: mejor no decir nada que decir un número inventado.
  */
+/** Qué acepta de entrada el modelo (texto, imagen…), según el catálogo; sin dato, nada. */
+export function modelModalities(providerId: string, modelId: string): string[] | undefined {
+  const models = getCatalog().models
+  const exact = models.find((m) => m.providerId === providerId && m.id === modelId)
+  if (exact?.modalities?.length) return exact.modalities
+  const bare = modelId.includes('/') ? modelId.split('/').pop()! : modelId
+  return models.find((m) => (m.id === modelId || m.id.endsWith('/' + bare) || m.id === bare) && m.modalities?.length)?.modalities
+}
+
 export function contextLimitFor(providerId: string, modelId: string): number | undefined {
   const custom = getConfig().customModels.find((m) => m.providerId === providerId && m.id === modelId)
   if (custom?.contextLength) return custom.contextLength

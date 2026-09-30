@@ -22,6 +22,7 @@ import { modelContextMax } from '../ollama'
 import { projectInstructions } from '../instructions'
 import { mcpToolsFor, callMcpTool } from '../mcp/client'
 import { fetchHost } from './webFetch'
+import { anthropicContent, googleParts, ollamaImages, openAiContent } from '../providers/parts'
 import type { AgentStep, ChatMessage, FileTouch, ProviderDef, RunOptions, UsageLimit } from '@shared/types'
 
 /** Rondas de herramientas por petición: un modelo que entra en bucle no gira para siempre. */
@@ -210,7 +211,7 @@ function openAiDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Diale
   const { def, base, key, opts, signal } = ctx
   const messages: any[] = [
     { role: 'system', content: system },
-    ...history(opts).map((m) => ({ role: m.role, content: m.content }))
+    ...history(opts).map((m) => ({ role: m.role, content: openAiContent(m) }))
   ]
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (key) headers.Authorization = `Bearer ${key}`
@@ -338,7 +339,7 @@ function ollamaDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Diale
   const { def, base, opts, signal } = ctx
   const messages: any[] = [
     { role: 'system', content: system },
-    ...history(opts).map((m) => ({ role: m.role, content: m.content }))
+    ...history(opts).map((m) => ({ role: m.role, content: m.content, images: ollamaImages(m) }))
   ]
   const toolDefs = tools.map((t) => ({
     type: 'function',
@@ -453,7 +454,7 @@ function ollamaDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Diale
 
 function anthropicDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Dialect {
   const { def, base, key, opts, signal } = ctx
-  const messages: any[] = history(opts).map((m) => ({ role: m.role, content: m.content }))
+  const messages: any[] = history(opts).map((m) => ({ role: m.role, content: anthropicContent(m) }))
   const toolDefs = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }))
   const headers = { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }
   let thinking = true
@@ -610,7 +611,7 @@ function googleDialect(ctx: AgentCtx, tools: AgentTool[], system: string): Diale
   const { def, base, key, opts, signal } = ctx
   const contents: any[] = history(opts).map((m) => ({
     role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }]
+    parts: googleParts(m)
   }))
   const declarations = tools.map((t) => ({
     name: t.name,

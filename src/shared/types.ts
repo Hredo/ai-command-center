@@ -1077,6 +1077,9 @@ export interface Attachment {
   bytes: number
   /** false para binarios: se manda la ruta, no el contenido. */
   text: boolean
+  /** Imagen que un modelo con visión recibe como imagen (PNG, JPEG, GIF o WebP). */
+  image?: boolean
+  mime?: string
   lines?: number
   /** Motivo por el que no se envía el contenido, si aplica. */
   skipped?: string
@@ -1173,6 +1176,17 @@ export interface RunOptions {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
+  /** Lo que el usuario adjuntó a ese mensaje: se vuelve a mandar con el historial. */
+  attachments?: Attachment[]
+  /** Ya compuesto: las imágenes que van como imagen (sólo en main). */
+  images?: ImageRef[]
+}
+
+/** Una imagen de un mensaje: se lee del disco al montar la petición. */
+export interface ImageRef {
+  path: string
+  mime: string
+  name?: string
 }
 
 export interface CliRunOptions {

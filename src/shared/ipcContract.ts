@@ -87,6 +87,9 @@ export interface IpcContract {
   'app:security': { args: []; result: SecurityReport }
   'attach:describe': { args: [path: string]; result: Attachment }
   'attach:pick': { args: []; result: Attachment[] }
+  'attach:paste': { args: [data: Uint8Array, mime: string]; result: Attachment }
+  'attach:thumb': { args: [path: string]; result: string | null }
+  'attach:open': { args: [path: string]; result: void }
   'checkpoints:diff': { args: [root: string, id: string, untilId?: string]; result: { diff: string; until: 'next' | 'now'; truncated: boolean } | null }
   'checkpoints:preview': { args: [root: string, id: string]; result: { restore: string[]; remove: string[]; headMoved: boolean } | null }
   'checkpoints:undo': { args: [root: string, id: string]; result: { restore: string[]; remove: string[]; headMoved: boolean; safetyId?: string } }

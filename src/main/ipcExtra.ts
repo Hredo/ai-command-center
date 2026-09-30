@@ -2,7 +2,7 @@
  * Canales de terminales, sesiones, Ollama, enlaces de modelos y avisos.
  * Van aparte de ipc.ts sólo para no tener un fichero de mil líneas.
  */
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { homedir } from 'node:os'
 import { handle } from './ipc'
 import { emit } from './emit'
@@ -27,7 +27,7 @@ import {
 import { watchRepo, unwatchRepo, pokeRepo } from './watch'
 import { usageSnapshots, cliLimitOf } from './usage'
 import { claudeWindows, refreshClaude } from './claudeSessions'
-import { pickAttachments, describeFile } from './attach'
+import { pickAttachments, describeFile, savePastedImage, imageThumb, imageMime } from './attach'
 import { listDir, readProjectFile, writeProjectFile, createEntry, trashEntry, revealEntry } from './files'
 import { ghStatus, ghRepos, ghClone, ghLoginCommand, ghLogoutCommand, forgetGhPath } from './github'
 import { notifyArena, notifyCommand, notifyPull } from './notify'
@@ -240,6 +240,19 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
 
   handle('attach:pick', () => pickAttachments())
   handle('attach:describe', (path: string) => describeFile(path))
+  handle('attach:paste', (data: Uint8Array, mime: string) => {
+    if (!(data instanceof Uint8Array)) throw new Error('Imagen no válida')
+    return savePastedImage(data, String(mime))
+  })
+  handle('attach:thumb', (path: string) => imageThumb(str(path, 'ruta')))
+  // Sólo imágenes: abrir cualquier ruta que llegue del renderer sería lanzar
+  // lo que sea con el programa asociado.
+  handle('attach:open', async (path: string) => {
+    const p = str(path, 'ruta')
+    if (!imageMime(p)) throw new Error('Sólo se abren imágenes adjuntas')
+    const err = await shell.openPath(p)
+    if (err) throw new Error(err)
+  })
 
   /* ---------------------------- Enlaces de modelos ---------------------------- */
 
