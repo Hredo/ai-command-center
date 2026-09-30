@@ -118,6 +118,7 @@ export interface IpcContract {
   'git:changes': { args: [path: string]; result: FileChange[] }
   'git:checkout': { args: [path: string, branch: string, create?: boolean]; result: { ok: boolean; detail: string; info?: GitInfo } }
   'git:commit': { args: [path: string, message: string, all?: boolean]; result: GitCmd }
+  'git:suggestCommit': { args: [path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en']; result: { message: string; run: RunRecord } }
   'git:diff': { args: [path: string, file?: string, staged?: boolean]; result: string }
   'git:graph': { args: [path: string, limit?: number, all?: boolean]; result: GitGraph }
   'git:info': { args: [path: string]; result: GitInfo }

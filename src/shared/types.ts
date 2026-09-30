@@ -543,7 +543,8 @@ export type RunStatus = 'ok' | 'error' | 'aborted' | 'running'
 export interface RunRecord {
   id: string
   createdAt: number
-  kind: 'chat' | 'arena' | 'cli'
+  /** `git`: lo que la app le pide a un modelo para git (el mensaje de un commit…). */
+  kind: 'chat' | 'arena' | 'cli' | 'git'
   providerId: string
   model: string
   agentId?: string
@@ -775,6 +776,8 @@ export interface Settings {
   budgets?: Budget[]
   /** Guardar una foto del repositorio antes de cada turno de un agente. Sí por omisión. */
   checkpoints?: boolean
+  /** Modelo que escribe mensajes de commit y descripciones de PR: mejor uno barato o local. */
+  gitModel?: { providerId: string; model: string }
 }
 
 export interface AppConfig {
@@ -1161,7 +1164,7 @@ export interface RunOptions {
   projectName?: string
   arenaId?: string
   conversationId?: string
-  kind?: 'chat' | 'arena'
+  kind?: 'chat' | 'arena' | 'git'
   /** Cuánto debe pensar. 'auto' o sin valor: no se toca la petición. */
   effort?: Effort
   attachments?: Attachment[]

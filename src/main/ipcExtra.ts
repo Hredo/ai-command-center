@@ -48,6 +48,7 @@ import { classifyWithOllama } from './recommend'
 import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryRun, judgeWithOllama } from './batteries'
 import { savePrompt, removePrompt, markPromptUsed } from './prompts'
 import { search } from './search'
+import { suggestCommitMessage } from './gitAi'
 import { exportSessions, importSessions } from './exchange'
 import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
 import { setKey, getStoredKey, mask } from './secrets'
@@ -179,6 +180,10 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     const r = await gitCommit(path, message, { all: Boolean(all) })
     pokeRepo(path)
     return r
+  })
+  handle('git:suggestCommit', (path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') => {
+    if (!pick?.providerId || !pick?.model) throw new Error('Elige qué modelo escribe el mensaje')
+    return suggestCommitMessage(str(path, 'ruta'), { providerId: String(pick.providerId), model: String(pick.model) }, lang === 'en' ? 'en' : 'es')
   })
   handle('git:run', async (path: string, command: string) => {
     const r = await gitRun(path, command)

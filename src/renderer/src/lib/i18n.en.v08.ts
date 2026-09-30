@@ -863,5 +863,13 @@ export const enV08: Record<string, string> = {
   "Exportar {n} conversaciones": "Export {n} conversations",
   "Exportar la conversación": "Export the conversation",
   "Para leerla o compartirla: los mensajes, el razonamiento plegado, las herramientas que usó y lo que costó cada respuesta.": "To read or share it: the messages, the reasoning folded away, the tools it used and what each answer cost.",
-  "La conversación entera, tal cual se guarda: para llevarla a otro equipo o tener una copia. Se importa igual.": "The whole conversation, exactly as it is stored: to take it to another computer or keep a copy. It imports back the same."
+  "La conversación entera, tal cual se guarda: para llevarla a otro equipo o tener una copia. Se importa igual.": "The whole conversation, exactly as it is stored: to take it to another computer or keep a copy. It imports back the same.",
+  "Elige qué modelo escribe el mensaje": "Choose which model writes the message",
+  "No se pudo escribir el mensaje": "Could not write the message",
+  "Qué modelo escribe el mensaje: mejor uno barato o local. Se recuerda.": "Which model writes the message: a cheap or local one is best. It is remembered.",
+  "Modelo para escribirlo…": "Model to write it…",
+  "Escribe el mensaje a partir de los cambios, al estilo de los commits del repositorio": "Writes the message from the changes, in the style of the repository's commits",
+  "Escribir con IA": "Write with AI",
+  "Lo ha escrito {model} ({cost}). Revísalo antes de confirmar.": "Written by {model} ({cost}). Review it before committing.",
+  "Volver al tuyo": "Back to yours"
 }

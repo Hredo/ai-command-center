@@ -7,18 +7,35 @@
  * acepta subcomandos de una lista. Los que pueden tirar trabajo (un `reset
  * --hard`, un `push --force`) piden confirmación antes de ejecutarse.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   GitCommit, GitBranch, ArrowUp, ArrowDown, RefreshCw, Plus, Minus, Loader2, Terminal as TerminalIcon,
-  FileText, AlertTriangle, ChevronDown, Check, Archive, ArchiveRestore
+  FileText, AlertTriangle, ChevronDown, Check, Archive, ArchiveRestore, Sparkles
 } from 'lucide-react'
 import { Badge, Button, cx, Empty, Modal, Textarea } from './ui'
-import { relTime } from '../lib/format'
+import { cost, relTime, shortModel } from '../lib/format'
 import { BranchPicker, useGit } from './AgentPanel'
-import type { FileChange } from '@shared/types'
+import { ModelPicker, type Pick } from './ModelPicker'
+import { useStore } from '../lib/store'
+import { usePrefs } from '../lib/prefs'
+import type { FileChange, ModelInfo } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 import { withMod } from '../lib/platform'
+
+/**
+ * Qué modelo escribe los mensajes: el que elegiste o, si no, uno local (no
+ * cuesta nada) o el más barato con precio conocido.
+ */
+export function gitModelPick(saved: Pick | undefined, models: ModelInfo[]): Pick | null {
+  if (saved) return saved
+  const local = models.find((m) => m.local)
+  if (local) return { providerId: local.providerId, model: local.id }
+  const priced = models
+    .filter((m) => m.priceIn != null && m.priceOut != null)
+    .sort((a, b) => (a.priceIn ?? 0) + (a.priceOut ?? 0) - ((b.priceIn ?? 0) + (b.priceOut ?? 0)))
+  return priced[0] ? { providerId: priced[0].providerId, model: priced[0].id } : null
+}
 interface Commit {
   hash: string
   short: string
@@ -70,6 +87,29 @@ export function GitPanel({
   const [command, setCommand] = useState('')
   const [confirm, setConfirm] = useState<string | null>(null)
   const [showLog, setShowLog] = useState(false)
+  const { config, models, reload: reloadConfig } = useStore()
+  const { lang } = usePrefs()
+  const pick = useMemo(() => gitModelPick(config?.settings.gitModel, models), [config?.settings.gitModel, models])
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiNote, setAiNote] = useState<{ model: string; cost: number } | null>(null)
+  const [prevMessage, setPrevMessage] = useState<string | null>(null)
+
+  const writeWithAi = async (): Promise<void> => {
+    if (!pick) {
+      onToast?.('error', t('Elige qué modelo escribe el mensaje'))
+      return
+    }
+    setAiBusy(true)
+    const r = await window.api.git.suggestCommit(path, pick, lang)
+    setAiBusy(false)
+    if (!r.ok || !r.data) {
+      onToast?.('error', r.error ?? t('No se pudo escribir el mensaje'))
+      return
+    }
+    setPrevMessage(message.trim() && message.trim() !== r.data.message ? message : null)
+    setMessage(r.data.message)
+    setAiNote({ model: r.data.run.model, cost: r.data.run.costTotal ?? 0 })
+  }
 
   const refresh = useCallback(() => {
     reloadGit()
@@ -122,6 +162,8 @@ export function GitPanel({
       return
     }
     setMessage('')
+    setAiNote(null)
+    setPrevMessage(null)
     setResult(res)
     onToast?.('ok', 'Confirmado')
     refresh()
@@ -337,8 +379,31 @@ export function GitPanel({
       </div>
 
       {/* --------------------------------------------- Confirmar */}
-      <div className="border border-line rounded-lg bg-panel p-3 space-y-2">
-        <div className="text-[12px] font-medium">{t('Confirmar')}</div>
+      <div className="border border-line rounded-lg bg-panel p-3 space-y-2" data-commit-box>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-[12px] font-medium">{t('Confirmar')}</div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <div className="w-[220px]" title={t('Qué modelo escribe el mensaje: mejor uno barato o local. Se recuerda.')}>
+              <ModelPicker
+                compact
+                value={pick}
+                onChange={(p) => {
+                  void window.api.config.settings({ gitModel: p }).then(() => reloadConfig())
+                }}
+                placeholder={t('Modelo para escribirlo…')}
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={() => void writeWithAi()}
+              disabled={aiBusy || !pick || changes.every((c) => c.status === '?')}
+              title={t('Escribe el mensaje a partir de los cambios, al estilo de los commits del repositorio')}
+              data-ai-commit
+            >
+              {aiBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {t('Escribir con IA')}
+            </Button>
+          </div>
+        </div>
         <Textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -348,10 +413,29 @@ export function GitPanel({
               void commit()
             }
           }}
-          rows={2}
+          rows={Math.min(8, Math.max(2, message.split('\n').length))}
           placeholder={t('Qué has hecho…')}
           className="text-[12.5px]"
+          data-commit-message
         />
+        {aiNote ? (
+          <div className="text-[11px] text-dim flex items-center gap-2 flex-wrap" data-ai-note>
+            <Sparkles size={11} className="text-violet" />
+            {t('Lo ha escrito {model} ({cost}). Revísalo antes de confirmar.', { model: shortModel(aiNote.model), cost: cost(aiNote.cost) })}
+            {prevMessage != null ? (
+              <button
+                className="underline hover:text-accent"
+                onClick={() => {
+                  setMessage(prevMessage)
+                  setPrevMessage(null)
+                  setAiNote(null)
+                }}
+              >
+                {t('Volver al tuyo')}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-dim">
             Confirma todo lo que git ya sigue (equivale a git commit -a). {withMod('Ctrl + Enter')}.

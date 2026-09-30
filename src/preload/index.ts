@@ -183,6 +183,9 @@ const api = {
     diff: (path: string, file?: string, staged = false) => call('git:diff', path, file, staged),
     stage: (path: string, files: string[], stage: boolean) => call('git:stage', path, files, stage),
     commit: (path: string, message: string, all = false) => call('git:commit', path, message, all),
+    /** Un modelo escribe el mensaje del commit a partir del diff. */
+    suggestCommit: (path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') =>
+      call('git:suggestCommit', path, pick, lang),
     run: (path: string, command: string) => call('git:run', path, command),
     isDestructive: (command: string) => call('git:isDestructive', command),
     /** Árbol de commits con sus padres, para dibujar ramas y merges. */

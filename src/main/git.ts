@@ -433,6 +433,42 @@ export async function gitCommit(
   return { ok: r.ok, out: r.out, err: r.err, command: 'git commit' }
 }
 
+/** Lo que se le enseña a un modelo para escribir el mensaje de un commit. */
+export interface CommitContext {
+  /** El diff que se confirmaría, recortado si es enorme. */
+  diff: string
+  /** `git diff --stat`: qué ficheros y cuánto. */
+  stat: string
+  /** Asuntos de los últimos commits, para copiar el estilo del repositorio. */
+  subjects: string[]
+  truncated: boolean
+}
+
+const MAX_COMMIT_DIFF = 40_000
+
+/**
+ * Lo mismo que confirmaría el panel (`git commit -a`): lo preparado y lo
+ * modificado que git ya sigue, contra HEAD. En un repositorio sin commits,
+ * lo preparado.
+ */
+export async function commitContext(cwd: string): Promise<CommitContext | null> {
+  if (!isRepoPath(cwd)) return null
+  const head = await git(cwd, ['rev-parse', '--verify', '-q', 'HEAD'])
+  const base = head.ok && head.out.trim() ? ['HEAD'] : ['--cached']
+  const [diff, stat, log] = await Promise.all([
+    git(cwd, ['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', '-U2', ...base], 30000),
+    git(cwd, ['-c', 'core.quotePath=false', 'diff', '--stat=120', ...base], 30000),
+    git(cwd, ['log', '-12', `--format=%s`], 8000)
+  ])
+  const truncated = diff.out.length > MAX_COMMIT_DIFF
+  return {
+    diff: truncated ? diff.out.slice(0, MAX_COMMIT_DIFF) : diff.out,
+    stat: stat.out.trim(),
+    subjects: log.ok ? log.out.split('\n').map((s) => s.trim()).filter(Boolean) : [],
+    truncated
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Árbol de commits                                                   *
  * ------------------------------------------------------------------ */

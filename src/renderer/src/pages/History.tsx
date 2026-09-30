@@ -258,6 +258,7 @@ export default function History(): React.JSX.Element {
             <option value="chat">{t('Consola')}</option>
             <option value="arena">Arena</option>
             <option value="cli">{t('Agente CLI')}</option>
+            <option value="git">Git</option>
           </Select>
           <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-[130px]">
             <option value="">{t('Todo estado')}</option>
@@ -342,7 +343,7 @@ export default function History(): React.JSX.Element {
                       </td>
                       <td className="py-2">
                         <Badge tone={r.kind === 'arena' ? 'violet' : r.kind === 'cli' ? 'warn' : 'neutral'}>
-                          {r.kind === 'chat' ? 'consola' : r.kind === 'arena' ? 'arena' : 'cli'}
+                          {r.kind === 'chat' ? 'consola' : r.kind === 'arena' ? 'arena' : r.kind === 'git' ? 'git' : 'cli'}
                         </Badge>
                       </td>
                       <td className="num text-right text-[11.5px] text-muted whitespace-nowrap">

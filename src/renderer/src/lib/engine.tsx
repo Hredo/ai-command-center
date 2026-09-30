@@ -1891,7 +1891,7 @@ if (typeof window !== 'undefined') {
   ;(window as unknown as Record<string, unknown>).__accEngine = {
     newSession, openSession, archiveSession, unarchiveSession, deleteSession,
     patchSessionConfig, renameSession, sendChat, sendCli, sendTurn, setTaskDone, stopSession, approveStep,
-    planRewind, rewindAndSend, forkAt,
+    planRewind, rewindAndSend, forkAt, navigate,
     flushPersist, loadSessions, saveSessionNow, focusChat,
     openTerm, sendTermCommand, writeTerm, closeTerm, interruptTerm, clearTerm,
     resizeTerm, termScrollback, onTermData,

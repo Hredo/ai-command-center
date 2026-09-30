@@ -33,9 +33,11 @@ import {
   type RunRecord
 } from '@shared/types'
 import { Pane } from '../components/Resizable'
+import { lastNavTarget, onNavigate, type NavTarget } from '../lib/nav'
 
 import { useT } from '../lib/i18n'
-type Tab = 'overview' | 'files' | 'git' | 'graph' | 'terminal' | 'agent' | 'instructions' | 'settings'
+const PROJECT_TABS = ['overview', 'files', 'git', 'graph', 'terminal', 'agent', 'instructions', 'settings'] as const
+type Tab = (typeof PROJECT_TABS)[number]
 
 /**
  * Salida del agente, tomada de la sesión que vive en el motor. Así se sigue
@@ -250,6 +252,21 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
   useEffect(() => {
     if (tab === 'agent' && agentSession) void openSession(agentSession.id)
   }, [tab, agentSession?.id])
+
+  // Desde otra parte de la app (la paleta, un aviso): abrir un proyecto y, si
+  // se dice, una de sus pestañas.
+  useEffect(() => {
+    const go = (target: NavTarget | null): void => {
+      if (target?.page !== 'projects') return
+      if (target.projectId) {
+        setSelected(target.projectId)
+        setShowClosed(false)
+      }
+      if (target.tab && (PROJECT_TABS as readonly string[]).includes(target.tab)) setTab(target.tab as Tab)
+    }
+    go(lastNavTarget())
+    return onNavigate(go)
+  }, [])
 
   useEffect(() => {
     if (!selected && projects.length) setSelected(projects[0].id)

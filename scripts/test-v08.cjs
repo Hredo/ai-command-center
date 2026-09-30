@@ -231,6 +231,15 @@ function startAgentMock() {
         const textOf = (c) => (Array.isArray(c) ? c.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(c ?? ''))
         const lastUser = textOf(users[users.length - 1]?.content)
         const tools = msgs.filter((m) => m.role === 'tool')
+        // El mensaje de un commit: contesta dentro de un bloque de código, como hacen muchos modelos.
+        const sysText = String(msgs.find((m) => m.role === 'system')?.content ?? '')
+        if (sysText.includes('mensajes de commit')) {
+          send({ choices: [{ delta: { content: '```\nArregla el total de la factura\n\nEl redondeo se hacía antes de sumar.\n```' } }] })
+          send({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 300, completion_tokens: 20 } })
+          res.write('data: [DONE]\n\n')
+          res.end()
+          return
+        }
         // «eco: texto»: contesta sin herramientas, con cuántos mensajes tuyos le han llegado.
         const eco = /eco: (.+)$/s.exec(lastUser)
         if (eco) {
@@ -3179,6 +3188,82 @@ app.whenReady().then(async () => {
   )
   log((e5d.result?.skipped ?? []).length === 1 && e5d.result.skipped[0].file === 'roto.json' && e5d.result.skipped[0].reason.includes('JSON'), 'un fichero roto se salta y se dice por qué', JSON.stringify(e5d.result?.skipped))
   log(e5e.modal && uiMd.startsWith('# Plan de la migración'), 'desde la fila de la conversación se exporta', uiMd.slice(0, 40))
+
+  /* -------------------------------------------------------------- *
+   * F1 · Mensaje de commit escrito por IA                          *
+   * -------------------------------------------------------------- */
+  const mockF1 = await startAgentMock()
+  const headF1 = git(['rev-parse', 'HEAD'])
+  fs.writeFileSync(path.join(REPO, 'factura.js'), 'total = redondea(a) + redondea(b)\n')
+  git(['add', 'factura.js'])
+  git(['commit', '-qm', 'Añade la factura'])
+  fs.writeFileSync(path.join(REPO, 'factura.js'), 'total = redondea(a + b)\n')
+  // Un repositorio sin nada que confirmar.
+  const cleanRepo = path.join(TMP, 'f1-limpio')
+  fs.mkdirSync(cleanRepo, { recursive: true })
+  git(['init', '-q', '-b', 'main'], cleanRepo)
+  git(['config', 'user.email', 'prueba@local'], cleanRepo)
+  git(['config', 'user.name', 'Prueba'], cleanRepo)
+  fs.writeFileSync(path.join(cleanRepo, 'a.txt'), 'a\n')
+  git(['add', '.'], cleanRepo)
+  git(['commit', '-qm', 'inicio'], cleanRepo)
+
+  const f1 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const out = {}
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    out.prevModel = (await api.config.get()).data.settings.gitModel ?? null
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.projects.save({ id: 'proyecto-f1', name: 'Repo f1', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+
+    const r = await api.git.suggestCommit(repo, { providerId: 'vllm', model: 'agente-de-prueba' }, 'es')
+    out.message = r.ok ? r.data.message : r.error
+    out.kind = r.data?.run.kind
+    out.project = r.data?.run.projectId
+    out.inHistory = r.ok ? ((await api.runs.compare([r.data.run.id])).data ?? []).length === 1 : false
+    const clean = await api.git.suggestCommit(${JSON.stringify(cleanRepo)}, { providerId: 'vllm', model: 'agente-de-prueba' }, 'es')
+    out.cleanError = clean.ok ? 'no falló' : clean.error
+
+    // Por la interfaz: Proyectos › Git › Escribir con IA, con el modelo elegido y recordado.
+    await api.config.settings({ gitModel: { providerId: 'vllm', model: 'agente-de-prueba' } })
+    await sleep(300)
+    engine.navigate({ page: 'projects', projectId: 'proyecto-f1', tab: 'git' })
+    const button = await until(() => document.querySelector('[data-ai-commit]:not([disabled])'))
+    button?.click()
+    const note = await until(() => document.querySelector('[data-ai-note]'))
+    out.note = note?.textContent ?? ''
+    out.box = document.querySelector('[data-commit-message]')?.value
+
+    if (r.ok) await api.runs.remove(r.data.run.id)
+    for (const run of (await api.runs.query({ kind: 'git', projectId: 'proyecto-f1' })).data.rows) await api.runs.remove(run.id)
+    await api.config.settings({ gitModel: out.prevModel })
+    await api.providers.setBaseUrl('vllm', out.prevBase)
+    await api.projects.remove('proyecto-f1')
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+    return out
+  })()`)
+  const f1Req = (mockF1.requests ?? []).find((b) => String(b.messages?.find((m) => m.role === 'system')?.content ?? '').includes('mensajes de commit'))
+  const f1Prompt = String(f1Req?.messages?.find((m) => m.role === 'user')?.content ?? '')
+  git(['reset', '-q', '--hard', headF1])
+
+  log(
+    f1.message === 'Arregla el total de la factura\n\nEl redondeo se hacía antes de sumar.' && f1.kind === 'git' && f1.project === 'proyecto-f1' && f1.inHistory,
+    'F1: UN MODELO ESCRIBE EL MENSAJE DEL COMMIT, LIMPIO, Y SU GASTO ENTRA EN EL HISTÓRICO',
+    JSON.stringify(f1.message)
+  )
+  log(
+    f1Prompt.includes('-total = redondea(a) + redondea(b)') && f1Prompt.includes('+total = redondea(a + b)') && f1Prompt.includes('- Añade la factura') && f1Prompt.includes('factura.js'),
+    'le llega el diff que se confirmaría y los commits recientes, para copiar el estilo',
+    f1Prompt.slice(0, 120).replace(/\n/g, ' ⏎ ')
+  )
+  log(String(f1.cleanError).includes('No hay cambios que confirmar'), 'sin cambios lo dice y no gasta nada', f1.cleanError)
+  log(f1.box === 'Arregla el total de la factura\n\nEl redondeo se hacía antes de sumar.' && f1.note.includes('agente-de-prueba'), 'EN PROYECTOS › GIT, «ESCRIBIR CON IA» RELLENA EL MENSAJE Y DICE QUIÉN LO ESCRIBIÓ', f1.note)
+  mockF1.close()
 
   /* -------------------------------------------------------------- *
    * Cierre                                                         *
