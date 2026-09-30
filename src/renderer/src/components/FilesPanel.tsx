@@ -23,6 +23,16 @@ import type { DirEntry, FileContent } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 import { perOs } from '../lib/platform'
+import { useIsPageActive } from '../lib/pageActive'
+
+/** Un resultado de la búsqueda por nombre. */
+interface FileHit {
+  rel: string
+  name: string
+  dir: boolean
+  /** Letras del nombre que coinciden. */
+  marks: number[]
+}
 /* ------------------------------------------------------------------ *
  * Árbol                                                              *
  * ------------------------------------------------------------------ */
@@ -36,21 +46,18 @@ interface NodeProps {
   toggleDir: (rel: string) => void
   cache: Record<string, DirEntry[]>
   loadDir: (rel: string) => void
-  filter: string
   /** Marca de las carpetas que conviene no abrir a la ligera. */
   heavyLabel: string
 }
 
 const TreeNode = React.memo(function TreeNode(props: NodeProps): React.JSX.Element | null {
-  const { entry, depth, selected, onSelect, openDirs, toggleDir, cache, loadDir, filter, heavyLabel } = props
+  const { entry, depth, selected, onSelect, openDirs, toggleDir, cache, loadDir, heavyLabel } = props
   const open = openDirs.has(entry.rel)
   const children = cache[entry.rel]
 
   useEffect(() => {
     if (entry.dir && open && !children) loadDir(entry.rel)
   }, [entry.dir, entry.rel, open, children, loadDir])
-
-  if (filter && !entry.dir && !entry.name.toLowerCase().includes(filter)) return null
 
   return (
     <>
@@ -85,6 +92,28 @@ const TreeNode = React.memo(function TreeNode(props: NodeProps): React.JSX.Eleme
   )
 })
 
+/** El nombre con las letras que coinciden marcadas. */
+function Marked({ name, marks }: { name: string; marks: number[] }): React.JSX.Element {
+  if (!marks.length) return <>{name}</>
+  const set = new Set(marks)
+  return (
+    <>
+      {[...name].map((ch, i) =>
+        set.has(i) ? (
+          <span key={i} className="text-accent font-medium">
+            {ch}
+          </span>
+        ) : (
+          <React.Fragment key={i}>{ch}</React.Fragment>
+        )
+      )}
+    </>
+  )
+}
+
+/** El cuadro de texto normaliza los saltos de línea: se comparan y se guardan como estaban. */
+const lf = (s: string): string => s.replace(/\r\n/g, '\n')
+
 /* ------------------------------------------------------------------ *
  * Panel                                                              *
  * ------------------------------------------------------------------ */
@@ -112,10 +141,19 @@ export function FilesPanel({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
+  const [hits, setHits] = useState<FileHit[] | null>(null)
+  const [hitTotal, setHitTotal] = useState(0)
+  const [capped, setCapped] = useState(false)
+  const [active, setActive] = useState(0)
   const [creating, setCreating] = useState<{ dir: boolean } | null>(null)
   const [newName, setNewName] = useState('')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const t = useT()
+  const panel = useRef<HTMLDivElement>(null)
+  const editorArea = useRef<HTMLTextAreaElement | null>(null)
+  // Al crear un fichero, el cursor va directo a él para escribir y guardar.
+  const focusAfterOpen = useRef(false)
+  const pageActive = useIsPageActive()
 
   const loadDir = useCallback(
     (rel: string) => {
@@ -176,27 +214,74 @@ export function FilesPanel({
     [root, t]
   )
 
+  // El editor se monta al terminar de leer: entonces ya se le puede dar el foco.
+  useEffect(() => {
+    if (!focusAfterOpen.current || loading || !file || file.binary) return
+    focusAfterOpen.current = false
+    editorArea.current?.focus()
+  }, [file, loading])
+
+  /** Abre un fichero desplegando en el árbol las carpetas de su camino. */
+  const reveal = useCallback(
+    (rel: string, dir: boolean) => {
+      const parts = rel.split('/')
+      const upto = dir ? parts.length : parts.length - 1
+      const dirs = parts.slice(0, upto).map((_, i) => parts.slice(0, i + 1).join('/'))
+      if (dirs.length) {
+        setOpenDirs((prev) => {
+          const next = new Set(prev)
+          for (const d of dirs) next.add(d)
+          return next
+        })
+        for (const d of dirs) loadDir(d)
+      }
+      if (!dir) openFile({ name: parts[parts.length - 1], rel, dir: false, modified: Date.now() })
+    },
+    [loadDir, openFile]
+  )
+
+  // Buscar mientras se escribe, en todo el proyecto: el proceso principal
+  // recorre las carpetas (sin node_modules ni .git) y guarda el recorrido un
+  // momento, así que cada tecla no vuelve a leer el disco.
+  useEffect(() => {
+    const q = filter.trim()
+    if (!q) {
+      setHits(null)
+      return
+    }
+    let alive = true
+    const timer = window.setTimeout(() => {
+      void window.api.files.search(root, q).then((r) => {
+        if (!alive) return
+        setHits(r.ok && r.data ? r.data.hits : [])
+        setHitTotal(r.ok && r.data ? r.data.total : 0)
+        setCapped(Boolean(r.ok && r.data?.capped))
+        setActive(0)
+      })
+    }, 90)
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+    }
+  }, [filter, root])
+
+  const pickHit = (h: FileHit): void => {
+    reveal(h.rel, h.dir)
+    // Una carpeta se ve mejor en el árbol: se vuelve a él con ella abierta.
+    if (h.dir) setFilter('')
+  }
+
   // Abrir un fichero que pide otra pestaña: se despliegan las carpetas de su
   // camino y se selecciona.
   useEffect(() => {
     if (!openRequest?.path) return
-    const parts = openRequest.path.split('/')
-    const dirs = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'))
-    if (dirs.length) {
-      setOpenDirs((prev) => {
-        const next = new Set(prev)
-        for (const d of dirs) next.add(d)
-        return next
-      })
-      for (const d of dirs) loadDir(d)
-    }
-    openFile({ name: parts[parts.length - 1], rel: openRequest.path, dir: false, modified: Date.now() })
-  }, [openRequest, loadDir, openFile])
+    reveal(openRequest.path, false)
+  }, [openRequest, reveal])
 
-  const dirty = file?.text != null && draft !== file.text
+  const dirty = file?.text != null && lf(draft) !== lf(file.text)
 
   const save = useCallback(async () => {
-    if (!file || !sel || file.binary || file.truncated) return
+    if (!file || !sel || file.binary || file.truncated || saving) return
     setSaving(true)
     // Se comprueba la fecha antes de escribir: si alguien lo ha tocado por
     // detrás, mejor preguntar que perder su trabajo.
@@ -206,16 +291,40 @@ export function FilesPanel({
       setError(t('files.conflict'))
       return
     }
-    const r = await window.api.files.write(root, sel, draft)
+    // Con los finales de línea que tenía: un fichero de Windows (CRLF) no se
+    // convierte a LF por pasar por el editor.
+    const text = file.eol === 'crlf' ? lf(draft).replace(/\n/g, '\r\n') : lf(draft)
+    const r = await window.api.files.write(root, sel, text)
     setSaving(false)
     if (!r.ok || !r.data) {
       setError(r.error ?? t('files.noWrite'))
       return
     }
     setFile(r.data)
+    setDraft(r.data.text ?? text)
     setError(null)
     onToast?.('ok', t('files.saved', { path: sel }))
-  }, [file, sel, draft, root, onToast, t])
+  }, [file, sel, draft, root, onToast, t, saving])
+
+  // Ctrl+S guarda aunque el cursor no esté en el texto (en el árbol, en la
+  // cabecera o en ningún sitio), siempre que este explorador sea el que ves.
+  const saveRef = useRef(save)
+  saveRef.current = save
+  useEffect(() => {
+    if (!pageActive) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 's') return
+      const el = panel.current
+      // Oculto (otra pestaña del proyecto u otra sección): no es suyo.
+      if (!el || el.offsetParent === null) return
+      // Dentro de un diálogo, Ctrl+S no es para el fichero de detrás.
+      if (document.activeElement?.closest('.fixed.inset-0')) return
+      e.preventDefault()
+      void saveRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pageActive])
 
   // Lo que cambia en disco se refleja solo: el vigilante del proceso
   // principal avisa y aquí se releen las carpetas abiertas. Si el fichero que
@@ -265,7 +374,13 @@ export function FilesPanel({
       return
     }
     loadDir(selDir)
-    if (!creating.dir) openFile({ name: newName.trim(), rel, dir: false, modified: Date.now() })
+    if (creating.dir) {
+      reveal(rel, true)
+    } else {
+      // Nuevo y vacío: se abre con el cursor dentro, listo para escribir y guardar con Ctrl+S.
+      focusAfterOpen.current = true
+      reveal(rel, false)
+    }
   }
 
   const remove = async (): Promise<void> => {
@@ -285,7 +400,7 @@ export function FilesPanel({
   }
 
   return (
-    <div className="flex-1 min-h-0 flex">
+    <div ref={panel} className="flex-1 min-h-0 flex" data-files-panel>
       {/* ----------------------------------------------------- Árbol */}
       <Pane paneKey="files.tree" side="right" className="border-r border-line flex flex-col min-h-0">
         <div className="p-2 border-b border-line flex items-center gap-1.5">
@@ -293,10 +408,38 @@ export function FilesPanel({
             <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-dim" />
             <input
               value={filter}
-              onChange={(e) => setFilter(e.target.value.toLowerCase())}
+              onChange={(e) => setFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && filter) {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setFilter('')
+                  return
+                }
+                if (!hits?.length) return
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  const n = hits.length
+                  setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : n - 1)) % n)
+                } else if (e.key === 'Enter') {
+                  e.preventDefault()
+                  pickHit(hits[Math.min(active, hits.length - 1)])
+                }
+              }}
               placeholder={t('files.filter')}
-              className="w-full bg-void border border-line rounded pl-6 pr-2 py-1 text-[11.5px] outline-none focus:border-accent-dim"
+              title={t('Busca por nombre en todo el proyecto. Flechas para elegir, Enter para abrir, Esc para volver al árbol.')}
+              className="w-full bg-void border border-line rounded pl-6 pr-6 py-1 text-[11.5px] outline-none focus:border-accent-dim"
+              data-files-search
             />
+            {filter ? (
+              <button
+                onClick={() => setFilter('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-dim hover:text-ink"
+                title={t('Volver al árbol')}
+              >
+                <X size={11} />
+              </button>
+            ) : null}
           </div>
           <button
             onClick={() => setCreating({ dir: false })}
@@ -318,7 +461,46 @@ export function FilesPanel({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto py-1">
-          {rootEntries.length === 0 ? (
+          {filter.trim() ? (
+            // Resultados de la búsqueda, en lista y con su carpeta al lado.
+            <div data-files-results>
+              {hits === null ? (
+                <div className="px-3 py-4 text-[11.5px] text-dim">{t('Buscando…')}</div>
+              ) : hits.length === 0 ? (
+                <div className="px-3 py-4 text-[11.5px] text-dim">{t('Nada en el proyecto se llama así.')}</div>
+              ) : (
+                <>
+                  {hits.map((h, i) => {
+                    const parent = h.rel.includes('/') ? h.rel.slice(0, h.rel.lastIndexOf('/')) : ''
+                    return (
+                      <button
+                        key={h.rel}
+                        data-hit={h.rel}
+                        onClick={() => pickHit(h)}
+                        onMouseEnter={() => setActive(i)}
+                        className={cx(
+                          'w-full flex items-center gap-1.5 px-2 py-[3px] text-[12px] text-left rounded transition-colors',
+                          i === active ? 'bg-raised' : 'hover:bg-raised/60',
+                          sel === h.rel && 'text-accent'
+                        )}
+                        title={h.rel}
+                      >
+                        <FileIcon name={h.name} dir={h.dir} size={15} />
+                        <span className="truncate shrink-0 max-w-[70%]">
+                          <Marked name={h.name} marks={h.marks} />
+                        </span>
+                        {parent ? <span className="truncate text-[11px] text-dim min-w-0">{parent}</span> : null}
+                      </button>
+                    )
+                  })}
+                  <div className="px-3 pt-1.5 pb-1 text-[10.5px] text-dim">
+                    {hitTotal > hits.length ? t('{shown} de {n}: afina la búsqueda para ver el resto.', { shown: hits.length, n: hitTotal }) : t('{n} resultados', { n: hitTotal })}
+                    {capped ? ' · ' + t('el proyecto es enorme: sólo se ha mirado una parte') : ''}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : rootEntries.length === 0 ? (
             <div className="px-3 py-4 text-[11.5px] text-dim">{t('files.reading')}</div>
           ) : (
             rootEntries.map((e) => (
@@ -332,7 +514,6 @@ export function FilesPanel({
                 toggleDir={toggleDir}
                 cache={cache}
                 loadDir={loadDir}
-                filter={filter}
                 heavyLabel={heavyLabel}
               />
             ))
@@ -423,6 +604,7 @@ export function FilesPanel({
                 lang={langFromPath(sel)}
                 readOnly={Boolean(file?.truncated)}
                 onSave={() => void save()}
+                areaRef={editorArea}
               />
             )}
           </>

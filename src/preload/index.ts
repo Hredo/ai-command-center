@@ -212,6 +212,8 @@ const api = {
   },
   files: {
     list: (root: string, rel = '') => call('files:list', root, rel),
+    /** Busca por nombre en todo el proyecto (sin node_modules ni .git). */
+    search: (root: string, query: string) => call('files:search', root, query),
     read: (root: string, rel: string) => call('files:read', root, rel),
     write: (root: string, rel: string, text: string) => call('files:write', root, rel, text),
     create: (root: string, rel: string, dir: boolean) => call('files:create', root, rel, dir),

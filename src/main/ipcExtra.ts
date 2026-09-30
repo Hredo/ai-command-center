@@ -28,7 +28,7 @@ import { watchRepo, unwatchRepo, pokeRepo } from './watch'
 import { usageSnapshots, cliLimitOf } from './usage'
 import { claudeWindows, refreshClaude } from './claudeSessions'
 import { pickAttachments, describeFile, savePastedImage, imageThumb, imageMime } from './attach'
-import { listDir, readProjectFile, writeProjectFile, createEntry, trashEntry, revealEntry } from './files'
+import { listDir, readProjectFile, writeProjectFile, createEntry, trashEntry, revealEntry, searchFiles, forgetWalk } from './files'
 import { ghStatus, ghRepos, ghClone, ghLoginCommand, ghLogoutCommand, forgetGhPath } from './github'
 import { notifyArena, notifyCommand, notifyPull } from './notify'
 import { allRuns } from './runs'
@@ -223,8 +223,17 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     pokeRepo(root)
     return r
   })
-  handle('files:create', (root: string, rel: string, dir: boolean) => createEntry(root, rel, Boolean(dir)))
-  handle('files:trash', (root: string, rel: string) => trashEntry(root, rel))
+  handle('files:create', (root: string, rel: string, dir: boolean) => {
+    const e = createEntry(root, rel, Boolean(dir))
+    forgetWalk(root)
+    return e
+  })
+  handle('files:trash', async (root: string, rel: string) => {
+    const ok = await trashEntry(root, rel)
+    forgetWalk(root)
+    return ok
+  })
+  handle('files:search', (root: string, query: string) => searchFiles(str(root, 'raíz'), String(query ?? '').slice(0, 200)))
   handle('files:reveal', (root: string, rel: string) => {
     revealEntry(root, rel)
     return true

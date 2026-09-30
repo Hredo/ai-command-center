@@ -111,6 +111,10 @@ export interface IpcContract {
   'external:refresh': { args: []; result: { imported: number } }
   'files:create': { args: [root: string, rel: string, dir: boolean]; result: DirEntry | null }
   'files:list': { args: [root: string, rel?: string]; result: DirEntry[] }
+  'files:search': {
+    args: [root: string, query: string]
+    result: { hits: { rel: string; name: string; dir: boolean; marks: number[] }[]; total: number; capped: boolean }
+  }
   'files:read': { args: [root: string, rel: string]; result: FileContent }
   'files:reveal': { args: [root: string, rel: string]; result: boolean }
   'files:trash': { args: [root: string, rel: string]; result: boolean }

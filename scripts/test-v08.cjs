@@ -3266,6 +3266,118 @@ app.whenReady().then(async () => {
   mockF1.close()
 
   /* -------------------------------------------------------------- *
+   * G7 · Explorador: buscar en todo el proyecto y Ctrl+S           *
+   * -------------------------------------------------------------- */
+  const headG7 = git(['rev-parse', 'HEAD'])
+  fs.mkdirSync(path.join(REPO, 'src', 'componentes'), { recursive: true })
+  fs.writeFileSync(path.join(REPO, 'src', 'componentes', 'FilesPanel.tsx'), 'export {}\n')
+  fs.writeFileSync(path.join(REPO, 'src', 'componentes', 'Otro.tsx'), 'export {}\n')
+  fs.mkdirSync(path.join(REPO, 'node_modules', 'paquete'), { recursive: true })
+  fs.writeFileSync(path.join(REPO, 'node_modules', 'paquete', 'FilesPanel.js'), '// no debe salir\n')
+  fs.writeFileSync(path.join(REPO, 'windows.txt'), 'uno\r\ndos\r\n')
+
+  const g7 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const setVal = (el, value) => {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const key = (el, k, extra = {}) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }))
+    const out = {}
+
+    const s1 = (await api.files.search(repo, 'filespanel')).data
+    out.byName = s1.hits.map((h) => h.rel).join(',')
+    const s2 = (await api.files.search(repo, 'fpan')).data
+    out.fuzzy = s2.hits[0] ? s2.hits[0].rel + ':' + s2.hits[0].marks.join('.') : null
+    out.twoWords = (await api.files.search(repo, 'componentes otro')).data.hits.map((h) => h.rel).join(',')
+    out.empty = (await api.files.search(repo, '   ')).data.total
+
+    await api.projects.save({ id: 'proyecto-g7', name: 'Repo g7', path: repo, color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+    engine.navigate({ page: 'projects', projectId: 'proyecto-g7', tab: 'files' })
+    const box = await until(() => document.querySelector('[data-files-panel] [data-files-search]'))
+    box.focus()
+    setVal(box, 'nota')
+    const hit = await until(() => document.querySelector('[data-files-results] [data-hit="sub/nota.txt"]'))
+    out.uiHit = Boolean(hit)
+    out.noHeavy = ![...document.querySelectorAll('[data-files-results] [data-hit]')].some((b) => b.getAttribute('data-hit').includes('node_modules'))
+    key(box, 'Enter')
+    const area = await until(() => { const t = document.querySelector('[data-files-panel] textarea'); return t && t.value.startsWith('hola') ? t : null })
+    out.opened = Boolean(area)
+
+    // Ctrl+S sin el cursor en el texto.
+    setVal(area, 'hola editado\\n')
+    await sleep(100)
+    document.activeElement?.blur()
+    key(window, 's', { ctrlKey: true })
+    await sleep(700)
+
+    // Un fichero con CRLF sigue con CRLF.
+    setVal(box, 'windows')
+    await until(() => document.querySelector('[data-files-results] [data-hit="windows.txt"]'))
+    key(box, 'Enter')
+    const area2 = await until(() => { const t = document.querySelector('[data-files-panel] textarea'); return t && t.value.startsWith('uno') ? t : null })
+    setVal(area2, 'uno\\ndos\\ntres\\n')
+    await sleep(100)
+    key(area2, 's', { ctrlKey: true })
+    await sleep(700)
+
+    // Crear un fichero: queda abierto con el cursor dentro, y Ctrl+S lo guarda.
+    key(box, 'Escape')
+    await sleep(100)
+    out.backToTree = !document.querySelector('[data-files-results]')
+    const newBtn = [...document.querySelectorAll('[data-files-panel] button')].find((b) => b.title === 'Fichero nuevo' || b.title === 'Archivo nuevo' || b.title === 'Nuevo fichero')
+    out.newBtn = newBtn?.title ?? null
+    newBtn?.click()
+    const nameInput = await until(() => document.querySelector('.fixed.inset-0 input'))
+    if (nameInput) {
+      setVal(nameInput, 'nuevo.md')
+      key(nameInput, 'Enter')
+    }
+    const focused = await until(() => { const a = document.activeElement; return a && a.tagName === 'TEXTAREA' && a.closest('[data-files-panel]') ? a : null })
+    out.focusedNew = Boolean(focused)
+    if (focused) {
+      setVal(focused, '# Nuevo\\n')
+      await sleep(100)
+      key(focused, 's', { ctrlKey: true })
+      await sleep(700)
+    }
+
+    // Con el explorador oculto, Ctrl+S no guarda nada suyo.
+    if (focused) setVal(focused, '# Nuevo cambiado\\n')
+    await sleep(100)
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+    await sleep(300)
+    document.activeElement?.blur()
+    key(window, 's', { ctrlKey: true })
+    await sleep(600)
+
+    await api.projects.remove('proyecto-g7')
+    return out
+  })()`)
+  const readG7 = (rel) => (fs.existsSync(path.join(REPO, rel)) ? fs.readFileSync(path.join(REPO, rel), 'utf8') : null)
+  const notaG7 = readG7('sub/nota.txt')
+  const winG7 = readG7('windows.txt')
+  const nuevoG7 = readG7('nuevo.md')
+  git(['reset', '-q', '--hard', headG7])
+  git(['clean', '-qfd'])
+  fs.rmSync(path.join(REPO, 'node_modules'), { recursive: true, force: true })
+
+  log(
+    g7.byName === 'src/componentes/FilesPanel.tsx' && g7.fuzzy?.startsWith('src/componentes/FilesPanel.tsx:0.') && g7.twoWords === 'src/componentes/Otro.tsx' && g7.empty === 0,
+    'G7: LA BÚSQUEDA MIRA TODO EL PROYECTO, SIN NODE_MODULES, Y ENCUENTRA POR LETRAS SUELTAS',
+    `${g7.byName} · ${g7.fuzzy} · ${g7.twoWords}`
+  )
+  log(g7.uiHit && g7.noHeavy && g7.opened, 'EN EL EXPLORADOR FILTRA MIENTRAS ESCRIBES Y ENTER ABRE EL FICHERO')
+  log(notaG7 === 'hola editado\n', 'CTRL+S GUARDA AUNQUE EL CURSOR NO ESTÉ EN EL TEXTO', JSON.stringify(notaG7))
+  log(winG7 === 'uno\r\ndos\r\ntres\r\n', 'un fichero con finales de línea de Windows los conserva al guardar', JSON.stringify(winG7))
+  log(g7.backToTree && g7.focusedNew && nuevoG7 === '# Nuevo\n', 'AL CREAR UN FICHERO QUEDA ABIERTO PARA ESCRIBIR Y CTRL+S LO GUARDA', `${g7.newBtn} · ${JSON.stringify(nuevoG7)}`)
+
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

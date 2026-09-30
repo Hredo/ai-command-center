@@ -871,5 +871,10 @@ export const enV08: Record<string, string> = {
   "Escribe el mensaje a partir de los cambios, al estilo de los commits del repositorio": "Writes the message from the changes, in the style of the repository's commits",
   "Escribir con IA": "Write with AI",
   "Lo ha escrito {model} ({cost}). Revísalo antes de confirmar.": "Written by {model} ({cost}). Review it before committing.",
-  "Volver al tuyo": "Back to yours"
+  "Volver al tuyo": "Back to yours",
+  "Busca por nombre en todo el proyecto. Flechas para elegir, Enter para abrir, Esc para volver al árbol.": "Searches names across the whole project. Arrows to choose, Enter to open, Esc to go back to the tree.",
+  "Volver al árbol": "Back to the tree",
+  "Nada en el proyecto se llama así.": "Nothing in the project is called that.",
+  "{shown} de {n}: afina la búsqueda para ver el resto.": "{shown} of {n}: narrow the search to see the rest.",
+  "el proyecto es enorme: sólo se ha mirado una parte": "the project is huge: only part of it was searched"
 }

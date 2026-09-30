@@ -182,7 +182,7 @@ const es: Dict = {
   'security.warn': 'Revisar',
 
   /* ----------------------------------------------------------- Ficheros */
-  'files.filter': 'filtrar por nombre…',
+  'files.filter': 'buscar en el proyecto…',
   'files.newFile': 'Fichero nuevo',
   'files.newFolder': 'Carpeta nueva',
   'ollama.vram': '{gb} GB de VRAM',
