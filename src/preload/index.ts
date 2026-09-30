@@ -1,57 +1,26 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type {
-  AppConfig, Settings, ProviderDef, ProviderStatus, ModelInfo, Agent, CliAgent, Project,
-  ProjectInfo, RunOptions, CliRunOptions, RunRecord, DetectionResult, DetectedCli,
-  DetectedServer, StatsBucket, StreamDelta, CliEvent, TermInfo, TermEvent,
-  StoredSession, OllamaStatus, HardwareInfo, ModelRecommendation, PullProgress, ModelLinks, OpencodeModel,
-  GitInfo, FileChange, Attachment, DirEntry, FileContent, GhStatus, GhRepo,
-  GitGraph, GitOpState, GitOpName, GitOpParams, GitWatchEvent, UsageSnapshot, ClaudeUsage,
-  RelaySource, RelayPackage, QuotaReport, QuotaAlert, KeySource, ModelUsage, EloRow, WorktreeInfo, WorktreeSetup,
-  InstructionFile, SkillsReport, McpReport, McpCopyPlan, McpClient
+  AppConfig, Settings, Agent, CliAgent, Project, RunOptions, CliRunOptions, RunRecord, StoredSession,
+  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient
 } from '@shared/types'
+import type { IpcChannel, IpcArgs, IpcResult, IpcRes, IpcEvent, IpcEvents } from '@shared/ipcContract'
 
-/** Estado del statusLine de la app en la configuración de Claude Code. */
-interface StatusLineInfo {
-  installed: boolean
-  chained: boolean
-  foreign: boolean
-  lastAt?: number
-  shell: 'sh' | 'powershell'
-  settingsPath: string
-  untouched?: string
+/**
+ * Invoca un canal del proceso principal. El canal, sus argumentos y el tipo
+ * de la respuesta salen del contrato (shared/ipcContract.ts): un canal mal
+ * escrito o un argumento de más no compilan.
+ */
+const call = <C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcRes<IpcResult<C>>> =>
+  ipcRenderer.invoke(channel, ...args)
+
+/** Escucha un aviso de main. Devuelve la función para dejar de escucharlo. */
+const on = <E extends IpcEvent>(channel: E, cb: (payload: IpcEvents[E]) => void): (() => void) => {
+  const listener = (_e: unknown, payload: IpcEvents[E]): void => cb(payload)
+  ipcRenderer.on(channel, listener)
+  return () => {
+    ipcRenderer.removeListener(channel, listener)
+  }
 }
-
-/** Lo que la aplicación puede decir sobre su propio aislamiento. */
-interface SecurityReport {
-  contextIsolation: boolean
-  nodeIntegration: boolean
-  sandboxedRenderer: boolean
-  startedWithoutSandbox: boolean
-  csp: boolean
-  navigationLocked: boolean
-  permissionsDenied: boolean
-  encryptionAvailable: boolean
-  packaged: boolean
-  dataDir: string
-}
-
-/** Lo que devuelve un comando de git lanzado desde la interfaz. */
-interface GitCmd {
-  ok: boolean
-  out: string
-  err: string
-  command: string
-  refused?: string
-}
-
-/** Respuesta uniforme de todos los handlers: nunca lanza, siempre informa. */
-interface Res<T> {
-  ok: boolean
-  data?: T
-  error?: string
-}
-
-const call = <T>(channel: string, ...args: any[]): Promise<Res<T>> => ipcRenderer.invoke(channel, ...args)
 
 const api = {
   /**
@@ -60,372 +29,302 @@ const api = {
    */
   platform: process.platform as 'win32' | 'darwin' | 'linux',
   config: {
-    get: () => call<AppConfig>('config:get'),
-    save: (cfg: AppConfig) => call<AppConfig>('config:save', cfg),
-    settings: (patch: Partial<Settings>) => call<AppConfig>('config:settings', patch)
+    get: () => call('config:get'),
+    save: (cfg: AppConfig) => call('config:save', cfg),
+    settings: (patch: Partial<Settings>) => call('config:settings', patch)
   },
   providers: {
-    defs: () => call<ProviderDef[]>('providers:defs'),
-    status: (probe = true) => call<ProviderStatus[]>('providers:status', probe),
-    test: (id: string) => call<{ ok: boolean; detail: string; ms: number }>('providers:test', id),
-    setKey: (id: string, key: string) => call<{ source: string; masked: string }>('providers:setKey', id, key),
-    keyStatus: () => call<Record<string, string>>('providers:keyStatus'),
-    keyPreview: (id: string) => call<string>('providers:keyPreview', id),
-    setBaseUrl: (id: string, url: string) => call<AppConfig>('providers:setBaseUrl', id, url),
-    setEnabled: (id: string, enabled: boolean) => call<AppConfig>('providers:setEnabled', id, enabled),
+    defs: () => call('providers:defs'),
+    status: (probe = true) => call('providers:status', probe),
+    test: (id: string) => call('providers:test', id),
+    setKey: (id: string, key: string) => call('providers:setKey', id, key),
+    keyStatus: () => call('providers:keyStatus'),
+    keyPreview: (id: string) => call('providers:keyPreview', id),
+    setBaseUrl: (id: string, url: string) => call('providers:setBaseUrl', id, url),
+    setEnabled: (id: string, enabled: boolean) => call('providers:setEnabled', id, enabled),
     setPrice: (id: string, model: string, pin: number, pout: number) =>
-      call<AppConfig>('providers:setPrice', id, model, pin, pout)
+      call('providers:setPrice', id, model, pin, pout)
   },
   models: {
-    fromProvider: (id: string) => call<ModelInfo[]>('models:fromProvider', id),
-    catalog: (query: string, limit?: number) => call<ModelInfo[]>('models:catalog', query, limit),
-    catalogMeta: () => call<{ fetchedAt: number; count: number }>('models:catalogMeta'),
-    refresh: () => call<{ count: number; sources: string[]; errors: string[] }>('models:refresh'),
+    fromProvider: (id: string) => call('models:fromProvider', id),
+    catalog: (query: string, limit?: number) => call('models:catalog', query, limit),
+    catalogMeta: () => call('models:catalogMeta'),
+    refresh: () => call('models:refresh'),
     price: (providerId: string, model: string) =>
-      call<{ in: number; out: number; source: string }>('models:price', providerId, model),
-    available: () => call<any[]>('models:available'),
-    links: (providerId: string, model: string) => call<ModelLinks>('models:links', providerId, model),
+      call('models:price', providerId, model),
+    available: () => call('models:available'),
+    links: (providerId: string, model: string) => call('models:links', providerId, model),
     /** Marca o desmarca un favorito («proveedor:modelo»); devuelve la lista entera. */
-    favorite: (key: string, on: boolean) => call<string[]>('models:favorite', key, on)
+    favorite: (key: string, on: boolean) => call('models:favorite', key, on)
   },
   detect: {
-    all: () => call<DetectionResult>('detect:all'),
-    clis: () => call<DetectedCli[]>('detect:clis'),
-    local: () => call<DetectedServer[]>('detect:local'),
-    knownClis: () => call<any[]>('detect:knownClis'),
-    importClis: () => call<{ added: number; found: number }>('detect:importClis')
+    all: () => call('detect:all'),
+    clis: () => call('detect:clis'),
+    local: () => call('detect:local'),
+    knownClis: () => call('detect:knownClis'),
+    importClis: () => call('detect:importClis')
   },
   run: {
-    prompt: (opts: RunOptions, runId: string) => call<RunRecord>('run:prompt', opts, runId),
-    abort: (runId: string) => call<boolean>('run:abort', runId),
+    prompt: (opts: RunOptions, runId: string) => call('run:prompt', opts, runId),
+    abort: (runId: string) => call('run:abort', runId),
     /** Contesta a un agente por API que pide permiso para un paso. */
-    approve: (runId: string, stepId: string, allow: boolean) => call<boolean>('run:approve', runId, stepId, allow),
+    approve: (runId: string, stepId: string, allow: boolean) => call('run:approve', runId, stepId, allow),
     /** Devuelve la función para desuscribirse. */
-    onDelta: (cb: (d: StreamDelta) => void) => {
-      const listener = (_e: unknown, payload: StreamDelta): void => cb(payload)
-      ipcRenderer.on('run:delta', listener)
-      return () => {
-        ipcRenderer.removeListener('run:delta', listener)
-      }
-    }
+    onDelta: (cb: (d: IpcEvents['run:delta']) => void) => on('run:delta', cb)
   },
   cli: {
-    run: (opts: CliRunOptions, runId: string) => call<RunRecord>('cli:run', opts, runId),
-    kill: (runId: string) => call<boolean>('cli:kill', runId),
+    run: (opts: CliRunOptions, runId: string) => call('cli:run', opts, runId),
+    kill: (runId: string) => call('cli:kill', runId),
     /** Modelos de OpenCode: los de Zen y, con Ollama encendido, los locales. */
-    opencodeModels: (force?: boolean) => call<OpencodeModel[]>('cli:opencodeModels', force),
-    onEvent: (cb: (e: CliEvent) => void) => {
-      const listener = (_e: unknown, payload: CliEvent): void => cb(payload)
-      ipcRenderer.on('cli:event', listener)
-      return () => {
-        ipcRenderer.removeListener('cli:event', listener)
-      }
-    }
+    opencodeModels: (force?: boolean) => call('cli:opencodeModels', force),
+    onEvent: (cb: (e: IpcEvents['cli:event']) => void) => on('cli:event', cb)
   },
   agents: {
-    save: (a: Agent) => call<AppConfig>('agents:save', a),
-    saveCli: (a: CliAgent) => call<AppConfig>('agents:saveCli', a),
-    remove: (id: string) => call<AppConfig>('agents:remove', id),
-    removeCli: (id: string) => call<AppConfig>('agents:removeCli', id),
+    save: (a: Agent) => call('agents:save', a),
+    saveCli: (a: CliAgent) => call('agents:saveCli', a),
+    remove: (id: string) => call('agents:remove', id),
+    removeCli: (id: string) => call('agents:removeCli', id),
     /** Carpeta donde trabaja un agente cuando no hay proyecto. */
-    workspace: (id?: string) => call<string>('agents:workspace', id)
+    workspace: (id?: string) => call('agents:workspace', id)
   },
   projects: {
-    pick: () => call<string | null>('projects:pick'),
-    save: (p: Project) => call<AppConfig>('projects:save', p),
-    remove: (id: string) => call<AppConfig>('projects:remove', id),
-    scan: (path: string) => call<ProjectInfo>('projects:scan', path),
-    context: (path: string, opts?: any) => call<string>('projects:context', path, opts),
-    files: (path: string, query?: string) => call<string[]>('projects:files', path, query),
-    openEditor: (path: string) => call<{ ok: boolean; error?: string }>('projects:openEditor', path),
-    openFolder: (path: string) => call<void>('projects:openFolder', path),
-    openTerminal: (path: string) => call<{ ok: boolean; error?: string }>('projects:openTerminal', path)
+    pick: () => call('projects:pick'),
+    save: (p: Project) => call('projects:save', p),
+    remove: (id: string) => call('projects:remove', id),
+    scan: (path: string) => call('projects:scan', path),
+    context: (path: string, opts?: any) => call('projects:context', path, opts),
+    files: (path: string, query?: string) => call('projects:files', path, query),
+    openEditor: (path: string) => call('projects:openEditor', path),
+    openFolder: (path: string) => call('projects:openFolder', path),
+    openTerminal: (path: string) => call('projects:openTerminal', path)
   },
   runs: {
-    query: (q?: any) => call<{ rows: RunRecord[]; total: number; cost: number; tokens: number }>('runs:query', q),
-    overview: (days?: number) => call<any>('runs:overview', days),
-    update: (id: string, patch: Partial<RunRecord>) => call<RunRecord>('runs:update', id, patch),
-    remove: (id: string) => call<void>('runs:delete', id),
-    clear: () => call<void>('runs:clear'),
-    arena: () => call<{ arenaId: string; createdAt: number; prompt: string; runs: RunRecord[] }[]>('runs:arena'),
+    query: (q?: any) => call('runs:query', q),
+    overview: (days?: number) => call('runs:overview', days),
+    update: (id: string, patch: Partial<RunRecord>) => call('runs:update', id, patch),
+    remove: (id: string) => call('runs:delete', id),
+    clear: () => call('runs:clear'),
+    arena: () => call('runs:arena'),
     /** Quita el detalle a las ejecuciones viejas y archiva el exceso; las métricas se quedan. */
     compact: () =>
-      call<{ compacted: number; archived: number; bytesBefore: number; bytesAfter: number }>('runs:compact'),
-    compare: (ids: string[]) => call<RunRecord[]>('runs:compare', ids),
+      call('runs:compact'),
+    compare: (ids: string[]) => call('runs:compare', ids),
     /** Lo medido de cada modelo que has usado, con su Elo si ha competido. */
-    modelUsage: () => call<ModelUsage[]>('runs:modelUsage'),
+    modelUsage: () => call('runs:modelUsage'),
     /** Clasificación personal con los ganadores de la Arena. */
-    elo: () => call<EloRow[]>('runs:elo'),
+    elo: () => call('runs:elo'),
     /** Lo gastado en un proyecto desde siempre, con el reparto por agente. */
     projectTotals: (projectId: string) =>
-      call<{ runs: number; cost: number; tokens: number; errors: number; lastAt?: number; byAgent: StatsBucket[] }>(
+      call(
         'runs:projectTotals',
         projectId
       ),
-    buckets: (field: string, days?: number) => call<StatsBucket[]>('runs:buckets', field, days),
-    export: (format: 'json' | 'csv') => call<{ path: string; rows: number } | null>('runs:export', format)
+    buckets: (field: string, days?: number) => call('runs:buckets', field, days),
+    export: (format: 'json' | 'csv') => call('runs:export', format)
   },
   /** Terminales integradas: una shell persistente por pestaña. */
   term: {
     create: (opts: {
       cwd?: string; shell?: string; projectId?: string; title?: string
       cols?: number; rows?: number; forcePipe?: boolean
-    }) => call<TermInfo>('term:create', opts),
+    }) => call('term:create', opts),
     /** Ajusta la rejilla de la consola al tamaño del panel. */
-    resize: (id: string, cols: number, rows: number) => call<boolean>('term:resize', id, cols, rows),
+    resize: (id: string, cols: number, rows: number) => call('term:resize', id, cols, rows),
     /** Si hay consola de verdad (PTY) o se está usando el respaldo. */
-    pty: () => call<{ available: boolean; engine?: 'native' | 'bridge' | 'pipe'; reason?: string }>('term:pty'),
+    pty: () => call('term:pty'),
     /** Lanza un comando y abre un bloque nuevo. */
-    run: (id: string, command: string) => call<boolean>('term:run', id, command),
+    run: (id: string, command: string) => call('term:run', id, command),
     /** Escritura cruda en stdin, para responder a un programa que pregunta. */
-    write: (id: string, data: string) => call<boolean>('term:write', id, data),
-    interrupt: (id: string) => call<boolean>('term:interrupt', id),
-    close: (id: string) => call<boolean>('term:close', id),
-    list: () => call<TermInfo[]>('term:list'),
-    cwd: (id: string) => call<string | null>('term:cwd', id),
+    write: (id: string, data: string) => call('term:write', id, data),
+    interrupt: (id: string) => call('term:interrupt', id),
+    close: (id: string) => call('term:close', id),
+    list: () => call('term:list'),
+    cwd: (id: string) => call('term:cwd', id),
     shells: () =>
-      call<{
-        shells: { path: string; label: string }[]
-        current: string
-        pty: { available: boolean; reason?: string }
-      }>('term:shells'),
-    home: () => call<string>('term:home'),
-    onEvent: (cb: (e: TermEvent) => void) => {
-      const listener = (_e: unknown, payload: TermEvent): void => cb(payload)
-      ipcRenderer.on('term:event', listener)
-      return () => {
-        ipcRenderer.removeListener('term:event', listener)
-      }
-    }
+      call('term:shells'),
+    home: () => call('term:home'),
+    onEvent: (cb: (e: IpcEvents['term:event']) => void) => on('term:event', cb)
   },
   /** Conversaciones y sesiones de agente que se pueden cerrar y retomar. */
   sessions: {
-    list: () => call<StoredSession[]>('sessions:list'),
-    get: (id: string) => call<StoredSession | null>('sessions:get', id),
-    save: (s: StoredSession) => call<StoredSession>('sessions:save', s),
-    patch: (id: string, patch: Partial<StoredSession>) => call<StoredSession | null>('sessions:patch', id, patch),
-    remove: (id: string) => call<boolean>('sessions:remove', id),
-    archive: (id: string, archived: boolean) => call<StoredSession | null>('sessions:archive', id, archived),
-    clearArchived: () => call<number>('sessions:clearArchived'),
-    clear: () => call<void>('sessions:clear')
+    list: () => call('sessions:list'),
+    get: (id: string) => call('sessions:get', id),
+    save: (s: StoredSession) => call('sessions:save', s),
+    patch: (id: string, patch: Partial<StoredSession>) => call('sessions:patch', id, patch),
+    remove: (id: string) => call('sessions:remove', id),
+    archive: (id: string, archived: boolean) => call('sessions:archive', id, archived),
+    clearArchived: () => call('sessions:clearArchived'),
+    clear: () => call('sessions:clear')
   },
   ollama: {
-    status: () => call<OllamaStatus>('ollama:status'),
-    start: () => call<{ started: boolean; detail: string }>('ollama:start'),
-    hardware: () => call<HardwareInfo>('ollama:hardware'),
+    status: () => call('ollama:status'),
+    start: () => call('ollama:start'),
+    hardware: () => call('ollama:hardware'),
     recommend: () =>
-      call<{ hw: HardwareInfo; installed: string[]; items: ModelRecommendation[] }>('ollama:recommend'),
-    best: (n?: number) => call<{ hw: HardwareInfo; items: ModelRecommendation[] }>('ollama:best', n),
-    pull: (name: string) => call<{ ok: boolean; cancelled: boolean }>('ollama:pull', name),
-    cancelPull: (name: string) => call<boolean>('ollama:cancelPull', name),
-    pulls: () => call<string[]>('ollama:pulls'),
-    remove: (name: string) => call<void>('ollama:delete', name),
-    onPullProgress: (cb: (p: PullProgress) => void) => {
-      const listener = (_e: unknown, payload: PullProgress): void => cb(payload)
-      ipcRenderer.on('ollama:pullProgress', listener)
-      return () => {
-        ipcRenderer.removeListener('ollama:pullProgress', listener)
-      }
-    }
+      call('ollama:recommend'),
+    best: (n?: number) => call('ollama:best', n),
+    pull: (name: string) => call('ollama:pull', name),
+    cancelPull: (name: string) => call('ollama:cancelPull', name),
+    pulls: () => call('ollama:pulls'),
+    remove: (name: string) => call('ollama:delete', name),
+    onPullProgress: (cb: (p: IpcEvents['ollama:pullProgress']) => void) => on('ollama:pullProgress', cb)
   },
   git: {
-    info: (path: string) => call<GitInfo>('git:info', path),
-    changes: (path: string) => call<FileChange[]>('git:changes', path),
+    info: (path: string) => call('git:info', path),
+    changes: (path: string) => call('git:changes', path),
     checkout: (path: string, branch: string, create = false) =>
-      call<{ ok: boolean; detail: string; info?: GitInfo }>('git:checkout', path, branch, create),
+      call('git:checkout', path, branch, create),
     log: (path: string, limit = 30) =>
-      call<{ hash: string; short: string; subject: string; author: string; at: number; refs?: string }[]>(
+      call(
         'git:log',
         path,
         limit
       ),
-    diff: (path: string, file?: string, staged = false) => call<string>('git:diff', path, file, staged),
-    stage: (path: string, files: string[], stage: boolean) => call<GitCmd>('git:stage', path, files, stage),
-    commit: (path: string, message: string, all = false) => call<GitCmd>('git:commit', path, message, all),
-    run: (path: string, command: string) => call<GitCmd>('git:run', path, command),
-    isDestructive: (command: string) => call<boolean>('git:isDestructive', command),
+    diff: (path: string, file?: string, staged = false) => call('git:diff', path, file, staged),
+    stage: (path: string, files: string[], stage: boolean) => call('git:stage', path, files, stage),
+    commit: (path: string, message: string, all = false) => call('git:commit', path, message, all),
+    run: (path: string, command: string) => call('git:run', path, command),
+    isDestructive: (command: string) => call('git:isDestructive', command),
     /** Árbol de commits con sus padres, para dibujar ramas y merges. */
-    graph: (path: string, limit = 120, all = true) => call<GitGraph>('git:graph', path, limit, all),
+    graph: (path: string, limit = 120, all = true) => call('git:graph', path, limit, all),
     /** Si hay un merge o un rebase a medias y qué ficheros están en conflicto. */
-    state: (path: string) => call<GitOpState>('git:state', path),
-    show: (path: string, hash: string) => call<string>('git:show', path, hash),
+    state: (path: string) => call('git:state', path),
+    show: (path: string, hash: string) => call('git:show', path, hash),
     /** Acciones del árbol: merge, rebase, continuar, abortar, ramas, etiquetas… */
-    op: (path: string, op: GitOpName, params?: GitOpParams) => call<GitCmd>('git:op', path, op, params),
+    op: (path: string, op: GitOpName, params?: GitOpParams) => call('git:op', path, op, params),
     /** Vigila la carpeta: mientras haya alguien mirando, llegan avisos solos. */
-    watch: (path: string) => call<boolean>('git:watch', path),
-    unwatch: (path: string) => call<boolean>('git:unwatch', path),
-    poke: (path: string) => call<boolean>('git:poke', path),
-    onChanged: (cb: (e: GitWatchEvent) => void) => {
-      const listener = (_e: unknown, payload: GitWatchEvent): void => cb(payload)
-      ipcRenderer.on('git:changed', listener)
-      return () => {
-        ipcRenderer.removeListener('git:changed', listener)
-      }
-    }
+    watch: (path: string) => call('git:watch', path),
+    unwatch: (path: string) => call('git:unwatch', path),
+    poke: (path: string) => call('git:poke', path),
+    onChanged: (cb: (e: IpcEvents['git:changed']) => void) => on('git:changed', cb)
   },
   /** Consumo: lo último que dijo cada proveedor sobre tus límites. */
   usage: {
-    list: () => call<UsageSnapshot[]>('usage:list'),
+    list: () => call('usage:list'),
     /** Uso de Claude Code: ventana de 5 h y semana, con lo de fuera de la app. */
-    claude: () => call<ClaudeUsage>('claude:usage'),
-    refreshClaude: () => call<{ imported: number }>('claude:refresh'),
-    onClaudeUpdated: (cb: (p: { imported: number }) => void) => {
-      const listener = (_e: unknown, payload: { imported: number }): void => cb(payload)
-      ipcRenderer.on('claude:updated', listener)
-      return () => {
-        ipcRenderer.removeListener('claude:updated', listener)
-      }
-    },
-    onUpdated: (cb: (all: UsageSnapshot[]) => void) => {
-      const listener = (_e: unknown, payload: UsageSnapshot[]): void => cb(payload)
-      ipcRenderer.on('usage:updated', listener)
-      return () => {
-        ipcRenderer.removeListener('usage:updated', listener)
-      }
-    }
+    claude: () => call('claude:usage'),
+    refreshClaude: () => call('claude:refresh'),
+    onClaudeUpdated: (cb: (p: IpcEvents['claude:updated']) => void) => on('claude:updated', cb),
+    onUpdated: (cb: (all: IpcEvents['usage:updated']) => void) => on('usage:updated', cb)
   },
   files: {
-    list: (root: string, rel = '') => call<DirEntry[]>('files:list', root, rel),
-    read: (root: string, rel: string) => call<FileContent>('files:read', root, rel),
-    write: (root: string, rel: string, text: string) => call<FileContent>('files:write', root, rel, text),
-    create: (root: string, rel: string, dir: boolean) => call<DirEntry | null>('files:create', root, rel, dir),
-    trash: (root: string, rel: string) => call<boolean>('files:trash', root, rel),
-    reveal: (root: string, rel: string) => call<boolean>('files:reveal', root, rel)
+    list: (root: string, rel = '') => call('files:list', root, rel),
+    read: (root: string, rel: string) => call('files:read', root, rel),
+    write: (root: string, rel: string, text: string) => call('files:write', root, rel, text),
+    create: (root: string, rel: string, dir: boolean) => call('files:create', root, rel, dir),
+    trash: (root: string, rel: string) => call('files:trash', root, rel),
+    reveal: (root: string, rel: string) => call('files:reveal', root, rel)
   },
   github: {
-    status: () => call<GhStatus>('github:status'),
-    refresh: () => call<GhStatus>('github:refresh'),
-    repos: (limit = 60, query?: string) => call<GhRepo[]>('github:repos', limit, query),
+    status: () => call('github:status'),
+    refresh: () => call('github:refresh'),
+    repos: (limit = 60, query?: string) => call('github:repos', limit, query),
     clone: (repo: string, parentDir: string) =>
-      call<{ ok: boolean; detail: string; path?: string }>('github:clone', repo, parentDir),
-    loginCommand: () => call<string>('github:loginCommand'),
-    logoutCommand: () => call<string>('github:logoutCommand')
+      call('github:clone', repo, parentDir),
+    loginCommand: () => call('github:loginCommand'),
+    logoutCommand: () => call('github:logoutCommand')
   },
   attach: {
-    pick: () => call<Attachment[]>('attach:pick'),
-    describe: (path: string) => call<Attachment>('attach:describe', path)
+    pick: () => call('attach:pick'),
+    describe: (path: string) => call('attach:describe', path)
   },
   /** Relevo: pasar un trabajo a medias de una IA a otra con todo su contexto. */
   relay: {
-    build: (src: RelaySource) => call<RelayPackage>('relay:build', src),
+    build: (src: RelaySource) => call('relay:build', src),
     prompt: (pkg: RelayPackage, opts?: { includeDiff?: boolean; note?: string }) =>
-      call<string>('relay:prompt', pkg, opts)
+      call('relay:prompt', pkg, opts)
   },
   /** Sesiones de Codex, OpenCode y Gemini CLI abiertas fuera de la app. */
   external: {
-    refresh: () => call<{ imported: number }>('external:refresh'),
-    onUpdated: (cb: (p: { imported: number }) => void) => {
-      const listener = (_e: unknown, payload: { imported: number }): void => cb(payload)
-      ipcRenderer.on('external:updated', listener)
-      return () => {
-        ipcRenderer.removeListener('external:updated', listener)
-      }
-    }
+    refresh: () => call('external:refresh'),
+    onUpdated: (cb: (p: IpcEvents['external:updated']) => void) => on('external:updated', cb)
   },
   /** AGENTS.md, CLAUDE.md y GEMINI.md de un proyecto. */
   instructions: {
-    read: (root: string) => call<InstructionFile[]>('instructions:read', root),
+    read: (root: string) => call('instructions:read', root),
     /** Guarda uno o varios a la vez; falla sin tocar nada si alguno cambió en disco. */
     write: (root: string, writes: { file: string; content: string; expectedMtime: number | null }[]) =>
-      call<InstructionFile[]>('instructions:write', root, writes)
+      call('instructions:write', root, writes)
   },
   /** Las Skills (SKILL.md) de cada CLI: dónde están, quién las ve y copiarlas. */
   skills: {
-    list: (projectPath?: string) => call<SkillsReport>('skills:list', projectPath),
+    list: (projectPath?: string) => call('skills:list', projectPath),
     copy: (source: string, target: { id: string; scope: 'personal' | 'project' }, projectPath?: string) =>
-      call<SkillsReport>('skills:copy', source, target, projectPath)
+      call('skills:copy', source, target, projectPath)
   },
   /** El recomendador: un modelo local de Ollama clasifica la tarea. */
   recommend: {
     classify: (text: string, model: string) =>
-      call<{ category: string; difficulty: number; needsTools: boolean; needsVision: boolean; ms: number }>('recommend:classify', text, model)
+      call('recommend:classify', text, model)
   },
   /** Servidores MCP de cada CLI y de los agentes por API de la app. */
   mcp: {
-    list: (projectPath?: string) => call<McpReport>('mcp:list', projectPath),
+    list: (projectPath?: string) => call('mcp:list', projectPath),
     /** Qué se escribiría al copiar, sin escribir nada. */
     plan: (
       from: { client: McpClient; scope: 'personal' | 'project'; name: string },
       to: { client: McpClient; scope: 'personal' | 'project' },
       projectPath?: string
-    ) => call<McpCopyPlan>('mcp:plan', from, to, projectPath),
+    ) => call('mcp:plan', from, to, projectPath),
     copy: (
       from: { client: McpClient; scope: 'personal' | 'project'; name: string },
       to: { client: McpClient; scope: 'personal' | 'project' },
       projectPath?: string
-    ) => call<McpCopyPlan>('mcp:copy', from, to, projectPath),
-    enable: (name: string, enabled: boolean) => call<boolean>('mcp:app:enable', name, enabled),
-    remove: (name: string) => call<boolean>('mcp:app:remove', name),
-    add: (input: { name: string; target: string; envVars?: string[] }) => call<boolean>('mcp:app:add', input),
+    ) => call('mcp:copy', from, to, projectPath),
+    enable: (name: string, enabled: boolean) => call('mcp:app:enable', name, enabled),
+    remove: (name: string) => call('mcp:app:remove', name),
+    add: (input: { name: string; target: string; envVars?: string[] }) => call('mcp:app:add', input),
     test: (name: string) =>
-      call<{ tools: { name: string; readOnly: boolean; description?: string }[] }>('mcp:app:test', name)
+      call('mcp:app:test', name)
   },
   /** Un worktree por tarea: crear, listar, fusionar y quitar. */
   worktrees: {
-    list: (cwd: string) => call<WorktreeInfo[]>('worktrees:list', cwd),
+    list: (cwd: string) => call('worktrees:list', cwd),
     create: (cwd: string, opts: { label: string; projectId?: string; base?: string; sessionId?: string }) =>
-      call<WorktreeInfo>('worktrees:create', cwd, opts),
+      call('worktrees:create', cwd, opts),
     merge: (path: string, opts?: { message?: string }) =>
-      call<{ ok: boolean; committed: boolean; output: string; conflicts?: string[] }>('worktrees:merge', path, opts),
-    remove: (path: string, opts?: { force?: boolean; deleteBranch?: boolean }) => call<boolean>('worktrees:remove', path, opts),
-    link: (path: string, sessionId?: string) => call<boolean>('worktrees:link', path, sessionId),
+      call('worktrees:merge', path, opts),
+    remove: (path: string, opts?: { force?: boolean; deleteBranch?: boolean }) => call('worktrees:remove', path, opts),
+    link: (path: string, sessionId?: string) => call('worktrees:link', path, sessionId),
     /** Ejecuta una orden (las pruebas) dentro de un worktree del repositorio. */
-    exec: (path: string, command: string) => call<WorktreeSetup>('worktrees:exec', path, command)
+    exec: (path: string, command: string) => call('worktrees:exec', path, command)
   },
   /** Puntos de control: deshacer lo que hizo un turno de un agente. */
   checkpoints: {
     preview: (root: string, id: string) =>
-      call<{ restore: string[]; remove: string[]; headMoved: boolean } | null>('checkpoints:preview', root, id),
+      call('checkpoints:preview', root, id),
     undo: (root: string, id: string) =>
-      call<{ restore: string[]; remove: string[]; headMoved: boolean; safetyId?: string }>('checkpoints:undo', root, id),
+      call('checkpoints:undo', root, id),
     /** Lo que cambió desde antes del turno: hasta el turno siguiente (untilId) o hasta ahora. */
     diff: (root: string, id: string, untilId?: string) =>
-      call<{ diff: string; until: 'next' | 'now'; truncated: boolean } | null>('checkpoints:diff', root, id, untilId)
+      call('checkpoints:diff', root, id, untilId)
   },
   /** Cupos de todas las IAs, presupuestos y avisos. */
   quotas: {
-    get: (force?: boolean) => call<QuotaReport>('quotas:get', force),
-    statusLine: () => call<StatusLineInfo>('quotas:statusLine'),
-    installStatusLine: () => call<StatusLineInfo>('quotas:installStatusLine'),
-    uninstallStatusLine: () => call<StatusLineInfo>('quotas:uninstallStatusLine'),
-    adminKeys: () => call<Record<'anthropic' | 'openai', { source: KeySource; masked: string }>>('quotas:adminKeys'),
+    get: (force?: boolean) => call('quotas:get', force),
+    statusLine: () => call('quotas:statusLine'),
+    installStatusLine: () => call('quotas:installStatusLine'),
+    uninstallStatusLine: () => call('quotas:uninstallStatusLine'),
+    adminKeys: () => call('quotas:adminKeys'),
     setAdminKey: (which: 'anthropic' | 'openai', key: string) =>
-      call<{ source: KeySource; masked: string }>('quotas:setAdminKey', which, key),
-    onUpdated: (cb: (r: QuotaReport) => void) => {
-      const listener = (_e: unknown, payload: QuotaReport): void => cb(payload)
-      ipcRenderer.on('quotas:updated', listener)
-      return () => {
-        ipcRenderer.removeListener('quotas:updated', listener)
-      }
-    },
-    onAlert: (cb: (a: QuotaAlert) => void) => {
-      const listener = (_e: unknown, payload: QuotaAlert): void => cb(payload)
-      ipcRenderer.on('quotas:alert', listener)
-      return () => {
-        ipcRenderer.removeListener('quotas:alert', listener)
-      }
-    }
+      call('quotas:setAdminKey', which, key),
+    onUpdated: (cb: (r: IpcEvents['quotas:updated']) => void) => on('quotas:updated', cb),
+    onAlert: (cb: (a: IpcEvents['quotas:alert']) => void) => on('quotas:alert', cb)
   },
   /** Avisos de que algo cambió en el proceso principal: quien lo lea se relee. */
   live: {
-    onChanged: (cb: (e: { topics: string[] }) => void) => {
-      const listener = (_e: unknown, payload: { topics: string[] }): void => cb(payload)
-      ipcRenderer.on('live:changed', listener)
-      return () => {
-        ipcRenderer.removeListener('live:changed', listener)
-      }
-    }
+    onChanged: (cb: (e: IpcEvents['live:changed']) => void) => on('live:changed', cb)
   },
   notify: {
     /** La Arena avisa como grupo cuando todas sus columnas han terminado. */
-    arena: (runIds: string[]) => call<number>('notify:arena', runIds)
+    arena: (runIds: string[]) => call('notify:arena', runIds)
   },
   app: {
-    info: () => call<any>('app:info'),
-    openExternal: (url: string) => call<void>('app:openExternal', url),
-    openDataDir: () => call<void>('app:openDataDir'),
+    info: () => call('app:info'),
+    openExternal: (url: string) => call('app:openExternal', url),
+    openDataDir: () => call('app:openDataDir'),
     /** Qué está cerrado y qué no: lo enseña la pestaña de Seguridad. */
-    security: () => call<SecurityReport>('app:security'),
+    security: () => call('app:security'),
     /**
      * Escala de la ventana y colores de la barra de título.
      *
@@ -436,23 +335,11 @@ const api = {
     setChrome: (opts: { zoom?: number; background?: string; symbol?: string }) => {
       const zoom = Math.min(2, Math.max(0.5, Number(opts?.zoom) || 1))
       webFrame.setZoomFactor(zoom)
-      return call<boolean>('app:chrome', { ...opts, zoom })
+      return call('app:chrome', { ...opts, zoom })
     },
-    onCatalogUpdated: (cb: (r: any) => void) => {
-      const listener = (_e: unknown, payload: any): void => cb(payload)
-      ipcRenderer.on('catalog:updated', listener)
-      return () => {
-        ipcRenderer.removeListener('catalog:updated', listener)
-      }
-    },
+    onCatalogUpdated: (cb: (r: IpcEvents['catalog:updated']) => void) => on('catalog:updated', cb),
     /** Se dispara cuando un motor local aparece, desaparece o cambia modelos. */
-    onLocalChanged: (cb: (servers: DetectedServer[]) => void) => {
-      const listener = (_e: unknown, payload: DetectedServer[]): void => cb(payload)
-      ipcRenderer.on('detect:localChanged', listener)
-      return () => {
-        ipcRenderer.removeListener('detect:localChanged', listener)
-      }
-    }
+    onLocalChanged: (cb: (servers: IpcEvents['detect:localChanged']) => void) => on('detect:localChanged', cb)
   }
 }
 

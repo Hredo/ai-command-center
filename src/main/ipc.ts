@@ -14,6 +14,7 @@ import {
 } from './runs'
 import { paths, agentWorkspace } from './paths'
 import { registerExtraIpc } from './ipcExtra'
+import { emit } from './emit'
 import { checkArgs, isTrustedSender, launchedWithoutSandbox, openExternal, RENDERER_PREFS, type SecurityReport } from './security'
 import { notifyRun } from './notify'
 import { runMaintenance } from './maintenance'
@@ -21,6 +22,7 @@ import { refreshExternal } from './external'
 import { importClaudeSessions } from './claudeSessions'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 import type { RunOptions, CliRunOptions, Agent, CliAgent, Project } from '@shared/types'
+import type { IpcChannel, IpcArgs, IpcResult } from '@shared/ipcContract'
 
 /** El servidor de desarrollo, si lo hay: es el otro origen de confianza. */
 const DEV_URL = process.env['ELECTRON_RENDERER_URL']
@@ -36,8 +38,14 @@ const DEV_URL = process.env['ELECTRON_RENDERER_URL']
  *    El detalle se registra en la consola del proceso principal, pero lo que
  *    viaja a la ventana es sólo el mensaje: las trazas llevan rutas y a veces
  *    trozos de lo que se estaba procesando.
+ *
+ * El canal tiene que estar en el contrato (shared/ipcContract.ts) y la función
+ * encajar con él: argumentos y respuesta son los mismos que ve el preload.
  */
-export function handle(channel: string, fn: (...args: any[]) => any): void {
+export function handle<C extends IpcChannel>(
+  channel: C,
+  fn: (...args: IpcArgs<C>) => IpcResult<C> | Promise<IpcResult<C>>
+): void {
   ipcMain.handle(channel, async (e, ...args) => {
     if (!isTrustedSender(e, DEV_URL)) {
       console.warn(`[ipc] ${channel}: llamada rechazada, el emisor no es la ventana`)
@@ -45,7 +53,7 @@ export function handle(channel: string, fn: (...args: any[]) => any): void {
     }
     try {
       checkArgs(channel, args)
-      return { ok: true, data: await fn(...args) }
+      return { ok: true, data: await fn(...(args as IpcArgs<C>)) }
     } catch (err: any) {
       console.error(`[ipc] ${channel}:`, err)
       return { ok: false, error: err?.message ?? String(err) }
@@ -153,7 +161,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('run:prompt', async (_e, opts: RunOptions, runId: string) => {
     const win = getWindow()
     const send = (payload: any): void => {
-      if (win && !win.isDestroyed()) win.webContents.send('run:delta', { runId, ...payload })
+      emit(win, 'run:delta', { runId, ...payload })
     }
     const run = await runPrompt(opts, send, runId)
     if (run.kind !== 'arena') notifyRun(run)
@@ -167,7 +175,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('cli:run', async (_e, opts: CliRunOptions, runId: string) => {
     const win = getWindow()
     const send = (payload: any): void => {
-      if (win && !win.isDestroyed()) win.webContents.send('cli:event', { runId, ...payload })
+      emit(win, 'cli:event', { runId, ...payload })
     }
     const run = await runCliAgent(opts, send, runId)
     if (run.kind !== 'arena') notifyRun(run)
@@ -203,14 +211,14 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   handle('projects:remove', (id: string) => removeFrom('projects', id))
   handle('projects:scan', (path: string) => scanProject(path))
   handle('projects:context', (path: string, opts: any) => projectContext(path, opts ?? {}))
-  handle('projects:files', (path: string, query: string) => listProjectFiles(path, query ?? ''))
+  handle('projects:files', (path: string, query?: string) => listProjectFiles(path, query ?? ''))
   handle('projects:openEditor', (path: string) => openInEditor(path))
   handle('projects:openFolder', (path: string) => openInExplorer(path))
   handle('projects:openTerminal', (path: string) => openInTerminal(path))
 
   // ---------------- Histórico y analítica ----------------
   handle('runs:query', (q: any) => queryRuns(q ?? {}))
-  handle('runs:overview', (days: number) => overview(days ?? 30))
+  handle('runs:overview', (days?: number) => overview(days ?? 30))
   handle('runs:update', (id: string, patch: any) => updateRun(id, patch))
   handle('runs:delete', (id: string) => deleteRun(id))
   handle('runs:clear', () => clearRuns())
@@ -232,7 +240,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     else set.delete(key)
     return saveConfig({ ...cfg, favorites: [...set] }).favorites
   })
-  handle('runs:buckets', (field: string, days: number) => {
+  handle('runs:buckets', (field: string, days?: number) => {
     const since = Date.now() - (days ?? 30) * 86_400_000
     const rows = allRuns().filter((r) => r.createdAt >= since)
     const keyOf =

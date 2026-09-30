@@ -5,6 +5,8 @@
 import { BrowserWindow } from 'electron'
 import { homedir } from 'node:os'
 import { handle } from './ipc'
+import { emit } from './emit'
+import type { IpcEvent, IpcEvents } from '@shared/ipcContract'
 import {
   createTerm, runInTerm, writeTerm, interruptTerm, closeTerm, listTerms,
   availableShells, defaultShell, termCwd, resizeTerm, terminalStatus
@@ -49,9 +51,8 @@ import type {
 } from '@shared/types'
 
 export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
-  const send = (channel: string, payload: unknown): void => {
-    const win = getWindow()
-    if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+  const send = <E extends IpcEvent>(channel: E, payload: IpcEvents[E]): void => {
+    emit(getWindow(), channel, payload)
   }
 
   /* -------------------------------- Terminales -------------------------------- */
@@ -127,7 +128,7 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   handle('ollama:start', () => startOllama())
   handle('ollama:hardware', () => hardware())
   handle('ollama:recommend', () => recommendations())
-  handle('ollama:best', (n: number) => bestPicks(n ?? 2))
+  handle('ollama:best', (n?: number) => bestPicks(n ?? 2))
   handle('ollama:delete', (name: string) => deleteModel(name))
   handle('ollama:pulls', () => activePulls())
   handle('ollama:cancelPull', (name: string) => cancelPull(name))

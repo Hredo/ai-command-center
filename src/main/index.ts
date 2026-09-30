@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import icon from '../../build/icon.png?asset'
 import { registerIpc } from './ipc'
+import { emit } from './emit'
 import { paths } from './paths'
 import { getConfig } from './config'
 import { refreshCatalog, getCatalog } from './providers/models'
@@ -205,15 +206,15 @@ app.whenReady().then(async () => {
 
   // Lo que cambia en disco y lo que dicen los proveedores sobre el consumo
   // van a la ventana en cuanto se sabe: la interfaz no pregunta, escucha.
-  initWatch((e) => mainWindow?.webContents.send('git:changed', e))
+  initWatch((e) => emit(mainWindow, 'git:changed', e))
   initUsage((all) => {
-    mainWindow?.webContents.send('usage:updated', all)
+    emit(mainWindow, 'usage:updated', all)
     pokeQuotas()
   })
   // El histórico y la configuración avisan al cambiar, venga el cambio de
   // donde venga: el Panel, el Histórico y la barra de título se releen solos.
   initLive((topics) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('live:changed', { topics })
+    emit(mainWindow, 'live:changed', { topics })
   })
 
   // No frena el arranque: si hay que sondear el puente de la terminal, el
@@ -229,7 +230,7 @@ app.whenReady().then(async () => {
   // como cualquier otra. También son las que dicen cuánto llevas gastado del
   // plan en las últimas horas.
   watchClaude((payload) => {
-    mainWindow?.webContents.send('claude:updated', payload)
+    emit(mainWindow, 'claude:updated', payload)
     pokeQuotas()
   })
 
@@ -237,7 +238,7 @@ app.whenReady().then(async () => {
   // al histórico y a los cupos en cuanto escriben en su carpeta.
   if (!SELFTEST) {
     watchExternal((payload) => {
-      mainWindow?.webContents.send('external:updated', payload)
+      emit(mainWindow, 'external:updated', payload)
       pokeQuotas()
     })
   }
@@ -246,15 +247,15 @@ app.whenReady().then(async () => {
   // cada minuto; los que cruzan un umbral avisan.
   if (!SELFTEST) {
     startQuotas(
-      (r) => mainWindow?.webContents.send('quotas:updated', r),
-      (a) => mainWindow?.webContents.send('quotas:alert', a)
+      (r) => emit(mainWindow, 'quotas:updated', r),
+      (a) => emit(mainWindow, 'quotas:alert', a)
     )
   }
 
   // Los motores locales se vigilan solos: arrancar Ollama con la app abierta
   // se refleja sin tener que pulsar nada.
   watchLocalServers((servers) => {
-    mainWindow?.webContents.send('detect:localChanged', servers)
+    emit(mainWindow, 'detect:localChanged', servers)
   })
 
   // La poda del histórico: sin frenar el arranque y de vez en cuando.
@@ -267,7 +268,7 @@ app.whenReady().then(async () => {
   if (cfg.settings.autoRefreshCatalog && stale) {
     refreshCatalog()
       .then((r) => {
-        mainWindow?.webContents.send('catalog:updated', r)
+        emit(mainWindow, 'catalog:updated', r)
       })
       .catch((e) => console.error('No se pudo refrescar el catálogo:', e.message))
   }
