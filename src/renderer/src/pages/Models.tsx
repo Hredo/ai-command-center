@@ -6,7 +6,8 @@ import {
 import { Panel, Button, Badge, Empty, Input, Select, Tabs, cx, Spinner, Modal } from '../components/ui'
 import { ModelCompare, modelFavKey, usageOf } from '../components/ModelCompare'
 import { useStore } from '../lib/store'
-import { useRunsVersion } from '../lib/engine'
+import { useRunsVersion, newSession, sendTurn, focusChat } from '../lib/engine'
+import { Recommender } from '../components/Recommender'
 import { price, tokens, relTime, bytes, ms, tps, cost } from '../lib/format'
 import type { ModelInfo, ModelLinks, ModelUsage } from '@shared/types'
 
@@ -26,10 +27,60 @@ function valueOf(m: ModelInfo): number {
 
 const MAX_COMPARE = 4
 
+/**
+ * La pestaña del recomendador. «Usar» abre una conversación en la Consola
+ * con ese modelo (y el proyecto, si eliges uno) y le manda la tarea; con una
+ * suscripción, una sesión de su agente de consola.
+ */
+function RecommendTab(): React.JSX.Element {
+  const t = useT()
+  const { config, toast } = useStore()
+  const [projectId, setProjectId] = useState('')
+
+  const start = async (id: string, text: string): Promise<void> => {
+    if (!config) return
+    focusChat(id)
+    const r = await sendTurn(id, text.trim(), config)
+    if (r.error) toast('error', t(r.error))
+  }
+
+  return (
+    <Panel className="p-4 space-y-3 max-w-[1100px]">
+      <div className="flex items-center gap-2 text-[12px]">
+        <span className="text-dim">{t('Proyecto')}</span>
+        <div className="w-56">
+          <Select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="h-8 text-[12px]">
+            <option value="">{t('Ninguno: sólo conversar')}</option>
+            {(config?.projects ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <span className="text-[11px] text-dim">{t('Con proyecto, la IA trabaja sobre sus archivos como agente.')}</span>
+      </div>
+      <Recommender
+        projectId={projectId || undefined}
+        onUse={(m, text) =>
+          void newSession('chat', { providerId: m.providerId, model: m.id, projectId: projectId || undefined }).then((id) => start(id, text))
+        }
+        onUseAgent={(agentId, text) => {
+          if (!projectId) {
+            toast('error', t('Un agente de línea de comandos necesita un proyecto donde trabajar'))
+            return
+          }
+          void newSession('cli', { cliAgentId: agentId, projectId }).then((id) => start(id, text))
+        }}
+      />
+    </Panel>
+  )
+}
+
 export default function Models(): React.JSX.Element {
   const t = useT()
   const { models, modelsLoading, reloadModels, defs, toast, config, reload } = useStore()
-  const [tab, setTab] = useState<'available' | 'catalog'>('available')
+  const [tab, setTab] = useState<'available' | 'catalog' | 'recommend'>('available')
   const [q, setQ] = useState('')
   const [catalog, setCatalog] = useState<ModelInfo[]>([])
   const [meta, setMeta] = useState<{ fetchedAt: number; count: number } | null>(null)
@@ -179,7 +230,9 @@ export default function Models(): React.JSX.Element {
           <div>
             <h1 className="text-[19px] font-semibold tracking-tight">{t('Modelos')}</h1>
             <p className="text-[12.5px] text-dim mt-0.5">
-              {tab === 'available'
+              {tab === 'recommend'
+                ? t('Qué IA usar para cada tarea, sin gastar de más')
+                : tab === 'available'
                 ? t('Lo que puedes usar ahora mismo con tus proveedores conectados')
                 : `Catálogo completo del mercado${meta ? ` · ${meta.count} modelos` : ''}${
                     meta?.fetchedAt ? ` · actualizado ${relTime(meta.fetchedAt)}` : ''
@@ -192,10 +245,11 @@ export default function Models(): React.JSX.Element {
               onChange={setTab}
               items={[
                 { id: 'available', label: 'Disponibles', count: models.length },
-                { id: 'catalog', label: t('Catálogo global'), count: meta?.count }
+                { id: 'catalog', label: t('Catálogo global'), count: meta?.count },
+                { id: 'recommend', label: t('Recomendar') }
               ]}
             />
-            {tab === 'available' ? (
+            {tab === 'recommend' ? null : tab === 'available' ? (
               <Button onClick={() => void reloadModels()} loading={modelsLoading}>
                 <RefreshCw size={14} /> {t('Refrescar')}
               </Button>
@@ -207,7 +261,7 @@ export default function Models(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className={cx('flex items-center gap-2', tab === 'recommend' && 'hidden')}>
           <div className="relative flex-1 min-w-[200px] max-w-[420px]">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dim" />
             <Input
@@ -262,7 +316,13 @@ export default function Models(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 px-6 pb-5">
+      {tab === 'recommend' ? (
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-5">
+          <RecommendTab />
+        </div>
+      ) : null}
+
+      <div className={cx('flex-1 min-h-0 px-6 pb-5', tab === 'recommend' && 'hidden')}>
         <Panel className="h-full flex flex-col overflow-hidden">
           {(tab === 'available' && modelsLoading) || (tab === 'catalog' && loading && !rows.length) ? (
             <div className="flex-1 flex items-center justify-center gap-2.5 text-dim text-[12.5px]">

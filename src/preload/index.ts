@@ -335,6 +335,11 @@ const api = {
     copy: (source: string, target: { id: string; scope: 'personal' | 'project' }, projectPath?: string) =>
       call<SkillsReport>('skills:copy', source, target, projectPath)
   },
+  /** El recomendador: un modelo local de Ollama clasifica la tarea. */
+  recommend: {
+    classify: (text: string, model: string) =>
+      call<{ category: string; difficulty: number; needsTools: boolean; needsVision: boolean; ms: number }>('recommend:classify', text, model)
+  },
   /** Servidores MCP de cada CLI y de los agentes por API de la app. */
   mcp: {
     list: (projectPath?: string) => call<McpReport>('mcp:list', projectPath),

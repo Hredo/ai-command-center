@@ -42,6 +42,7 @@ import { readInstructionFiles, writeInstructionFiles } from './instructions'
 import { listSkills, copySkill } from './skills'
 import { mcpReport, planMcpCopy, copyMcpServer, setAppMcpEnabled, removeAppMcp, addAppMcp } from './mcp/configs'
 import { testAppMcp, pruneMcp } from './mcp/client'
+import { classifyWithOllama } from './recommend'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource, McpClient
@@ -373,6 +374,10 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     return true
   })
   handle('mcp:app:test', (name: string) => testAppMcp(str(name, 'servidor')))
+
+  /* ------------------------------- Recomendador -------------------------------- */
+
+  handle('recommend:classify', (text: string, model: string) => classifyWithOllama(str(text, 'tarea'), str(model, 'modelo')))
 
   /* ---------------------------------- Cupos ----------------------------------- */
 

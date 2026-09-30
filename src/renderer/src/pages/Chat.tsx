@@ -12,7 +12,7 @@ import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
   ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw,
-  ArrowRightLeft, FileDiff
+  ArrowRightLeft, FileDiff, Lightbulb
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -43,6 +43,7 @@ import {
 import { Pane } from '../components/Resizable'
 import { resumeCaps } from '@shared/cliCaps'
 import { RelayModal, endedByLimit } from '../components/RelayModal'
+import { Recommender } from '../components/Recommender'
 
 import { useT } from '../lib/i18n'
 import { withMod } from '../lib/platform'
@@ -543,6 +544,7 @@ export default function Chat(): React.JSX.Element {
   }
 
   const [relayOpen, setRelayOpen] = useState(false)
+  const [recommending, setRecommending] = useState(false)
   const relaySource = useMemo(() => (session ? { kind: 'session' as const, id: session.id } : null), [session?.id])
   const lastAssistant = [...turns].reverse().find((x) => x.role === 'assistant')
   const limited = !running && Boolean(lastAssistant && endedByLimit(lastAssistant))
@@ -851,6 +853,15 @@ export default function Chat(): React.JSX.Element {
                   }
                   onChange={(e) => session && patchSessionConfig(session.id, { effort: e })}
                 />
+                {!isCli && session ? (
+                  <button
+                    className="inline-flex items-center gap-1 text-dim hover:text-accent transition-colors"
+                    onClick={() => setRecommending(true)}
+                    title={t('Qué modelo conviene para lo que estás escribiendo')}
+                  >
+                    <Lightbulb size={12} /> {t('¿Qué modelo?')}
+                  </button>
+                ) : null}
               </div>
               <span className="num">{t('common.chars', { n: input.length })}</span>
             </div>
@@ -860,6 +871,21 @@ export default function Chat(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      <Modal open={recommending} onClose={() => setRecommending(false)} title={t('¿Qué modelo uso?')} width="max-w-4xl">
+        {recommending && session ? (
+          <Recommender
+            compact
+            initialText={input}
+            projectId={session.projectId}
+            onUse={(m) => {
+              patchSessionConfig(session.id, { providerId: m.providerId, model: m.id, agentId: undefined })
+              setRecommending(false)
+              toast('ok', t('La conversación sigue con {model}', { model: shortModel(m.id) }))
+            }}
+          />
+        ) : null}
+      </Modal>
 
       <RelayModal
         source={relaySource}

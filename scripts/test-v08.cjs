@@ -1863,6 +1863,151 @@ app.whenReady().then(async () => {
   git(['clean', '-qfd'])
 
   /* -------------------------------------------------------------- *
+   * C2 · Recomendador de IA                                         *
+   * -------------------------------------------------------------- */
+  // Un Ollama de mentira: dice su ventana y clasifica siempre como código trivial.
+  const OLLAMA_PORT = API_PORT + 1
+  const ollamaReqs = []
+  const ollamaMock = await new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      let body = ''
+      req.on('data', (c) => (body += c))
+      req.on('end', () => {
+        let parsed = {}
+        try {
+          parsed = JSON.parse(body || '{}')
+        } catch {}
+        const json = (o) => {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(o))
+        }
+        if (req.url.startsWith('/api/show')) return json({ model_info: { 'llama.context_length': 8192 }, capabilities: ['completion'] })
+        if (req.url.startsWith('/api/tags')) return json({ models: [{ name: 'mini:1b', model: 'mini:1b', size: 900000000, details: { parameter_size: '1B' } }] })
+        if (req.url.startsWith('/api/chat')) {
+          ollamaReqs.push(parsed)
+          return json({ message: { role: 'assistant', content: JSON.stringify({ category: 'code', difficulty: 1, needsTools: false, needsVision: false }) }, done: true })
+        }
+        if (req.url.startsWith('/api/version')) return json({ version: '0.12.0' })
+        json({})
+      })
+    })
+    server.listen(OLLAMA_PORT, '127.0.0.1', () => resolve(server))
+  })
+  const c2 = await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+    const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((x) => x.textContent.trim() === text)
+    const setValue = (el, value) => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const out = {}
+
+    // La lógica, con modelos sintéticos.
+    btn('Modelos')?.click()
+    const R = await until(() => window.__accRecommend)
+    if (!R) return { error: 'no carga el recomendador' }
+    const hello = R.classifyByRules('escribe un hola mundo en python')
+    const hard = R.classifyByRules('Diseña la arquitectura de un sistema distribuido de pagos para producción: alta concurrencia, seguridad, migración de datos legacy y escalabilidad. ' + 'Detalla cada servicio. '.repeat(40))
+    const proj = R.classifyByRules('arregla los tests que fallan', { project: true })
+    const refactor = R.classifyByRules('Refactoriza el módulo de pagos para que soporte reembolsos parciales, con pruebas')
+    out.rules = [hello.category, hello.difficulty, hard.difficulty, proj.category, proj.needsTools, refactor.category, refactor.difficulty].join(',')
+    const m = (id, pi, po, intel, coding, extra = {}) => ({ id, providerId: 'x', name: id, source: 'provider', priceIn: pi, priceOut: po, caps: { tools: true }, bench: intel == null ? undefined : { intelligence: intel, coding }, ...extra })
+    const models = [
+      m('barato', 0.1, 0.4, 30, 25),
+      m('medio', 1, 4, 55, 50),
+      m('caro', 15, 75, 70, 68),
+      m('sin-nota', 0.05, 0.1),
+      m('sin-herramientas', 2, 8, 45, 45, { caps: {} }),
+      { id: 'qwen3:8b', providerId: 'ollama', name: 'qwen3', source: 'local', local: true, sizeBytes: 5e9 },
+      { id: 'text-embedding-3-small', providerId: 'x', name: 'emb', source: 'provider', priceIn: 0.02, priceOut: 0, bench: { intelligence: 99 } }
+    ]
+    const usage = [{ key: 'x:medio', providerId: 'x', model: 'medio', runs: 3, tokensIn: 0, tokensOut: 0, cost: 0, avgTtft: 500, avgTps: 50, avgMs: 0, errors: 0, lastAt: Date.now(), elo: 1540 }]
+    // El listón sale del mercado: aquí, tres modelos con 25, 50 y 68 en código.
+    const market = models.slice(0, 3)
+    const r1 = R.recommend(hello, models, usage, market, {})
+    out.easy = [r1.sufficient?.model.id, r1.best?.model.id, r1.local?.model.id, r1.unrated].join(',')
+    const codeHard = { ...R.classifyByRules('refactoriza este código de producción con concurrencia'), difficulty: 5 }
+    const est = R.estimateTokens('refactoriza', codeHard)
+    const r5 = R.recommend({ ...codeHard, ...est }, models, usage, market, {})
+    out.hard = [r5.threshold, r5.sufficient?.model.id, r5.balanced?.model.id, r5.best?.model.id, r5.local ? 'local' : 'sin-local'].join(',')
+    out.measured = r5.sufficient?.seconds > 0 && r5.sufficient?.elo === 1540
+    const tools = R.recommend(proj, models, usage, market, {})
+    out.tools = tools.excluded.tools
+    const allBad = R.recommend({ ...codeHard, ...est }, [m('flojo', 0.1, 0.1, 10, 8)], [], market, {})
+    out.belowBar = allBad.belowBar && allBad.sufficient?.model.id === 'flojo'
+    const subs = R.recommend(hello, models, [], market, {
+      cliAgents: [{ id: 'cc', name: 'Claude Code', type: 'cli', command: 'claude', args: [], parser: 'plain', color: '#fff', createdAt: 0 }],
+      quotas: [{ id: 'claude.five_hour', provider: 'Claude', providerKey: 'claude', label: 'Ventana de 5 h', kind: 'window', unit: 'percent', usedPct: 40, origin: 'official', how: '', updatedAt: 0, agents: ['claude'] }]
+    })
+    out.subs = subs.subscriptions.map((s) => s.agent.id + ':' + s.leftPct).join()
+
+    // Clasificar con un modelo local: JSON con esquema y la ventana entera.
+    out.prevOllama = (await api.config.get()).data.providers['ollama']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('ollama', 'http://127.0.0.1:${OLLAMA_PORT}')
+    const cls = await api.recommend.classify('escribe un hola mundo', 'mini:1b')
+    out.cls = cls.ok ? [cls.data.category, cls.data.difficulty].join(',') : cls.error
+
+    // Por la interfaz: desde la Consola, «¿Qué modelo?» y usar el local.
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await sleep(400)
+    btn('Disponibles')?.click()
+    btn('Refrescar')?.click()
+    await until(() => document.body.textContent.includes('agente-de-prueba'), 10000)
+    const sid = await engine.newSession('chat', { providerId: 'x', model: 'no-existe' })
+    engine.focusChat(sid)
+    const input = await until(() => [...document.querySelectorAll('textarea')].find((x) => x.offsetParent && x.closest('main')))
+    if (input) {
+      setValue(input, 'escribe un hola mundo en python')
+      await sleep(100)
+    }
+    const open = await until(() => btn('¿Qué modelo?'))
+    open?.click()
+    const modal = await until(() => document.querySelector('div.fixed.inset-0 textarea') ? document.querySelector('div.fixed.inset-0') : null)
+    if (!modal) return { ...out, error: 'no se abre el recomendador' }
+    out.prefilled = modal.querySelector('textarea').value
+    out.classifier = (await until(() => modal.querySelector('[data-classifier="local"]'), 6000)) ? 'local' : modal.querySelector('[data-classifier]')?.getAttribute('data-classifier')
+    const localPick = await until(() => modal.querySelector('[data-pick="local"]'))
+    out.localText = localPick?.textContent ?? ''
+    if (localPick) btn('Usar', localPick)?.click()
+    await sleep(300)
+    const st = engine.peekChat(sid)?.session
+    out.used = st ? st.providerId + ':' + st.model : null
+    out.sid = sid
+    return out
+  })()`)
+  const chatReq = ollamaReqs[ollamaReqs.length - 1]
+  log(c2.rules === 'code,1,5,agentic,true,code,3', 'LAS REGLAS CLASIFICAN TIPO Y DIFICULTAD', c2.error ?? c2.rules)
+  log(c2.easy === 'barato,caro,qwen3:8b,1', 'PARA UN HOLA MUNDO, LA SUFICIENTE ES LA MÁS BARATA (Y SE OFRECE LA LOCAL)', c2.easy)
+  log(c2.hard === '50,medio,medio,caro,sin-local', 'PARA ALGO DIFÍCIL SUBE EL LISTÓN: LA MÁS BARATA QUE LLEGA', c2.hard)
+  log(c2.measured === true, 'el tiempo sale de tu velocidad medida y se enseña tu Elo')
+  log(c2.tools === 2 && c2.belowBar === true, 'sin herramientas no entra en un trabajo de proyecto; si ninguno llega, se dice')
+  log(c2.subs === 'cc:60', 'tus suscripciones salen con lo que les queda del cupo', c2.subs)
+  log(
+    c2.cls === 'code,1' && chatReq?.options?.num_ctx === 8192 && chatReq?.format?.properties?.difficulty && chatReq?.stream === false,
+    'UN MODELO LOCAL CLASIFICA LA TAREA CON ESQUEMA Y SU VENTANA ENTERA',
+    `${c2.cls} · num_ctx ${chatReq?.options?.num_ctx}`
+  )
+  log(
+    c2.prefilled === 'escribe un hola mundo en python' && ['vllm', 'ollama'].includes(c2.used?.split(':')[0]) && c2.localText.includes(c2.used.split(':').slice(1).join(':')),
+    'DESDE LA CONSOLA, «¿QUÉ MODELO?» RECOMIENDA Y «USAR» CAMBIA EL DE LA CONVERSACIÓN',
+    c2.error ?? `${c2.used} · ${c2.classifier}`
+  )
+  log(c2.classifier === 'local', 'en la interfaz la afina el modelo local al dejar de escribir', String(c2.classifier))
+  await js(`(async () => {
+    const api = window.api
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await api.providers.setBaseUrl('vllm', ${JSON.stringify(c2.prevBase ?? '')})
+    await api.providers.setBaseUrl('ollama', ${JSON.stringify(c2.prevOllama ?? '')})
+    if (${JSON.stringify(c2.sid ?? '')}) await window.__accEngine.deleteSession(${JSON.stringify(c2.sid ?? '')})
+  })()`)
+  ollamaMock.close()
+
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

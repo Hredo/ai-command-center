@@ -596,6 +596,11 @@ export interface Settings {
   /** Presupuesto mensual en USD para el panel de gasto. */
   monthlyBudget?: number
   arenaDefaults: string[]
+  /**
+   * Modelo de Ollama que clasifica la tarea en el recomendador. Vacío: el más
+   * pequeño que tengas; 'rules': sólo reglas, sin modelo.
+   */
+  recommendClassifier?: string
   /** Avisar con una notificación del sistema al terminar una tarea. */
   notifyOnFinish: boolean
   /** Sólo notificar si la ventana no está en primer plano. */
