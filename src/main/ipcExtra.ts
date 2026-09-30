@@ -47,11 +47,12 @@ import { testAppMcp, pruneMcp } from './mcp/client'
 import { classifyWithOllama } from './recommend'
 import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryRun, judgeWithOllama } from './batteries'
 import { savePrompt, removePrompt, markPromptUsed } from './prompts'
+import { search } from './search'
 import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource, McpClient,
-  Battery, BatteryRun, PromptTemplate
+  Battery, BatteryRun, PromptTemplate, SearchQuery
 } from '@shared/types'
 
 export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
@@ -404,6 +405,19 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
       rubric: String(input?.rubric ?? ''),
       prompt: String(input?.prompt ?? ''),
       response: String(input?.response ?? '')
+    })
+  )
+
+  /* ------------------------------- Búsqueda ------------------------------------ */
+
+  handle('search:query', (q: SearchQuery) =>
+    search({
+      text: String(q?.text ?? '').slice(0, 300),
+      scope: q?.scope === 'sessions' || q?.scope === 'runs' ? q.scope : 'all',
+      projectId: typeof q?.projectId === 'string' && q.projectId ? q.projectId : undefined,
+      from: typeof q?.from === 'number' && q.from > 0 ? q.from : undefined,
+      archived: q?.archived !== false,
+      limit: typeof q?.limit === 'number' ? q.limit : undefined
     })
   )
 

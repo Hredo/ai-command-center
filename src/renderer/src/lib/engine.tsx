@@ -215,7 +215,7 @@ const arena = new Slice<ArenaState>({
  * paleta de comandos). La Consola la lee al montarse o al cambiar, así que no
  * importa si todavía no se había visitado.
  */
-const focus = new Slice<{ id: string; nonce: number } | null>(null)
+const focus = new Slice<{ id: string; turnId?: string; nonce: number } | null>(null)
 /** Cambia cada 250 ms mientras algo esté corriendo: mueve los contadores. */
 const ticker = new Slice<number>(0)
 /**
@@ -1834,12 +1834,13 @@ export function EngineProvider({ children }: { children: React.ReactNode }): Rea
 }
 
 /** Abre una conversación en la Consola desde cualquier sitio. */
-export function focusChat(id: string): void {
-  focus.set({ id, nonce: Date.now() })
-  navigate({ page: 'chat', sessionId: id })
+/** Abre una conversación en la Consola y, si se dice, va a uno de sus mensajes. */
+export function focusChat(id: string, turnId?: string): void {
+  focus.set({ id, turnId, nonce: Date.now() })
+  navigate({ page: 'chat', sessionId: id, turnId })
 }
 
-export function useChatFocus(): { id: string; nonce: number } | null {
+export function useChatFocus(): { id: string; turnId?: string; nonce: number } | null {
   return useSlice(focus)
 }
 

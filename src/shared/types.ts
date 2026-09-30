@@ -319,6 +319,51 @@ export interface BatteryCase {
   checks: BatteryCheck[]
 }
 
+/** Búsqueda de texto completo en conversaciones e histórico. */
+export interface SearchQuery {
+  text: string
+  /** Dónde: todo, sólo las conversaciones o sólo el histórico. */
+  scope?: 'all' | 'sessions' | 'runs'
+  projectId?: string
+  /** Desde cuándo (ms). */
+  from?: number
+  /** false deja fuera las conversaciones cerradas. */
+  archived?: boolean
+  limit?: number
+}
+
+export interface SearchHit {
+  /** Un mensaje de una conversación o una ejecución del histórico. */
+  kind: 'turn' | 'run'
+  id: string
+  sessionId?: string
+  turnId?: string
+  runId?: string
+  /** Título de la conversación, o el agente o el modelo de la ejecución. */
+  title: string
+  role?: 'user' | 'assistant'
+  /** En qué parte de la ejecución está. */
+  field?: 'prompt' | 'response'
+  /** El trozo alrededor del acierto y dónde está cada palabra dentro. */
+  snippet: string
+  ranges: [number, number][]
+  at: number
+  projectId?: string
+  projectName?: string
+  model?: string
+  sessionKind?: 'chat' | 'cli'
+  runKind?: string
+  archived?: boolean
+  score: number
+}
+
+export interface SearchResult {
+  hits: SearchHit[]
+  total: number
+  tookMs: number
+  truncated: boolean
+}
+
 /**
  * Un prompt de la biblioteca. `{{nombre}}` o `{{nombre:valor por omisión}}`
  * son variables que se piden al insertarlo; `{{proyecto}}`, `{{rama}}` y

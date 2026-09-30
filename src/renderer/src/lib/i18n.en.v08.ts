@@ -833,5 +833,22 @@ export const enV08: Record<string, string> = {
   "Guardado en la biblioteca: escribe / para usarlo": "Saved to the library: type / to use it",
   "Guardar lo escrito en la biblioteca de prompts": "Save what you wrote to the prompt library",
   "Guardar en la biblioteca": "Save to the library",
-  "Ctrl + Enter para enviar · / para la biblioteca de prompts · la respuesta sigue llegando si cambias de pantalla": "Ctrl + Enter to send · / for the prompt library · the answer keeps arriving if you switch screens"
+  "Ctrl + Enter para enviar · / para la biblioteca de prompts · la respuesta sigue llegando si cambias de pantalla": "Ctrl + Enter to send · / for the prompt library · the answer keeps arriving if you switch screens",
+  "Buscar en conversaciones e histórico (Ctrl+Mayús+F)": "Search conversations and history (Ctrl+Shift+F)",
+  "Buscar": "Search",
+  "Tú": "You",
+  "Buscar en todo": "Search everything",
+  "Palabras que estén en el mensaje, o \"una frase exacta\"": "Words that are in the message, or \"an exact phrase\"",
+  "Conversaciones": "Conversations",
+  "Incluir las cerradas": "Include closed ones",
+  "Busca en los mensajes de todas tus conversaciones y en el histórico. Sin distinguir mayúsculas ni tildes.": "Searches the messages of all your conversations and the history. Case and accent insensitive.",
+  "Buscando…": "Searching…",
+  "Nada encaja con esa búsqueda.": "Nothing matches that search.",
+  "{n} resultados (se enseñan los {shown} más relevantes) · {ms} ms": "{n} results (showing the {shown} most relevant) · {ms} ms",
+  "{n} resultados · {ms} ms": "{n} results · {ms} ms",
+  "↑↓ elegir · Enter abrir · Ctrl+Mayús+F desde cualquier sitio": "↑↓ choose · Enter open · Ctrl+Shift+F from anywhere",
+  "Filtra la lista. Enter busca en todos los mensajes y en el histórico.": "Filters the list. Enter searches every message and the history.",
+  "Buscar también en las conversaciones, con frases exactas y filtros (Ctrl+Mayús+F)": "Also search the conversations, with exact phrases and filters (Ctrl+Shift+F)",
+  "En todo": "Everywhere",
+  "Siempre": "Any time"
 }

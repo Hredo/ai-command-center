@@ -35,6 +35,7 @@ import {
 } from '../lib/engine'
 import { RewindModal } from '../components/RewindModal'
 import { PromptTextarea, SavePromptButton } from '../components/PromptLibrary'
+import { openSearch } from '../components/SearchModal'
 import { UndoTurn } from '../components/UndoTurn'
 import { WorktreeBox } from '../components/WorktreeBox'
 import { DiffReview } from '../components/DiffReview'
@@ -237,11 +238,14 @@ function TurnView({
   onAllow,
   onEdit,
   onRegenerate,
-  onFork
+  onFork,
+  highlight
 }: {
   turn: Turn
   isCli: boolean
   sessionId: string
+  /** Se llegó aquí desde la búsqueda. */
+  highlight?: boolean
   /** Abrir la revisión del diff de este turno. */
   onReview?: () => void
   /** Claude Code: seguir dándole permiso sólo para lo que le faltó. */
@@ -260,7 +264,7 @@ function TurnView({
   const rules = [...new Set(denied.map((s) => s.rule).filter((r): r is string => Boolean(r)))]
   if (turn.role === 'user') {
     return (
-      <div className="group flex gap-3 justify-end" data-turn={turn.id}>
+      <div className={cx('group flex gap-3 justify-end rounded-xl transition-shadow duration-700', highlight && 'ring-1 ring-accent/60 ring-offset-4 ring-offset-void')} data-turn={turn.id}>
         <div className="max-w-[78%] flex flex-col items-end gap-1">
           <div className="bg-raised border border-line rounded-xl rounded-tr-sm px-3.5 py-2.5 space-y-2">
             <div className="whitespace-pre-wrap break-words text-[13px]">{turn.content}</div>
@@ -283,7 +287,7 @@ function TurnView({
   }
 
   return (
-    <div className="flex gap-3" data-turn={turn.id}>
+    <div className={cx('flex gap-3 rounded-xl transition-shadow duration-700', highlight && 'ring-1 ring-accent/60 ring-offset-4 ring-offset-void')} data-turn={turn.id}>
       <div
         className={cx(
           'w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5 border',
@@ -445,6 +449,8 @@ export default function Chat(): React.JSX.Element {
   const chat = useChat(activeId)
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
   const [showArchived, setShowArchived] = useState(false)
   const [renaming, setRenaming] = useState<StoredSession | null>(null)
   const [renameText, setRenameText] = useState('')
@@ -472,13 +478,27 @@ export default function Chat(): React.JSX.Element {
 
   // Otra parte de la app (el relevo, la paleta) pide abrir una conversación.
   const focusReq = useChatFocus()
+  const [flash, setFlash] = useState<string | null>(null)
   useEffect(() => {
     if (!focusReq) return
     setActiveId(focusReq.id)
-    setShowArchived(false)
+    // Una cerrada se enseña en su lista: si no, no se ve cuál está abierta.
+    setShowArchived(Boolean(sessionsRef.current.find((s) => s.id === focusReq.id)?.archived))
     void openSession(focusReq.id)
-    stick.current = true
+    stick.current = !focusReq.turnId
+    setFlash(focusReq.turnId ?? null)
   }, [focusReq])
+
+  // Ir a un mensaje (desde la búsqueda): se centra y se marca un momento.
+  useEffect(() => {
+    if (!flash) return
+    const el = scroller.current?.querySelector(`[data-turn="${CSS.escape(flash)}"]`)
+    if (!el) return
+    stick.current = false
+    el.scrollIntoView({ block: 'center' })
+    const timer = window.setTimeout(() => setFlash(null), 2600)
+    return () => window.clearTimeout(timer)
+  }, [flash, turns])
 
   // Al entrar: se abre la última conversación viva, o se crea una.
   useEffect(() => {
@@ -712,6 +732,10 @@ export default function Chat(): React.JSX.Element {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && query.trim()) openSearch(query)
+              }}
+              title={t('Filtra la lista. Enter busca en todos los mensajes y en el histórico.')}
               placeholder={t('Buscar…')}
               className="w-full h-7 pl-7 pr-2 bg-raised border border-line rounded-md text-[12px] outline-none focus:border-[#2c3346] placeholder:text-[#3a4255]"
             />
@@ -878,6 +902,7 @@ export default function Chat(): React.JSX.Element {
                   onEdit={!running && t.role === 'user' ? () => setRewind({ turnId: t.id, mode: 'edit' }) : undefined}
                   onRegenerate={!running && t.role === 'assistant' && i > 0 ? () => regenerate(t.id) : undefined}
                   onFork={!running && t.role === 'assistant' && !t.streaming ? () => void fork(t.id) : undefined}
+                  highlight={flash === t.id}
                 />
               )
             })}

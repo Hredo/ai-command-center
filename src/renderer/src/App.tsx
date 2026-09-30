@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from
 import {
   LayoutDashboard, MessageSquare, Swords, FolderGit2, Bot, Boxes, History, Settings2,
   Radar, CheckCircle2, XCircle, Info, X, TerminalSquare, Activity, Home, PanelLeftClose,
-  PanelLeftOpen, SquareKanban
+  PanelLeftOpen, SquareKanban, Search
 } from 'lucide-react'
 import { StoreProvider, useStore } from './lib/store'
 import { PrefsProvider, usePrefs, usePaneSize } from './lib/prefs'
@@ -13,8 +13,9 @@ import { cx } from './components/ui'
 import { Pane } from './components/Resizable'
 import { cost } from './lib/format'
 import { TITLEBAR_HEIGHT, TRAFFIC_LIGHTS_WIDTH } from '@shared/defaults'
-import { IS_MAC, modKey } from './lib/platform'
+import { IS_MAC, modKey, withMod } from './lib/platform'
 import { navigate, onNavigate, type PageId } from './lib/nav'
+import { SearchModal, openSearch } from './components/SearchModal'
 /**
  * Cada sección se descarga la primera vez que se entra en ella.
  *
@@ -133,6 +134,15 @@ function TitleBar(): React.JSX.Element {
         className="flex items-center gap-4 text-[11.5px]"
         style={{ paddingRight: IS_MAC ? 0 : Math.round(140 / zoom) }}
       >
+        <button
+          type="button"
+          onClick={() => openSearch()}
+          className="no-drag flex items-center gap-1.5 h-6 px-2 rounded-md border border-line text-dim hover:text-ink hover:border-[#2c3346] transition-colors"
+          title={withMod(t('Buscar en conversaciones e histórico (Ctrl+Mayús+F)'))}
+          data-open-search
+        >
+          <Search size={12} /> {t('Buscar')}
+        </button>
         {total > 0 ? (
           <span
             className="flex items-center gap-1.5 text-ok"
@@ -389,6 +399,7 @@ function Shell(): React.JSX.Element {
         </main>
       </div>
       <Toasts />
+      <SearchModal />
     </div>
   )
 }

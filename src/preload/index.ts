@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type {
   AppConfig, Settings, Agent, CliAgent, Project, RunOptions, CliRunOptions, RunRecord, StoredSession,
-  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun, PromptTemplate
+  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun, PromptTemplate, SearchQuery
 } from '@shared/types'
 import type { IpcChannel, IpcArgs, IpcResult, IpcRes, IpcEvent, IpcEvents } from '@shared/ipcContract'
 
@@ -260,6 +260,10 @@ const api = {
     saveRun: (run: BatteryRun) => call('batteries:saveRun', run),
     removeRun: (id: string) => call('batteries:removeRun', id),
     judge: (model: string, input: { rubric: string; prompt: string; response: string }) => call('batteries:judge', model, input)
+  },
+  /** Búsqueda de texto completo en conversaciones e histórico. */
+  search: {
+    query: (q: SearchQuery) => call('search:query', q)
   },
   /** Biblioteca de prompts con variables. */
   prompts: {

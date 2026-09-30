@@ -2812,6 +2812,112 @@ app.whenReady().then(async () => {
   log(e2.arena === `Hoy es ${today}.`, 'y en la Arena «/» también inserta', e2.arena)
 
   /* -------------------------------------------------------------- *
+   * E3 · Búsqueda de texto completo                                *
+   * -------------------------------------------------------------- */
+  const mockE3 = await startAgentMock()
+  const e3 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const setVal = (el, value) => {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const out = {}
+    const now = Date.now()
+    const q = async (text, extra = {}) => (await api.search.query({ text, ...extra })).data
+    const brief = (r) => r.hits.map((h) => h.kind + ':' + (h.sessionId ?? '') + ':' + (h.role ?? h.field)).join(' | ')
+
+    await api.projects.save({ id: 'proyecto-e3', name: 'Repo e3', path: repo, color: '#fff', createdAt: now })
+    const turn = (id, role, content) => ({ id, role, content })
+    await api.sessions.save({ id: 'e3-a', kind: 'chat', title: 'Migración de la base', projectId: 'proyecto-e3', createdAt: now, updatedAt: now, turns: [
+      turn('a1', 'user', 'Cómo migramos la tabla de FACTURACIÓN sin parar el servicio'),
+      turn('a2', 'assistant', 'Con una migración en dos fases: primero añades la columna nueva y luego copias los datos.')
+    ] })
+    await api.sessions.save({ id: 'e3-b', kind: 'chat', title: 'Otra', archived: true, createdAt: now, updatedAt: now, turns: [
+      turn('b1', 'user', 'la facturación del mes pasado'),
+      turn('b2', 'assistant', 'De acuerdo.')
+    ] })
+    await api.sessions.save({ id: 'e3-c', kind: 'chat', title: 'Nada', createdAt: now, updatedAt: now, turns: [turn('c1', 'user', 'hola'), turn('c2', 'assistant', 'adiós')] })
+    await engine.loadSessions()
+
+    const r1 = await q('facturacion')
+    out.plain = brief(r1)
+    const hit = r1.hits.find((h) => h.sessionId === 'e3-a')
+    out.marked = hit ? hit.ranges.map(([a, b]) => hit.snippet.slice(a, b)).join(',') : null
+    out.noArchived = brief(await q('facturacion', { archived: false }))
+    out.phrase = brief(await q('"dos fases"'))
+    out.bothWords = brief(await q('columna FASES'))
+    out.wrongOrder = (await q('"fases dos"')).total
+    out.project = brief(await q('facturacion', { projectId: 'proyecto-e3' }))
+    out.short = (await q('a')).total
+
+    // Una ejecución cuya conversación ya no existe sale del histórico; la de una que sigue, no se repite.
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await sleep(300)
+    const cfg = (await api.config.get()).data
+    const gone = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba' })
+    const goneRun = await engine.sendTurn(gone, 'eco: canción del verano', cfg)
+    out.goneRunId = goneRun.run?.id
+    await engine.deleteSession(gone)
+    const kept = await engine.newSession('chat', { providerId: 'vllm', model: 'agente-de-prueba' })
+    await engine.sendTurn(kept, 'eco: zanahoria morada', cfg)
+    await engine.flushPersist()
+    await sleep(900)
+    const r2 = await q('cancion VERANO', { scope: 'runs' })
+    out.run = r2.hits.map((h) => h.kind + ':' + h.field + ':' + (h.runId === out.goneRunId)).join(' | ')
+    out.runSnippet = r2.hits[0]?.snippet
+    out.keptAll = (await q('zanahoria')).hits.map((h) => h.kind + ':' + h.role).sort().join(' | ')
+    out.keptRuns = (await q('zanahoria', { scope: 'runs' })).total
+
+    // Por la interfaz: botón de arriba, resultados y abrir el mensaje.
+    document.querySelector('[data-open-search]')?.click()
+    const input = await until(() => document.querySelector('[data-search-input]'))
+    if (input) setVal(input, 'facturacion')
+    await until(() => document.querySelectorAll('[data-search-results] [data-hit]').length >= 2)
+    out.uiHits = document.querySelectorAll('[data-search-results] [data-hit]').length
+    out.uiMark = document.querySelector('[data-search-results] mark')?.textContent
+    const target = [...document.querySelectorAll('[data-search-results] [data-hit]')].find((b) => b.textContent.includes('Migración de la base'))
+    target?.click()
+    const ring = await until(() => { const el = document.querySelector('[data-turn="a1"]'); return el && el.className.includes('ring-1') ? el : null })
+    out.flashed = Boolean(ring)
+    out.modalClosed = !document.querySelector('[data-search]')
+
+    // Ctrl+Mayús+F desde cualquier sitio; un resultado del histórico abre la ejecución.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', ctrlKey: true, shiftKey: true, bubbles: true }))
+    const input2 = await until(() => document.querySelector('[data-search-input]'))
+    out.shortcut = Boolean(input2)
+    if (input2) setVal(input2, 'cancion verano')
+    const runHit = await until(() => document.querySelector('[data-search-results] [data-hit="run"]'))
+    runHit?.click()
+    out.detail = Boolean(await until(() => document.body.innerText.includes('Eco 1: canción del verano')))
+
+    await api.providers.setBaseUrl('vllm', out.prevBase)
+    await engine.deleteSession(kept)
+    for (const id of ['e3-a', 'e3-b', 'e3-c']) await engine.deleteSession(id)
+    if (out.goneRunId) await api.runs.remove(out.goneRunId)
+    await api.projects.remove('proyecto-e3')
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Consola')?.click()
+    return out
+  })()`)
+  log(
+    e3.plain === 'turn:e3-a:user | turn:e3-b:user' || e3.plain === 'turn:e3-b:user | turn:e3-a:user',
+    'BUSCA EN LOS MENSAJES DE TODAS LAS CONVERSACIONES, TAMBIÉN LAS CERRADAS, SIN MAYÚSCULAS NI TILDES',
+    e3.plain
+  )
+  log(e3.marked === 'FACTURACIÓN', 'marca la palabra tal como está escrita', e3.marked)
+  log(e3.noArchived === 'turn:e3-a:user' && e3.project === 'turn:e3-a:user', 'filtra por cerradas y por proyecto', `${e3.noArchived} · ${e3.project}`)
+  log(e3.phrase === 'turn:e3-a:assistant' && e3.bothWords === 'turn:e3-a:assistant' && e3.wrongOrder === 0 && e3.short === 0, 'PALABRAS EN EL MISMO MENSAJE Y "FRASES EXACTAS"', `${e3.phrase} · ${e3.bothWords} · ${e3.wrongOrder}`)
+  log(e3.run === 'run:prompt:true' && (e3.runSnippet ?? '').includes('canción del verano'), 'EL HISTÓRICO ENTRA EN LA BÚSQUEDA', `${e3.run} · ${e3.runSnippet}`)
+  log(e3.keptAll === 'turn:assistant | turn:user' && e3.keptRuns === 1, 'lo que está en una conversación no sale repetido desde el histórico', `${e3.keptAll} · ${e3.keptRuns} en el histórico`)
+  log(e3.uiHits === 2 && e3.uiMark?.toLowerCase().startsWith('factura') && e3.flashed && e3.modalClosed, 'DESDE LA BARRA DE ARRIBA: ELEGIR UN RESULTADO LLEVA AL MENSAJE Y LO MARCA', `${e3.uiHits} resultados · ${e3.uiMark}`)
+  log(e3.shortcut && e3.detail, 'Ctrl+Mayús+F lo abre y un resultado del histórico abre la ejecución')
+  mockE3.close()
+
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

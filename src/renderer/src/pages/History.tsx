@@ -10,6 +10,8 @@ import { cost, tokens, ms, tps, dateTime, shortModel, colorFor } from '../lib/fo
 import type { RunRecord } from '@shared/types'
 import { Pane } from '../components/Resizable'
 import { RelayModal, relaySourceOf } from '../components/RelayModal'
+import { openSearch } from '../components/SearchModal'
+import { lastNavTarget, onNavigate, type NavTarget } from '../lib/nav'
 
 import { useT } from '../lib/i18n'
 function Detail({ run, onClose, onDelete }: { run: RunRecord | null; onClose: () => void; onDelete: (id: string) => void }): React.JSX.Element | null {
@@ -159,6 +161,18 @@ export default function History(): React.JSX.Element {
   const [confirmClear, setConfirmClear] = useState(false)
   const version = useRunsVersion()
 
+  // Desde la búsqueda: abrir una ejecución concreta.
+  useEffect(() => {
+    const show = (target: NavTarget | null): void => {
+      if (target?.page !== 'history' || !target.runId) return
+      void window.api.runs.compare([target.runId]).then((r) => {
+        if (r.ok && r.data?.[0]) setSelected(r.data[0])
+      })
+    }
+    show(lastNavTarget())
+    return onNavigate(show)
+  }, [])
+
   const load = useCallback(async () => {
     const r = await window.api.runs.query({
       search: search || undefined,
@@ -231,8 +245,14 @@ export default function History(): React.JSX.Element {
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('Buscar en prompts y respuestas…')}
               className="pl-8"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && search.trim()) openSearch(search)
+              }}
             />
           </div>
+          <Button variant="ghost" onClick={() => openSearch(search)} title={t('Buscar también en las conversaciones, con frases exactas y filtros (Ctrl+Mayús+F)')}>
+            <Search size={13} /> {t('En todo')}
+          </Button>
           <Select value={kind} onChange={(e) => setKind(e.target.value)} className="w-[140px]">
             <option value="">{t('Todo tipo')}</option>
             <option value="chat">{t('Consola')}</option>

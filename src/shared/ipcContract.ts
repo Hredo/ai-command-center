@@ -11,7 +11,7 @@
  * se ponen de acuerdo.
  */
 import type {
-  Agent, AppConfig, Attachment, Battery, BatteryRun, PromptTemplate, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
+  Agent, AppConfig, Attachment, Battery, BatteryRun, PromptTemplate, SearchQuery, SearchResult, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
@@ -61,6 +61,7 @@ export interface IpcContract {
   'batteries:saveRun': { args: [run: BatteryRun]; result: boolean }
   'batteries:removeRun': { args: [id: string]; result: boolean }
   /** La nota de un juez local (Ollama) con una rúbrica: su opinión. */
+  'search:query': { args: [q: SearchQuery]; result: SearchResult }
   'prompts:save': { args: [prompt: PromptTemplate]; result: AppConfig }
   'prompts:remove': { args: [id: string]; result: AppConfig }
   'prompts:used': { args: [id: string]; result: boolean }
