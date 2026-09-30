@@ -388,6 +388,8 @@ const api = {
      * del puente; el proceso principal se entera para recolocar los botones de
      * Windows, que los pinta el sistema y no se enteran del zoom por su cuenta.
      */
+    /** Lo que hay en marcha, para el icono de la bandeja y para avisar antes de salir. */
+    setBusy: (busy: { chats: number; arena: number; terms: number }) => call('app:busy', busy),
     setChrome: (opts: { zoom?: number; background?: string; symbol?: string }) => {
       const zoom = Math.min(2, Math.max(0.5, Number(opts?.zoom) || 1))
       webFrame.setZoomFactor(zoom)

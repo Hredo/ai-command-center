@@ -20,6 +20,7 @@ const defaultSettings: Settings = {
   arenaDefaults: [],
   notifyOnFinish: true,
   notifyOnlyWhenUnfocused: true,
+  closeToTray: true,
   localPollSeconds: 8
 }
 

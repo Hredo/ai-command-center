@@ -824,6 +824,13 @@ export interface Settings {
   notifyOnFinish: boolean
   /** Sólo notificar si la ventana no está en primer plano. */
   notifyOnlyWhenUnfocused: boolean
+  /**
+   * Al cerrar la ventana se esconde en la bandeja y lo que está en marcha
+   * sigue (por omisión). Con false, cerrar sale, preguntando si hay algo en marcha.
+   */
+  closeToTray?: boolean
+  /** Ya se avisó una vez de que la app sigue en la bandeja. */
+  trayHintShown?: boolean
   /** Ejecutable de la shell para las terminales integradas. */
   shellPath?: string
   /** Segundos entre sondeos automáticos de motores locales. 0 lo desactiva. */

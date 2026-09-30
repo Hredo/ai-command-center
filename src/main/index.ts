@@ -23,6 +23,7 @@ import { runSelfTest } from './selftest'
 import { startMaintenance, stopMaintenance } from './maintenance'
 import { watchExternal, stopWatchingExternal } from './external'
 import { startQuotas, stopQuotas, pokeQuotas } from './quotas'
+import { initTray, onWindowClose, markQuitting, showWindow, destroyTray } from './tray'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
@@ -96,8 +97,13 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
-  // En macOS cerrar la ventana no cierra la app: se queda en el Dock y el
-  // icono la vuelve a abrir. Hasta entonces no hay ventana a la que avisar.
+  // Cerrar esconde la ventana en la bandeja (o sale, según Ajustes): ver tray.ts.
+  const win = mainWindow
+  win.on('close', (e) => {
+    if (!SELFTEST) onWindowClose(e, win)
+  })
+  // Windows: apagar o cerrar la sesión no debe quedarse esperando a la bandeja.
+  win.on('session-end', () => markQuitting())
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -225,6 +231,7 @@ app.whenReady().then(async () => {
   registerIpc(() => mainWindow)
   createWindow()
   if (SELFTEST && mainWindow) void runSelfTest(mainWindow, SELFTEST)
+  if (!SELFTEST) initTray({ getWin: () => mainWindow, createWindow, icon })
 
   // Las sesiones de Claude Code que corren fuera de la app —en una terminal o
   // en la app de Claude— se leen de sus transcripciones y entran al histórico
@@ -283,8 +290,10 @@ app.whenReady().then(async () => {
       .catch((e) => console.error('No se pudo refrescar el catálogo:', e.message))
   }
 
+  // macOS: el icono del Dock vuelve a enseñar la ventana escondida.
   app.on('activate', () => {
     if (!mainWindow || BrowserWindow.getAllWindows().length === 0) createWindow()
+    else showWindow()
   })
 })
 
@@ -295,6 +304,7 @@ app.on('window-all-closed', () => {
 // Las shells de las terminales son procesos hijos: hay que cerrarlas o
 // quedarían huérfanas al salir.
 app.on('before-quit', () => {
+  markQuitting()
   stopWatchingLocalServers()
   stopWatchingClaude()
   stopAllWatches()
@@ -305,17 +315,17 @@ app.on('before-quit', () => {
   closeAllTerms()
 })
 
+// Sin esto, en Windows el icono se queda en la bandeja hasta que pasas el ratón.
+app.on('will-quit', () => destroyTray())
+
 // Una sola instancia: si se abre otra, se enfoca la que ya está.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  // También trae la ventana escondida en la bandeja: en un escritorio de Linux
+  // sin iconos de estado es la forma de volver a ella.
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    } else if (app.isReady()) {
-      // macOS: la app seguía viva en el Dock, pero sin ventana.
-      createWindow()
-    }
+    if (mainWindow) showWindow()
+    else if (app.isReady()) createWindow()
   })
 }

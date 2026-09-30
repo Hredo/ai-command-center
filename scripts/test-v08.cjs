@@ -3775,6 +3775,68 @@ app.whenReady().then(async () => {
     `${(g1.scriptDetail ?? '').trim()} · enviado:${g1.scriptSent} · salida:${g1.scriptOutput}`
   )
   /* -------------------------------------------------------------- *
+   * G2 · Bandeja del sistema: cerrar no corta lo que está en marcha *
+   * -------------------------------------------------------------- */
+  const { dialog: dlgG2 } = require('electron')
+  const realBox = dlgG2.showMessageBoxSync
+  const boxes = []
+  let answer = 2
+  dlgG2.showMessageBoxSync = (...a) => {
+    const opts = a.find((x) => x && typeof x === 'object' && 'buttons' in x)
+    boxes.push(opts)
+    return answer
+  }
+  const sleepG2 = (n) => new Promise((r) => setTimeout(r, n))
+  await js(`window.api.config.settings({ closeToTray: true, trayHintShown: false })`)
+
+  // Con la bandeja (lo normal): cerrar esconde la ventana; la app y la ventana siguen vivas.
+  const termG2 = await js(`window.__accEngine.openTerm({ title: 'g2' }).then((r) => r.id)`)
+  win.close()
+  await sleepG2(400)
+  const g2 = { hidden: !win.isDestroyed() && !win.isVisible(), boxesAfterClose: boxes.length }
+  g2.hint = (await js(`window.api.config.get()`)).data.settings.trayHintShown === true
+  // La ventana escondida sigue trabajando: la terminal responde.
+  await js(`window.__accEngine.sendTermCommand(${JSON.stringify(termG2)}, 'echo sigue-g2')`)
+  const endG2 = Date.now() + 8000
+  while (Date.now() < endG2 && !(await js(`window.__accEngine.termScrollback(${JSON.stringify(termG2)})`)).split('sigue-g2').length <= 2) await sleepG2(150)
+  g2.termAlive = (await js(`window.__accEngine.termScrollback(${JSON.stringify(termG2)})`)).split('sigue-g2').length > 2
+  // Abrir la app otra vez (segunda instancia) trae la ventana.
+  app.emit('second-instance', {}, [], process.cwd())
+  await sleepG2(300)
+  g2.shownAgain = win.isVisible()
+
+  // «Cerrar sale»: con algo en marcha pregunta antes. Cancelar deja la ventana.
+  await js(`window.api.config.settings({ closeToTray: false })`)
+  await js(`window.api.app.setBusy({ chats: 1, arena: 0, terms: 1 })`)
+  answer = 2
+  win.close()
+  await sleepG2(300)
+  g2.asked = boxes[0] ? boxes[0].message + ' | ' + boxes[0].detail + ' | ' + boxes[0].buttons.join('/') : null
+  g2.cancelKeeps = !win.isDestroyed() && win.isVisible()
+  // «Seguir en la bandeja» la esconde en ese momento.
+  answer = 1
+  win.close()
+  await sleepG2(300)
+  g2.trayChoice = !win.isDestroyed() && !win.isVisible()
+  app.emit('second-instance', {}, [], process.cwd())
+  await sleepG2(300)
+
+  dlgG2.showMessageBoxSync = realBox
+  await js(`(async () => {
+    await window.__accEngine.closeTerm(${JSON.stringify(termG2)})
+    await window.api.config.settings({ closeToTray: true })
+  })()`)
+  win.show()
+
+  log(g2.hidden && g2.boxesAfterClose === 0 && g2.hint, 'G2: CERRAR LA VENTANA LA ESCONDE EN LA BANDEJA, SIN PREGUNTAR, Y AVISA UNA VEZ', JSON.stringify({ hidden: g2.hidden, hint: g2.hint }))
+  log(g2.termAlive, 'LO QUE ESTÁ EN MARCHA SIGUE CON LA VENTANA ESCONDIDA', 'la terminal contesta')
+  log(g2.shownAgain, 'abrir la app otra vez trae la ventana escondida')
+  log(
+    /2 cosas en marcha/.test(g2.asked ?? '') && /Consola/.test(g2.asked ?? '') && /Seguir en la bandeja/.test(g2.asked ?? '') && g2.cancelKeeps && g2.trayChoice,
+    'CON «CERRAR SALE» PREGUNTA SI HAY ALGO EN MARCHA; CANCELAR LA DEJA Y SE PUEDE MANDAR A LA BANDEJA',
+    g2.asked
+  )
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

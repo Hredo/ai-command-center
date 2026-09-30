@@ -81,6 +81,7 @@ export interface IpcContract {
   'agents:save': { args: [a: Agent]; result: AppConfig }
   'agents:saveCli': { args: [a: CliAgent]; result: AppConfig }
   'agents:workspace': { args: [id?: string]; result: string }
+  'app:busy': { args: [busy: { chats: number; arena: number; terms: number }]; result: void }
   'app:chrome': { args: [arg1: { zoom: number; background?: string; symbol?: string; }]; result: boolean }
   'app:info': { args: []; result: any }
   /** El error de abrirla, o vacío si se abrió. */

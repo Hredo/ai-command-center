@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   Radar, KeyRound, Cpu, Cloud, Check, X, ExternalLink, FolderOpen,
-  ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare
+  ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare, AppWindow
 } from 'lucide-react'
 import { OllamaPanel } from '../components/OllamaPanel'
 import { QuotasSettings } from '../components/QuotasSettings'
@@ -520,6 +520,31 @@ export default function Settings(): React.JSX.Element {
                   {t('Se avisa de prompts y agentes al acabar, de comparativas completas, de descargas de modelos, y de comandos de terminal que hayan tardado más de doce segundos. Pulsar el aviso trae la ventana al frente.')}
                 </p>
                 <ClaudeAttentionToggle />
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHeader
+                title={t('Al cerrar la ventana')}
+                icon={<AppWindow size={14} />}
+                subtitle={t('Qué pasa con lo que está en marcha')}
+              />
+              <div className="p-4 space-y-3" data-close-to-tray>
+                <Toggle
+                  checked={s.closeToTray !== false}
+                  onChange={(v) => void setSetting({ closeToTray: v })}
+                  label={t('Seguir en la bandeja del sistema')}
+                />
+                <p className="text-[11.5px] text-dim leading-relaxed">
+                  {s.closeToTray !== false
+                    ? t('La ventana se esconde y lo que está en marcha sigue: una conversación, un agente, una orden en la terminal. Vuelves desde el icono de la bandeja y sales desde su menú; si hay algo en marcha, te pregunta antes de cortarlo.')
+                    : t('Cerrar la ventana sale de la app. Si hay algo en marcha te pregunta antes, y puedes dejarla en la bandeja en ese momento.')}
+                </p>
+                {IS_LINUX ? (
+                  <p className="text-[11.5px] text-dim leading-relaxed">
+                    {t('Si tu escritorio no enseña iconos de bandeja, abrir la app otra vez desde el lanzador trae la ventana que ya estaba.')}
+                  </p>
+                ) : null}
               </div>
             </Panel>
 

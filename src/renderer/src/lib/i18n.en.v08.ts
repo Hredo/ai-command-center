@@ -950,5 +950,11 @@ export const enV08: Record<string, string> = {
   "Recientes": "Recent",
   "Acciones": "Actions",
   "Secciones": "Sections",
-  "Scripts": "Scripts"
+  "Scripts": "Scripts",
+  "Al cerrar la ventana": "When you close the window",
+  "Qué pasa con lo que está en marcha": "What happens to whatever is running",
+  "Seguir en la bandeja del sistema": "Keep running in the system tray",
+  "La ventana se esconde y lo que está en marcha sigue: una conversación, un agente, una orden en la terminal. Vuelves desde el icono de la bandeja y sales desde su menú; si hay algo en marcha, te pregunta antes de cortarlo.": "The window hides and whatever is running keeps going: a conversation, an agent, a terminal command. Come back from the tray icon and quit from its menu; if something is running, it asks before stopping it.",
+  "Cerrar la ventana sale de la app. Si hay algo en marcha te pregunta antes, y puedes dejarla en la bandeja en ese momento.": "Closing the window quits the app. If something is running it asks first, and you can leave it in the tray right then.",
+  "Si tu escritorio no enseña iconos de bandeja, abrir la app otra vez desde el lanzador trae la ventana que ya estaba.": "If your desktop doesn't show tray icons, opening the app again from the launcher brings back the window that was already there."
 }

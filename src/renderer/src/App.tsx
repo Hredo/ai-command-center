@@ -319,6 +319,13 @@ function Shell(): React.JSX.Element {
   useWindowChrome()
   useQuotaAlerts()
 
+  // Lo que hay en marcha llega al icono de la bandeja, que además pregunta
+  // antes de salir si algo se iba a cortar.
+  const busy = useBusyCount()
+  useEffect(() => {
+    void window.api.app.setBusy({ chats: busy.chats, arena: busy.arena, terms: busy.terms })
+  }, [busy.chats, busy.arena, busy.terms])
+
   // Una página se monta la primera vez que se visita y a partir de ahí se
   // queda montada, sólo oculta. Así no se pierde el scroll, ni la pestaña
   // activa de la terminal, ni lo que hubiera a medio escribir.

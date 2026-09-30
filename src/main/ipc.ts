@@ -8,6 +8,7 @@ import { runPrompt, abortRun, testProvider, answerApproval } from './providers/r
 import { runCliAgent, killCli } from './agents/cli'
 import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
+import { refreshTray, setBusy, type Busy } from './tray'
 import { scanProject, projectScripts, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
 import {
   queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy, projectTotals, modelUsage, personalElo
@@ -65,7 +66,12 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   // ---------------- Config ----------------
   handle('config:get', () => getConfig())
   handle('config:save', (cfg: any) => saveConfig(cfg))
-  handle('config:settings', (patch: any) => updateSettings(patch))
+  handle('config:settings', (patch: any) => {
+    const cfg = updateSettings(patch)
+    // El menú de la bandeja va en el idioma de la interfaz.
+    if (patch && 'language' in patch) refreshTray()
+    return cfg
+  })
 
   // ---------------- Proveedores ----------------
   handle('providers:defs', () => PROVIDERS)
@@ -318,6 +324,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
    * los dibuja el sistema y no se enteran: hay que recalcular el alto de la
    * franja o dejan de cuadrar con la barra que pinta la aplicación.
    */
+  handle('app:busy', (b: Busy) => setBusy(b))
   handle('app:chrome', (opts: { zoom?: number; background?: string; symbol?: string }) => {
     const win = getWindow()
     if (!win || win.isDestroyed()) return false
