@@ -356,6 +356,20 @@ const api = {
     uninstall: () => call('attention:uninstall'),
     onChanged: (cb: (list: IpcEvents['attention:changed']) => void) => on('attention:changed', cb)
   },
+  /** Prompt rápido: la ventanita del atajo global y la principal que lo lanza. */
+  quick: {
+    submit: (req: { prompt: string; providerId: string; model: string; sessionId?: string }) => call('quick:submit', req),
+    bind: (requestId: string, sessionId: string) => call('quick:bind', requestId, sessionId),
+    fail: (requestId: string, error: string) => call('quick:fail', requestId, error),
+    hide: () => call('quick:hide'),
+    open: () => call('quick:open'),
+    openConsole: (sessionId: string) => call('quick:openConsole', sessionId),
+    status: () => call('quick:status'),
+    onRun: (cb: (r: IpcEvents['quick:run']) => void) => on('quick:run', cb),
+    onFocus: (cb: (r: IpcEvents['quick:focus']) => void) => on('quick:focus', cb),
+    onEvent: (cb: (r: IpcEvents['quick:event']) => void) => on('quick:event', cb),
+    onShown: (cb: (r: IpcEvents['quick:shown']) => void) => on('quick:shown', cb)
+  },
   quotas: {
     get: (force?: boolean) => call('quotas:get', force),
     statusLine: () => call('quotas:statusLine'),

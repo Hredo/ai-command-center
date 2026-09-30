@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   Radar, KeyRound, Cpu, Cloud, Check, X, ExternalLink, FolderOpen,
-  ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare, AppWindow
+  ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare, AppWindow, Zap
 } from 'lucide-react'
+import { ModelPicker } from '../components/ModelPicker'
+import { formatAccelerator, toAccelerator } from '../lib/hotkeys'
 import { OllamaPanel } from '../components/OllamaPanel'
 import { QuotasSettings } from '../components/QuotasSettings'
 import { lastNavTarget, onNavigate } from '../lib/nav'
@@ -10,10 +12,101 @@ import { Panel, PanelHeader, Button, Badge, Input, Field, Select, Toggle, cx, Do
 import { AppearanceTab, EditorTab, SecurityTab } from './Appearance'
 import { useStore } from '../lib/store'
 import { relTime, bytes } from '../lib/format'
-import type { DetectionResult, NotifyHookInfo, ProviderStatus } from '@shared/types'
+import type { DetectionResult, NotifyHookInfo, ProviderStatus, QuickHotkeyStatus, Settings as AppSettings } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 import { IS_LINUX, IS_MAC, perOs } from '../lib/platform'
+
+/**
+ * El prompt rápido: su atajo global (se graba pulsándolo), si se pudo
+ * registrar, y el modelo que usa.
+ */
+function QuickPromptPanel({ s, setSetting }: { s: AppSettings; setSetting: (patch: Partial<AppSettings>) => Promise<void> }): React.JSX.Element {
+  const t = useT()
+  const [status, setStatus] = useState<QuickHotkeyStatus | null>(null)
+  const [recording, setRecording] = useState(false)
+
+  useEffect(() => {
+    void window.api.quick.status().then((r) => r.ok && r.data && setStatus(r.data))
+  }, [s.quickHotkey])
+
+  // Grabando: la siguiente combinación que pulses es el atajo. Esc cancela.
+  useEffect(() => {
+    if (!recording) return
+    const onKey = (e: KeyboardEvent): void => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setRecording(false)
+        return
+      }
+      const acc = toAccelerator(e, IS_MAC)
+      if (!acc) return
+      setRecording(false)
+      void setSetting({ quickHotkey: acc })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [recording, setSetting])
+
+  const shown = status?.accelerator ? formatAccelerator(status.accelerator, IS_MAC, t) : ''
+  const pick = s.quickModel ?? null
+
+  return (
+    <Panel>
+      <PanelHeader
+        title={t('Prompt rápido')}
+        icon={<Zap size={14} />}
+        subtitle={t('Una ventanita encima de cualquier app para preguntar a un modelo')}
+      />
+      <div className="p-4 space-y-3" data-quick-settings>
+        <Field label={t('Atajo global')} hint={t('Funciona aunque la app esté en la bandeja o detrás de otras ventanas.')}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={cx(
+                'num h-8 px-3 rounded-lg border flex items-center text-[12.5px] min-w-[140px]',
+                recording ? 'border-accent text-accent' : 'border-line bg-raised'
+              )}
+              data-quick-hotkey
+            >
+              {recording ? t('Pulsa la combinación…') : shown || t('Apagado')}
+            </span>
+            <Button variant="ghost" onClick={() => setRecording((r) => !r)} data-quick-record>
+              {recording ? t('Cancelar') : t('Cambiar')}
+            </Button>
+            {status && status.accelerator !== status.defaultAccelerator ? (
+              <Button variant="ghost" onClick={() => void setSetting({ quickHotkey: undefined })}>
+                {t('Por defecto ({keys})', { keys: formatAccelerator(status.defaultAccelerator, IS_MAC, t) })}
+              </Button>
+            ) : null}
+            {status?.accelerator ? (
+              <Button variant="ghost" onClick={() => void setSetting({ quickHotkey: '' })} data-quick-off>
+                {t('Apagar')}
+              </Button>
+            ) : null}
+          </div>
+        </Field>
+        {status?.accelerator ? (
+          <p className={cx('text-[11.5px] leading-relaxed', status.registered ? 'text-dim' : 'text-warn')} data-quick-status>
+            {status.registered
+              ? t('Pulsa {keys} desde cualquier app. También está en el menú del icono de la bandeja y en la paleta (Ctrl+K).', { keys: shown })
+              : status.error === 'invalid'
+                ? t('Ese atajo no vale. Prueba con Ctrl o Alt y una letra o el espacio.')
+                : t('No se pudo registrar: otra app ya usa {keys}. Elige otro.', { keys: shown })}
+          </p>
+        ) : null}
+        {IS_LINUX ? (
+          <p className="text-[11.5px] text-dim leading-relaxed">
+            {t('En Linux con Wayland los atajos globales sólo llegan desde apps de X11; en X11 funcionan siempre.')}
+          </p>
+        ) : null}
+        <Field label={t('Modelo')} hint={t('El de la última pregunta; también se cambia en la propia ventanita.')}>
+          <ModelPicker value={pick} onChange={(p) => void setSetting({ quickModel: p })} />
+        </Field>
+      </div>
+    </Panel>
+  )
+}
 
 /**
  * El hook de avisos de Claude Code: opcional y apagado de fábrica, como el
@@ -522,6 +615,8 @@ export default function Settings(): React.JSX.Element {
                 <ClaudeAttentionToggle />
               </div>
             </Panel>
+
+            <QuickPromptPanel s={s} setSetting={setSetting} />
 
             <Panel>
               <PanelHeader

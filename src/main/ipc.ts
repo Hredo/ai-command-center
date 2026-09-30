@@ -9,6 +9,10 @@ import { runCliAgent, killCli } from './agents/cli'
 import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
 import { refreshTray, setBusy, type Busy } from './tray'
+import {
+  bindQuick, failQuick, hideQuick, openQuickInConsole, quickFinished, quickStatus, quickTap, registerQuickHotkey,
+  showQuick, submitQuick
+} from './quick'
 import { scanProject, projectScripts, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
 import {
   queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy, projectTotals, modelUsage, personalElo
@@ -69,7 +73,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   handle('config:settings', (patch: any) => {
     const cfg = updateSettings(patch)
     // El menú de la bandeja va en el idioma de la interfaz.
-    if (patch && 'language' in patch) refreshTray()
+    if (patch && 'quickHotkey' in patch) registerQuickHotkey()
+    if (patch && ('language' in patch || 'quickHotkey' in patch)) refreshTray()
     return cfg
   })
 
@@ -166,11 +171,15 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   // ---------------- Ejecución ----------------
   ipcMain.handle('run:prompt', async (_e, opts: RunOptions, runId: string) => {
     const win = getWindow()
+    // Si la lanzó el prompt rápido, su ventanita lo ve llegar a la vez.
+    const tap = quickTap(opts?.conversationId)
     const send = (payload: any): void => {
       emit(win, 'run:delta', { runId, ...payload })
+      tap?.({ runId, ...payload })
     }
     const run = await runPrompt(opts, send, runId)
-    if (run.kind !== 'arena') notifyRun(run)
+    const seen = tap ? quickFinished(opts.conversationId, run) : false
+    if (run.kind !== 'arena' && !seen) notifyRun(run)
     return { ok: run.status !== 'error', data: run, error: run.error }
   })
   handle('run:abort', (runId: string) => abortRun(runId))
@@ -325,6 +334,25 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
    * franja o dejan de cuadrar con la barra que pinta la aplicación.
    */
   handle('app:busy', (b: Busy) => setBusy(b))
+
+  // ---------------- Prompt rápido ----------------
+  handle('quick:submit', (req) => {
+    const prompt = String(req?.prompt ?? '').trim()
+    if (!prompt) throw new Error('Escribe algo')
+    if (!req?.providerId || !req?.model) throw new Error('Elige un modelo')
+    return submitQuick({
+      prompt,
+      providerId: String(req.providerId),
+      model: String(req.model),
+      sessionId: typeof req.sessionId === 'string' ? req.sessionId : undefined
+    })
+  })
+  handle('quick:bind', (requestId: string, sessionId: string) => bindQuick(String(requestId), String(sessionId)))
+  handle('quick:fail', (requestId: string, error: string) => failQuick(String(requestId), String(error)))
+  handle('quick:hide', () => hideQuick())
+  handle('quick:open', () => showQuick())
+  handle('quick:openConsole', (sessionId: string) => openQuickInConsole(String(sessionId)))
+  handle('quick:status', () => quickStatus())
   handle('app:chrome', (opts: { zoom?: number; background?: string; symbol?: string }) => {
     const win = getWindow()
     if (!win || win.isDestroyed()) return false

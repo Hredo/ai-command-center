@@ -13,7 +13,8 @@
  */
 import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage } from 'electron'
 import { getConfig, updateSettings } from './config'
-import { IS_MAC } from './platform'
+import { IS_LINUX, IS_MAC } from './platform'
+import { quickStatus, showQuick } from './quick'
 
 export interface Busy {
   chats: number
@@ -30,6 +31,7 @@ let makeWin: () => void = () => {}
 const TEXT = {
   es: {
     open: 'Abrir AI Command Center',
+    quick: 'Prompt rápido',
     quit: 'Salir',
     idle: 'Nada en marcha',
     running: (n: number) => (n === 1 ? '1 cosa en marcha' : `${n} cosas en marcha`),
@@ -49,6 +51,7 @@ const TEXT = {
   },
   en: {
     open: 'Open AI Command Center',
+    quick: 'Quick prompt',
     quit: 'Quit',
     idle: 'Nothing running',
     running: (n: number) => (n === 1 ? '1 thing running' : `${n} things running`),
@@ -172,6 +175,8 @@ function refresh(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: tx.open, click: () => showWindow() },
+      // El atajo se enseña al lado (en Linux el menú va por AppIndicator y GTK se queja).
+      { label: tx.quick, accelerator: !IS_LINUX && quickStatus().registered ? quickStatus().accelerator : undefined, click: () => showQuick() },
       { type: 'separator' },
       { label: n ? tx.running(n) : tx.idle, enabled: false },
       ...(n ? [{ label: tx.detail(busy), enabled: false }] : []),

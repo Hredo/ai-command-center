@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot, Compass, FileText, FolderGit2, FolderOpen, GitBranch, MessageSquarePlus, MessagesSquare, Network, Play,
-  Search, Settings2, SquareTerminal, TerminalSquare, Workflow
+  Search, Settings2, SquareTerminal, TerminalSquare, Workflow, Zap
 } from 'lucide-react'
 import { cx } from './ui'
 import { useStore } from '../lib/store'
@@ -186,6 +186,17 @@ export function CommandPalette(): React.JSX.Element | null {
       tone: 'text-warn',
       boost: 4,
       run: () => void newSession('cli', { title: t('Sesión de agente') }).then((id) => focusChat(id))
+    })
+    out.push({
+      id: 'action:quick',
+      group: 'actions',
+      label: t('Prompt rápido'),
+      detail: t('una ventanita encima de cualquier app'),
+      keywords: 'quick prompt rapido atajo global pregunta',
+      icon: Zap,
+      tone: 'text-accent',
+      boost: 2,
+      run: () => void window.api.quick.open()
     })
     out.push({
       id: 'action:search',

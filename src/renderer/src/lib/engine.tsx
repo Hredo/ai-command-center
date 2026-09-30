@@ -18,7 +18,7 @@ import React, { useEffect, useSyncExternalStore } from 'react'
 import type {
   RunRecord, StoredSession, SessionTurn, TurnMetrics, TermInfo, TermEvent,
   ChatMessage, SessionKind, UsageLimit, FileChange, FileTouch, Attachment, Effort,
-  AgentStep, CliLimit, QuotaReport, WorktreeSetup, AppConfig, TerminalAttention
+  AgentStep, CliLimit, QuotaReport, WorktreeSetup, AppConfig, TerminalAttention, QuickRun
 } from '@shared/types'
 import { useStore } from './store'
 import { navigate } from './nav'
@@ -677,6 +677,37 @@ function wire(): void {
     if (r.ok && r.data) terminalAttention.set(r.data)
   })
   window.api.attention.onChanged((list) => terminalAttention.set(list))
+
+  // El prompt rápido (la ventanita del atajo global) lanza aquí sus preguntas.
+  window.api.quick.onRun((req) => void runQuick(req))
+  window.api.quick.onFocus(({ sessionId }) => focusChat(sessionId))
+}
+
+/**
+ * Una pregunta del prompt rápido: se hace como cualquier conversación de la
+ * Consola (se guarda, cuenta en el histórico, se puede seguir allí). Una
+ * segunda pregunta desde la ventanita sigue la misma conversación. Lo que el
+ * modelo va escribiendo se lo reenvía a la ventanita el proceso principal.
+ */
+async function runQuick(req: QuickRun): Promise<void> {
+  try {
+    let sessionId = req.sessionId && sessions.get().some((s) => s.id === req.sessionId) ? req.sessionId : null
+    if (sessionId) {
+      await openSession(sessionId)
+      patchSessionConfig(sessionId, { providerId: req.providerId, model: req.model })
+    } else {
+      sessionId = await newSession('chat', { providerId: req.providerId, model: req.model })
+    }
+    if (chats.get()[sessionId]?.runningRunId) {
+      await window.api.quick.fail(req.requestId, 'Esa conversación todavía está contestando')
+      return
+    }
+    await window.api.quick.bind(req.requestId, sessionId)
+    const run = await sendChat(sessionId, { prompt: req.prompt, providerId: req.providerId, model: req.model })
+    if (!run) await window.api.quick.fail(req.requestId, 'No se pudo lanzar')
+  } catch (err) {
+    await window.api.quick.fail(req.requestId, err instanceof Error ? err.message : String(err))
+  }
 }
 
 /* ------------------------------------------------------------------ *

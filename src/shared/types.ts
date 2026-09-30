@@ -711,6 +711,41 @@ export interface StreamDelta {
   touched?: FileTouch[]
 }
 
+/** Un prompt lanzado desde la ventana del prompt rápido, camino de la Consola. */
+export interface QuickRun {
+  requestId: string
+  prompt: string
+  providerId: string
+  model: string
+  /** Para seguir la misma conversación con otra pregunta. */
+  sessionId?: string
+}
+
+/** Lo que le llega a la ventana del prompt rápido mientras contesta. */
+export interface QuickEvent {
+  requestId: string
+  sessionId?: string
+  /** Un trozo de la respuesta, tal cual lo manda el proveedor. */
+  delta?: StreamDelta
+  /** Terminó: con la respuesta entera y sus números. */
+  done?: boolean
+  response?: string
+  error?: string
+  model?: string
+  costTotal?: number
+  totalMs?: number
+}
+
+/** El atajo global: cuál es, si se pudo registrar y por qué no. */
+export interface QuickHotkeyStatus {
+  accelerator: string
+  /** El que se usa si no eliges otro. */
+  defaultAccelerator: string
+  registered: boolean
+  /** taken: otra app ya lo tiene; invalid: no es un atajo válido. */
+  error?: 'taken' | 'invalid'
+}
+
 /** Idioma de la interfaz. */
 export type Language = 'es' | 'en'
 
@@ -831,6 +866,13 @@ export interface Settings {
   closeToTray?: boolean
   /** Ya se avisó una vez de que la app sigue en la bandeja. */
   trayHintShown?: boolean
+  /**
+   * Atajo global del prompt rápido, en formato de Electron
+   * («Control+Alt+Space»). Sin definir: el de cada sistema; vacío: apagado.
+   */
+  quickHotkey?: string
+  /** El modelo que usó el prompt rápido la última vez. */
+  quickModel?: { providerId: string; model: string } | null
   /** Ejecutable de la shell para las terminales integradas. */
   shellPath?: string
   /** Segundos entre sondeos automáticos de motores locales. 0 lo desactiva. */

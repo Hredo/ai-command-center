@@ -3837,6 +3837,133 @@ app.whenReady().then(async () => {
     g2.asked
   )
   /* -------------------------------------------------------------- *
+   * G3 · Atajo global y prompt rápido                              *
+   * -------------------------------------------------------------- */
+  const mockG3 = await startAgentMock()
+  const { BrowserWindow: BWG3 } = require('electron')
+  const sleepG3 = (n) => new Promise((r) => setTimeout(r, n))
+  const untilG3 = async (fn, ms = 10000) => {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      const v = await fn()
+      if (v) return v
+      await sleepG3(100)
+    }
+    return null
+  }
+  const g3 = await js(`(async () => {
+    const api = window.api
+    const out = {}
+    out.prevBase = (await api.config.get()).data.providers['vllm']?.baseUrl ?? ''
+    await api.providers.setBaseUrl('vllm', 'http://127.0.0.1:${API_PORT}/v1')
+    await api.config.settings({ quickModel: { providerId: 'vllm', model: 'agente-de-prueba' } })
+    out.status = (await api.quick.status()).data
+    await api.config.settings({ quickHotkey: 'Nada+Que+Ver' })
+    out.invalid = (await api.quick.status()).data
+    await api.config.settings({ quickHotkey: '' })
+    out.off = (await api.quick.status()).data
+    await api.config.settings({ quickHotkey: undefined })
+    out.back = (await api.quick.status()).data
+    out.before = window.__accEngine.peekSessions().map((s) => s.id)
+    await api.quick.open()
+    return out
+  })()`)
+
+  const qwin = await untilG3(() => BWG3.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.getURL().includes('#quick')))
+  const qjs = (code) => qwin.webContents.executeJavaScript(code)
+  await untilG3(async () => !qwin.webContents.isLoading() && (await qjs(`Boolean(document.querySelector('[data-quick-input]'))`)))
+  await sleepG3(300)
+  g3.visible = qwin.isVisible()
+  g3.onTop = qwin.isAlwaysOnTop()
+  const ask = (text) =>
+    qjs(`(async () => {
+      const box = document.querySelector('[data-quick-input]')
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, ${JSON.stringify(text)})
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 120))
+      box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    })()`)
+  // Espera a que el modelo esté elegido (el botón de enviar se habilita al escribir).
+  await untilG3(() => qjs(`Boolean(document.querySelector('[data-quick] button[aria-label]')) && !document.querySelector('[data-quick] [data-quick-input]').disabled`))
+  await sleepG3(800)
+  await ask('eco: hola rápido')
+  await untilG3(() => qjs(`document.querySelectorAll('[data-quick-exchange="done"]').length === 1`), 15000)
+  g3.first = await qjs(`document.querySelector('[data-quick-exchange="done"] [data-quick-answer]')?.textContent ?? ''`)
+  await ask('eco: otra')
+  await untilG3(() => qjs(`document.querySelectorAll('[data-quick-exchange="done"]').length === 2`), 15000)
+  g3.second = await qjs(`[...document.querySelectorAll('[data-quick-exchange="done"] [data-quick-answer]')][1]?.textContent ?? ''`)
+  g3.empty = await qjs(`window.api.quick.submit({ prompt: '   ', providerId: 'vllm', model: 'agente-de-prueba' }).then((r) => r.ok ? 'aceptado' : r.error)`)
+
+  // La conversación es de la Consola: una sola, con las dos preguntas.
+  const g3s = await js(`(async () => {
+    const e = window.__accEngine
+    const before = new Set(${JSON.stringify(g3.before)})
+    const made = e.peekSessions().filter((s) => !before.has(s.id))
+    const chat = made[0] ? e.peekChat(made[0].id) : null
+    return { n: made.length, id: made[0]?.id, turns: chat ? chat.turns.map((t) => t.role + ':' + t.content).join(' | ') : null }
+  })()`)
+
+  // «Seguir en la Consola»: se esconde la ventanita y se abre esa conversación.
+  await qjs(`document.querySelector('[data-quick-console]')?.click()`)
+  await sleepG3(500)
+  g3.hiddenAfterConsole = !qwin.isVisible()
+  g3.consoleActive = await js(`(async () => {
+    const end = Date.now() + 5000
+    while (Date.now() < end) {
+      if (document.querySelector('[data-session-item="${g3s.id}"][data-active]')) return true
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    return false
+  })()`)
+
+  // Desde la paleta se abre; Esc la esconde.
+  await js(`(async () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))
+    await new Promise((r) => setTimeout(r, 200))
+    const input = document.querySelector('[data-palette-input]')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'prompt rapido')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 200))
+    const first = document.querySelector('[data-palette-results] [data-palette-index="0"]')
+    window.__g3first = first?.getAttribute('data-palette-item')
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  })()`)
+  g3.paletteFirst = await js(`window.__g3first`)
+  g3.fromPalette = Boolean(await untilG3(() => qwin.isVisible(), 3000))
+  await qjs(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`)
+  await sleepG3(300)
+  g3.escHides = !qwin.isVisible()
+
+  await js(`(async () => {
+    await window.__accEngine.deleteSession(${JSON.stringify(g3s.id ?? '')})
+    await window.api.config.settings({ quickModel: null })
+    await window.api.providers.setBaseUrl('vllm', ${JSON.stringify(g3.prevBase ?? '')})
+    for (const run of (await window.api.runs.query({ search: 'eco: ' })).data.rows ?? []) if (/hola rápido|otra/.test(run.prompt)) await window.api.runs.remove(run.id)
+  })()`)
+  win.show()
+  mockG3.close()
+
+  log(
+    typeof g3.status?.registered === 'boolean' && g3.status.accelerator === g3.status.defaultAccelerator &&
+      g3.invalid?.error === 'invalid' && g3.off?.accelerator === '' && g3.off.registered === false && g3.back?.accelerator === g3.status.defaultAccelerator,
+    'G3: EL ATAJO GLOBAL SE REGISTRA, SE APAGA, VUELVE AL DE SIEMPRE Y DICE SI NO VALE',
+    `${g3.status?.accelerator} registrado:${g3.status?.registered} · inválido:${g3.invalid?.error}`
+  )
+  log(g3.visible && g3.onTop, 'la ventanita se abre encima de todo', JSON.stringify({ visible: g3.visible, onTop: g3.onTop }))
+  log(
+    /Eco 1: hola rápido/.test(g3.first) && /Eco 2: otra/.test(g3.second),
+    'PREGUNTA DESDE LA VENTANITA, VE LA RESPUESTA Y LA SIGUIENTE PREGUNTA CONTINÚA LA MISMA CONVERSACIÓN',
+    `${g3.first.trim()} · ${g3.second.trim()}`
+  )
+  log(
+    g3s.n === 1 && /user:eco: hola rápido \| assistant:Eco 1: hola rápido \| user:eco: otra \| assistant:Eco 2: otra/.test(g3s.turns ?? ''),
+    'LA CONVERSACIÓN QUEDA GUARDADA EN LA CONSOLA',
+    String(g3s.turns)
+  )
+  log(g3.hiddenAfterConsole && g3.consoleActive, '«Seguir en la Consola» esconde la ventanita y abre esa conversación', JSON.stringify({ hidden: g3.hiddenAfterConsole, active: g3.consoleActive }))
+  log(g3.paletteFirst === 'action:quick' && g3.fromPalette && g3.escHides, 'se abre desde la paleta y Esc la esconde', String(g3.paletteFirst))
+  log(g3.empty === 'Escribe algo', 'no se lanza un prompt vacío', String(g3.empty))
+  /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */
   try {

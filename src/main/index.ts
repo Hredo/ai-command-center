@@ -24,6 +24,7 @@ import { startMaintenance, stopMaintenance } from './maintenance'
 import { watchExternal, stopWatchingExternal } from './external'
 import { startQuotas, stopQuotas, pokeQuotas } from './quotas'
 import { initTray, onWindowClose, markQuitting, showWindow, destroyTray } from './tray'
+import { initQuick, unregisterQuickHotkey } from './quick'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
@@ -232,6 +233,8 @@ app.whenReady().then(async () => {
   createWindow()
   if (SELFTEST && mainWindow) void runSelfTest(mainWindow, SELFTEST)
   if (!SELFTEST) initTray({ getWin: () => mainWindow, createWindow, icon })
+  // El atajo global del prompt rápido (Ajustes › Preferencias).
+  if (!SELFTEST) initQuick({ getMain: () => mainWindow, showMain: showWindow })
 
   // Las sesiones de Claude Code que corren fuera de la app —en una terminal o
   // en la app de Claude— se leen de sus transcripciones y entran al histórico
@@ -316,7 +319,10 @@ app.on('before-quit', () => {
 })
 
 // Sin esto, en Windows el icono se queda en la bandeja hasta que pasas el ratón.
-app.on('will-quit', () => destroyTray())
+app.on('will-quit', () => {
+  destroyTray()
+  unregisterQuickHotkey()
+})
 
 // Una sola instancia: si se abre otra, se enfoca la que ya está.
 if (!app.requestSingleInstanceLock()) {
