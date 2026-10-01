@@ -402,7 +402,7 @@ export function FilesPanel({
   return (
     <div ref={panel} className="flex-1 min-h-0 flex" data-files-panel>
       {/* ----------------------------------------------------- Árbol */}
-      <Pane paneKey="files.tree" side="right" className="border-r border-line flex flex-col min-h-0">
+      <Pane paneKey="files.tree" side="right" collapse="tight" label={t('Archivos')} className="border-r border-line bg-void flex flex-col min-h-0">
         <div className="p-2 border-b border-line flex items-center gap-1.5">
           <div className="relative flex-1 min-w-0">
             <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-dim" />

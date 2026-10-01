@@ -261,7 +261,7 @@ export default function Models(): React.JSX.Element {
           </div>
         </div>
 
-        <div className={cx('flex items-center gap-2', tab === 'recommend' && 'hidden')}>
+        <div className={cx('flex items-center gap-2 flex-wrap', tab === 'recommend' && 'hidden')}>
           <div className="relative flex-1 min-w-[200px] max-w-[420px]">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dim" />
             <Input
@@ -285,7 +285,7 @@ export default function Models(): React.JSX.Element {
             onClick={() => setOnlyFree((f) => !f)}
             className={cx(
               'h-9 px-3 rounded-lg border text-[12.5px] flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap',
-              onlyFree ? 'bg-[#0d2019] border-[#194b39] text-ok' : 'bg-raised border-line text-muted hover:text-ink'
+              onlyFree ? 'bg-ok/10 border-ok/30 text-ok' : 'bg-raised border-line text-muted hover:text-ink'
             )}
           >
             <Filter size={13} /> {t('Sólo gratis')}
@@ -294,7 +294,7 @@ export default function Models(): React.JSX.Element {
             onClick={() => setOnlyFav((f) => !f)}
             className={cx(
               'h-9 px-3 rounded-lg border text-[12.5px] flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap',
-              onlyFav ? 'bg-[#221c0b] border-[#4b3d19] text-warn' : 'bg-raised border-line text-muted hover:text-ink'
+              onlyFav ? 'bg-warn/10 border-warn/35 text-warn' : 'bg-raised border-line text-muted hover:text-ink'
             )}
           >
             <Star size={13} /> {t('Favoritos')}
@@ -306,7 +306,7 @@ export default function Models(): React.JSX.Element {
             }}
             className={cx(
               'h-9 px-3 rounded-lg border text-[12.5px] flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap',
-              sort === 'value' ? 'bg-[#0b1d22] border-[#19424b] text-accent' : 'bg-raised border-line text-muted hover:text-ink'
+              sort === 'value' ? 'bg-accent/10 border-accent/35 text-accent' : 'bg-raised border-line text-muted hover:text-ink'
             )}
             title={t('Índice de calidad de Artificial Analysis dividido por el precio mezclado (3 de entrada por 1 de salida)')}
           >
@@ -366,7 +366,7 @@ export default function Models(): React.JSX.Element {
                     <tr
                       key={m.providerId + m.id + i}
                       onClick={() => void openDetail(m)}
-                      className="group border-b border-line-soft hover:bg-[#12151f] cursor-pointer"
+                      className="group border-b border-line-soft hover:bg-raised/60 cursor-pointer"
                       title={t('Ver la ficha del modelo y su enlace')}
                     >
                       <td className="pl-3 pr-2 py-2" onClick={(e) => e.stopPropagation()}>
@@ -376,7 +376,7 @@ export default function Models(): React.JSX.Element {
                             checked={isSelected(m)}
                             onChange={() => toggleSelected(m)}
                             title={t('Añadir al comparador')}
-                            className="accent-[#22d3ee]"
+                            className="accent-[var(--color-accent)]"
                           />
                           <button
                             onClick={() => void toggleFav(m)}
@@ -673,7 +673,7 @@ export default function Models(): React.JSX.Element {
                 <div className="space-y-1.5">
                   <button
                     onClick={() => go(links.primary)}
-                    className="w-full px-3 py-2 rounded-lg border border-line hover:border-[#2c3346] hover:bg-hover flex items-center gap-2.5 text-left"
+                    className="w-full px-3 py-2 rounded-lg border border-line hover:border-dim/60 hover:bg-hover flex items-center gap-2.5 text-left"
                   >
                     <ExternalLink size={13} className="text-accent shrink-0" />
                     <span className="flex-1 min-w-0">
@@ -687,7 +687,7 @@ export default function Models(): React.JSX.Element {
                     <button
                       key={e.url}
                       onClick={() => go(e.url)}
-                      className="w-full px-3 py-2 rounded-lg border border-line hover:border-[#2c3346] hover:bg-hover flex items-center gap-2.5 text-left"
+                      className="w-full px-3 py-2 rounded-lg border border-line hover:border-dim/60 hover:bg-hover flex items-center gap-2.5 text-left"
                     >
                       <Download size={13} className="text-dim shrink-0" />
                       <span className="flex-1 min-w-0">

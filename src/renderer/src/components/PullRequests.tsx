@@ -241,7 +241,7 @@ export function PullRequests({
           {t('Abiertas')} <span className="num">{report.open.length}</span>
         </div>
         {report.open.length ? (
-          <div className="divide-y divide-[#151a26]" data-open-prs>
+          <div className="divide-y divide-line-soft" data-open-prs>
             {report.open.map((pr) => (
               <PullRow key={pr.number} pr={pr} path={path} expandable />
             ))}

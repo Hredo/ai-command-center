@@ -13,11 +13,11 @@ type BtnVariant = 'primary' | 'ghost' | 'outline' | 'danger' | 'subtle'
 type BtnSize = 'sm' | 'md' | 'icon'
 
 const BTN: Record<BtnVariant, string> = {
-  primary: 'bg-accent text-void hover:bg-cyan-300 font-medium',
-  outline: 'border border-line bg-raised hover:bg-hover hover:border-[#2c3245] text-ink',
+  primary: 'bg-accent text-void hover:bg-accent-soft font-medium',
+  outline: 'border border-line bg-raised hover:bg-hover hover:border-dim/60 text-ink',
   ghost: 'hover:bg-hover text-muted hover:text-ink',
   subtle: 'bg-raised hover:bg-hover text-muted hover:text-ink',
-  danger: 'border border-[#4a2530] bg-[#1e1218] text-bad hover:bg-[#2a1620]'
+  danger: 'border border-bad/30 bg-bad/10 text-bad hover:bg-bad/15'
 }
 
 const SIZE: Record<BtnSize, string> = {
@@ -105,11 +105,11 @@ export function Badge({
 }): React.JSX.Element {
   const tones = {
     neutral: 'bg-raised text-muted border-line',
-    ok: 'bg-[#0d2019] text-ok border-[#194b39]',
-    warn: 'bg-[#241a09] text-warn border-[#4a3512]',
-    bad: 'bg-[#241016] text-bad border-[#4a2029]',
-    accent: 'bg-[#082a31] text-accent border-[#12525f]',
-    violet: 'bg-[#1a1330] text-violet border-[#37275c]'
+    ok: 'bg-ok/10 text-ok border-ok/30',
+    warn: 'bg-warn/10 text-warn border-warn/30',
+    bad: 'bg-bad/15 text-bad border-bad/30',
+    accent: 'bg-accent/10 text-accent border-accent/40',
+    violet: 'bg-violet/15 text-violet border-violet/35'
   }
   return (
     <span
@@ -218,7 +218,7 @@ export function Toggle({
       <span
         className={cx(
           'w-9 h-5 rounded-full transition-colors relative shrink-0',
-          checked ? 'bg-accent' : 'bg-[#242a3a]'
+          checked ? 'bg-accent' : 'bg-hover'
         )}
       >
         <span
@@ -297,7 +297,7 @@ export function Empty({
 }): React.JSX.Element {
   return (
     <div className="flex flex-col items-center justify-center text-center py-14 px-6 gap-3">
-      {icon ? <div className="text-[#2a3145]">{icon}</div> : null}
+      {icon ? <div className="text-dim/50">{icon}</div> : null}
       <div className="text-muted font-medium">{title}</div>
       {hint ? <div className="text-[12.5px] text-dim max-w-md leading-relaxed">{hint}</div> : null}
       {action ? <div className="mt-1">{action}</div> : null}
@@ -324,7 +324,7 @@ export function Stat({
     <div className="bg-panel border border-line rounded-xl px-4 py-3.5">
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <div className="text-[11px] uppercase tracking-wider text-dim font-medium truncate">{label}</div>
-        {icon ? <span className="text-[#2f3648] shrink-0">{icon}</span> : null}
+        {icon ? <span className="text-dim/50 shrink-0">{icon}</span> : null}
       </div>
       <div className={cx('num text-[22px] leading-none font-semibold', color)}>{value}</div>
       {sub ? <div className="text-[11.5px] text-dim mt-1.5 truncate">{sub}</div> : null}
@@ -342,14 +342,14 @@ export function Tabs<T extends string>({
   items: { id: T; label: string; count?: number }[]
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-1 p-1 bg-raised border border-line rounded-lg">
+    <div className="tabs-scroll flex items-center gap-1 p-1 bg-raised border border-line rounded-lg max-w-full overflow-x-auto">
       {items.map((it) => (
         <button
           key={it.id}
           onClick={() => onChange(it.id)}
           className={cx(
-            'px-3 h-7 rounded-md text-[12.5px] transition-colors flex items-center gap-1.5',
-            value === it.id ? 'bg-[#252b3c] text-ink' : 'text-muted hover:text-ink'
+            'px-3 h-7 rounded-md text-[12.5px] transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0',
+            value === it.id ? 'bg-hover text-ink' : 'text-muted hover:text-ink'
           )}
         >
           {it.label}
@@ -364,8 +364,8 @@ export function Tabs<T extends string>({
 export function Meter({ value, max, color }: { value: number; max: number; color?: string }): React.JSX.Element {
   const w = max > 0 ? Math.max(2, (value / max) * 100) : 0
   return (
-    <div className="h-1.5 bg-[#1a1e2b] rounded-full overflow-hidden w-full">
-      <div className="h-full rounded-full transition-all" style={{ width: `${w}%`, background: color ?? '#22d3ee' }} />
+    <div className="h-1.5 bg-hover rounded-full overflow-hidden w-full">
+      <div className="h-full rounded-full transition-all" style={{ width: `${w}%`, background: color ?? 'var(--color-accent)' }} />
     </div>
   )
 }

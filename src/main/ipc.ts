@@ -314,7 +314,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     platform: process.platform,
     electron: process.versions.electron,
     node: process.versions.node,
-    providerCount: PROVIDERS.length
+    providerCount: PROVIDERS.length,
+    // El recorrido de bienvenida sale solo en la app instalada. Sin empaquetar
+    // (desarrollo, pruebas) taparía la ventana a quien la está conduciendo, y en
+    // la autoprueba de la CI saldría en las capturas.
+    tour: (app.isPackaged || process.env['ACC_TOUR'] === '1') && !process.env['ACC_SELFTEST']
   }))
   handle('app:openExternal', (url: string) => openExternal(url))
   handle('app:openDataDir', () => shell.openPath(paths.dir))

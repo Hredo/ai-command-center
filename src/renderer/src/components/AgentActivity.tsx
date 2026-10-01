@@ -198,7 +198,7 @@ function Row({
       </button>
 
       {pending ? (
-        <div className="ml-[26px] mr-2 mb-1.5 mt-0.5 px-2.5 py-2 rounded border border-[#4a3512] bg-[#1a1409] flex items-center gap-2 flex-wrap">
+        <div className="ml-[26px] mr-2 mb-1.5 mt-0.5 px-2.5 py-2 rounded border border-warn/30 bg-warn/10 flex items-center gap-2 flex-wrap">
           <span className="text-[11.5px] text-warn">
             {pendingText(step, t)}
           </span>
@@ -233,7 +233,7 @@ function Row({
           className={cx(
             'ml-[26px] mr-2 mb-1 px-2.5 py-1.5 rounded border text-[11.5px] whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto',
             step.kind === 'thinking'
-              ? 'bg-[#120e1f] border-[#2a1f4a] text-muted'
+              ? 'bg-violet/10 border-violet/30 text-muted'
               : 'bg-void border-line font-mono text-muted'
           )}
         >

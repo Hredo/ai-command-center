@@ -9,9 +9,9 @@
 import type { Appearance, EditorPrefs } from './types'
 
 export const DEFAULT_APPEARANCE: Appearance = {
-  theme: 'command',
+  theme: 'mesa',
   accent: '',
-  uiFont: "'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif",
+  uiFont: "'Atkinson Hyperlegible Next Variable', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif",
   uiFontSize: 13.5,
   uiScale: 100,
   density: 'cozy',
@@ -21,6 +21,9 @@ export const DEFAULT_APPEARANCE: Appearance = {
   slimScrollbars: false,
   panelOpacity: 1
 }
+
+/** La tipografía de la interfaz hasta la 0.7: quien la tenga sin tocar pasa a la nueva. */
+export const LEGACY_UI_FONT = "'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif"
 
 export const DEFAULT_EDITOR: EditorPrefs = {
   fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, monospace",

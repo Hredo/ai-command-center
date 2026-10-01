@@ -225,7 +225,7 @@ export function AiReview({
               return (
                 <div key={f.path} className="border border-line rounded-lg overflow-hidden">
                   <button
-                    className="w-full flex items-center gap-2 px-3 py-2 bg-raised text-left hover:bg-[#1a1d29]"
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-raised text-left hover:bg-hover"
                     onClick={() =>
                       setExpanded((s) => {
                         const n = new Set(s)
@@ -242,10 +242,10 @@ export function AiReview({
                     <span className="text-bad text-[11px] num">−{f.removed}</span>
                   </button>
                   {open && !f.binary ? (
-                    <div className="font-mono text-[11.5px] leading-[1.55] bg-[#07080c] overflow-x-auto">
+                    <div className="font-mono text-[11.5px] leading-[1.55] bg-[var(--editor-bg)] overflow-x-auto">
                       {f.hunks.map((h, hi) => (
                         <div key={hi}>
-                          <div className="px-3 py-0.5 text-violet bg-[#110f1c] text-[11px]">{h.header}</div>
+                          <div className="px-3 py-0.5 text-violet bg-violet/10 text-[11px]">{h.header}</div>
                           {h.lines.map((l) => {
                             const k = lineKey(f.path, l)
                             const cs = byLine.get(k) ?? []
@@ -254,8 +254,8 @@ export function AiReview({
                                 <div
                                   className={cx(
                                     'grid grid-cols-[42px_42px_14px_1fr]',
-                                    l.kind === 'add' && 'bg-[#0b1a12]',
-                                    l.kind === 'del' && 'bg-[#1c0e12]',
+                                    l.kind === 'add' && 'bg-ok/10',
+                                    l.kind === 'del' && 'bg-bad/10',
                                     cs.length > 0 && 'shadow-[inset_2px_0_0_var(--color-accent)]'
                                   )}
                                 >
@@ -264,7 +264,7 @@ export function AiReview({
                                   <span className={cx('select-none', l.kind === 'add' ? 'text-ok' : l.kind === 'del' ? 'text-bad' : 'text-dim')}>
                                     {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}
                                   </span>
-                                  <span className={cx('whitespace-pre pr-3', l.kind === 'add' ? 'text-[#b5f5c8]' : l.kind === 'del' ? 'text-[#f5b5bd]' : 'text-muted')}>
+                                  <span className={cx('whitespace-pre pr-3', l.kind === 'add' ? 'text-ok' : l.kind === 'del' ? 'text-bad' : 'text-muted')}>
                                     {l.text || ' '}
                                   </span>
                                 </div>

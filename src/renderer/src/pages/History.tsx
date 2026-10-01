@@ -113,7 +113,7 @@ function Detail({ run, onClose, onDelete }: { run: RunRecord | null; onClose: ()
           <div className="px-5 py-4">
             <div className="text-[11px] uppercase tracking-wider text-dim mb-2">{t('Respuesta')}</div>
             {run.error ? (
-              <div className="bg-[#1a1015] border border-[#4a2029] rounded-lg px-3 py-2.5 flex items-start gap-2">
+              <div className="bg-bad/10 border border-bad/30 rounded-lg px-3 py-2.5 flex items-start gap-2">
                 <AlertTriangle size={14} className="text-bad shrink-0 mt-0.5" />
                 <span className="text-[12px] text-muted break-words">{run.error}</span>
               </div>
@@ -326,7 +326,7 @@ export default function History(): React.JSX.Element {
                     <tr
                       key={r.id}
                       onClick={() => setSelected(r)}
-                      className="border-b border-line-soft hover:bg-[#12151f] cursor-pointer"
+                      className="border-b border-line-soft hover:bg-raised/60 cursor-pointer"
                     >
                       <td className="pl-4 py-2 num text-[11.5px] text-dim whitespace-nowrap">
                         {dateTime(r.createdAt)}

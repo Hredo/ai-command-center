@@ -80,7 +80,7 @@ function AgentOutput({ sessionId }: { sessionId: string | null }): React.JSX.Ele
         const el = ref.current
         if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
       }}
-      className="flex-1 min-h-0 overflow-y-auto bg-[#07080c] border border-line rounded-lg p-3 font-mono text-[12px] leading-[1.6]"
+      className="flex-1 min-h-0 overflow-y-auto bg-[var(--editor-bg)] border border-line rounded-lg p-3 font-mono text-[12px] leading-[1.6]"
     >
       {turns.length === 0 ? (
         <span className="text-dim">{t('La salida del agente aparecerá aquí.')}</span>
@@ -105,7 +105,7 @@ function AgentOutput({ sessionId }: { sessionId: string | null }): React.JSX.Ele
                   <summary className="text-[11.5px] text-violet cursor-pointer">
                     {t('Razonamiento del agente')}
                   </summary>
-                  <div className="mt-1 text-[11.5px] text-dim whitespace-pre-wrap border-l-2 border-[#37275c] pl-2.5">
+                  <div className="mt-1 text-[11.5px] text-dim whitespace-pre-wrap border-l-2 border-violet/35 pl-2.5">
                     {turn.reasoning}
                   </div>
                 </details>
@@ -519,7 +519,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
   return (
     <div className="h-full flex">
       {/* ------------------------------------------------ Lista */}
-      <Pane paneKey="projects.list" side="right" className="border-r border-line bg-void flex flex-col">
+      <Pane paneKey="projects.list" side="right" collapse="narrow" label={t('Proyectos')} className="border-r border-line bg-void flex flex-col">
         <div className="h-12 px-4 border-b border-line flex items-center justify-between shrink-0">
           <span className="font-medium text-[13px]">{t('Proyectos')}</span>
           <div className="flex items-center gap-0.5">
@@ -569,7 +569,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                 key={p.id}
                 className={cx(
                   'group w-full px-3 py-2 flex items-center gap-2.5 transition-colors relative',
-                  selected === p.id ? 'bg-raised' : 'hover:bg-[#12151f]'
+                  selected === p.id ? 'bg-raised' : 'hover:bg-raised/60'
                 )}
               >
                 {selected === p.id ? (
@@ -763,7 +763,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
 
                   <Panel className="flex flex-col">
                     <PanelHeader title={t('Actividad reciente')} icon={<Sparkles size={14} />} />
-                    <div className="divide-y divide-[#171a26] max-h-[300px] overflow-y-auto">
+                    <div className="divide-y divide-line-soft max-h-[300px] overflow-y-auto">
                       {projectRuns.length === 0 ? (
                         <div className="px-4 py-6 text-[12.5px] text-dim text-center">
                           {t('Todavía no has lanzado nada sobre este proyecto.')}
@@ -813,7 +813,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                               })
                             }
                           }}
-                          className="px-2 py-1 bg-raised border border-line rounded-md text-[11.5px] font-mono hover:border-[#2c3346] hover:text-accent transition-colors flex items-center gap-1.5"
+                          className="px-2 py-1 bg-raised border border-line rounded-md text-[11.5px] font-mono hover:border-dim/60 hover:text-accent transition-colors flex items-center gap-1.5"
                         >
                           <Play size={9} />
                           {k}
@@ -867,7 +867,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                   </div>
                   <button
                     onClick={() => void openProjectTerm()}
-                    className="px-3 py-1.5 bg-raised border border-line rounded-md text-[12px] hover:border-[#2c3346] hover:text-accent transition-colors"
+                    className="px-3 py-1.5 bg-raised border border-line rounded-md text-[12px] hover:border-dim/60 hover:text-accent transition-colors"
                   >
                     {t('Reintentar')}
                   </button>
@@ -1082,20 +1082,20 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                       {t('Trabaja en')} <span className="font-mono text-muted">{project.path}</span>
                       {contextMax ? (
                         <>
-                          <span className="text-[#3a4255]">·</span>
+                          <span className="text-dim/60">·</span>
                           {t('contexto de {n} tokens, el máximo del modelo', { n: contextMax.toLocaleString() })}
                         </>
                       ) : null}
                       {agentSession ? (
                         <>
-                          <span className="text-[#3a4255]">·</span>
+                          <span className="text-dim/60">·</span>
                           <MessagesSquare size={11} />
                           {t('la conversación se guarda y se retoma desde la Consola')}
                         </>
                       ) : null}
                       {cliRunning ? (
                         <>
-                          <span className="text-[#3a4255]">·</span>
+                          <span className="text-dim/60">·</span>
                           <Dot tone="ok" pulse /> {t('sigue corriendo aunque cambies de pantalla')}
                         </>
                       ) : null}

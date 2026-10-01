@@ -465,6 +465,8 @@ process.env.GROQ_API_KEY = 'clave-de-prueba'
 process.env.ACC_SCHEDULE_TICK_MS = '500'
 // El Linux de las pruebas no tiene quien pinte la bandeja: aquí se da por hecho que sí.
 process.env.ACC_TRAY_HOST = '1'
+// El recorrido de bienvenida sólo sale solo en la app instalada; aquí se pide, para probarlo.
+process.env.ACC_TOUR = '1'
 
 // Un catálogo de modelos de mentira (y reciente, para que no se descargue):
 // el mismo modelo en models.dev, con sus capacidades, y en OpenRouter, con
@@ -490,6 +492,126 @@ app.whenReady().then(async () => {
   const win = await waitWindow()
   const js = (code) => win.webContents.executeJavaScript(code)
   const ctx = JSON.stringify({ repo: REPO, fixtures: FIXTURES.replace(/\\/g, '/'), home: HOME })
+
+  /* -------------------------------------------------------------- *
+   * T1 · El recorrido de bienvenida sale solo la primera vez, y la  *
+   *      ayuda lo explica todo                                     *
+   * -------------------------------------------------------------- */
+  const reloadT1 = async () => {
+    win.reload()
+    const end = Date.now() + 15000
+    while (Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 250))
+      const ready = await js(`Boolean(window.__accEngine && window.__accHelp && document.querySelector('[data-sidebar]'))`).catch(() => false)
+      if (ready) break
+    }
+    await new Promise((r) => setTimeout(r, 600))
+  }
+  // Como la primera vez: sin el recorrido hecho, con la mesa y el menú de fábrica.
+  await js(`window.api.config.settings({ tourDone: false, workspace: undefined, layouts: [], nav: undefined, appearance: undefined })`)
+  await reloadT1()
+  const t1 = await js(`(async () => {
+    const api = window.api
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    // Sale solo, sin pedirlo.
+    const tour = await until(() => document.querySelector('[data-tour]'))
+    out.auto = Boolean(tour)
+    out.first = document.querySelector('[data-tour-card]')?.textContent ?? ''
+    out.looks = [...document.querySelectorAll('[data-look]')].map((b) => b.getAttribute('data-look')).join(',')
+    // Elegir el aspecto cambia el tema al momento.
+    out.themeBefore = document.documentElement.dataset.theme
+    document.querySelector('[data-look="mesa-clara"]')?.click()
+    out.themeLight = await until(() => (document.documentElement.dataset.theme === 'mesa-clara' ? document.documentElement.dataset.scheme : null), 3000)
+    document.querySelector('[data-look="mesa"]')?.click()
+    await until(() => document.documentElement.dataset.theme === 'mesa', 3000)
+    // Los pasos señalan lo que explican.
+    const next = () => document.querySelector('[data-tour-next-btn]')?.click()
+    const steps = []
+    for (let i = 1; i <= 6; i++) {
+      next()
+      await until(() => document.querySelector('[data-tour]')?.getAttribute('data-tour-step') === String(i), 3000)
+      await sleep(120)
+      steps.push((document.querySelector('[data-tour-card] h2')?.textContent ?? '') + (document.querySelector('[data-tour] .border-accent.pointer-events-none') ? '*' : ''))
+    }
+    out.steps = steps.join(' | ')
+    // Con la flecha atrás se vuelve; Esc no hace falta: el último paso lleva a Cuentas.
+    document.querySelector('[data-tour-back]')?.click()
+    out.back = await until(() => document.querySelector('[data-tour]')?.getAttribute('data-tour-step') === '5', 3000) ? true : false
+    next()
+    await until(() => document.querySelector('[data-tour-go="accounts"]'), 3000)
+    document.querySelector('[data-tour-go="accounts"]')?.click()
+    out.closed = Boolean(await until(() => !document.querySelector('[data-tour]'), 3000))
+    out.accounts = Boolean(await until(() => document.querySelector('[data-page="settings"]:not([hidden]) [data-accounts]'), 5000))
+    out.done = await until(async () => (await api.config.get()).data.settings.tourDone === true, 3000)
+    return out
+  })()`)
+  await reloadT1()
+  const t1b = await js(`(async () => {
+    const api = window.api
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 8000) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    // La segunda vez ya no sale.
+    await sleep(2200)
+    out.again = Boolean(document.querySelector('[data-tour]'))
+    // La ayuda: el botón de la barra, el buscador y cada tema.
+    document.querySelector('[data-open-help]')?.click()
+    out.open = Boolean(await until(() => document.querySelector('[data-help]')))
+    const items = () => [...document.querySelectorAll('[data-help-item]')].map((b) => b.getAttribute('data-help-item'))
+    out.topics = items().length
+    const set = (el, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })) }
+    set(document.querySelector('[data-help-search]'), 'worktree')
+    out.search = await until(() => { const l = items(); return l.length && l.length < out.topics ? l.join(',') : null }, 3000)
+    set(document.querySelector('[data-help-search]'), 'zzzz no existe')
+    out.none = Boolean(await until(() => items().length === 0, 3000))
+    set(document.querySelector('[data-help-search]'), '')
+    await until(() => items().length === out.topics, 3000)
+    // Todos los temas tienen texto de verdad, y los que llevan a una sección, su botón.
+    const thin = []
+    for (const id of items()) {
+      document.querySelector('[data-help-item="' + id + '"]')?.click()
+      const shown = await until(() => { const a = document.querySelector('[data-help-topic="' + id + '"]'); return a && a.querySelector('.md') ? a : null }, 4000)
+      if (!shown || (shown.textContent ?? '').length < 120) thin.push(id)
+    }
+    out.thin = thin.join(',')
+    document.querySelector('[data-help-item="tasks"]')?.click()
+    const go = await until(() => document.querySelector('[data-help-topic="tasks"] [data-help-go]'), 3000)
+    out.goLabel = go?.textContent?.trim()
+    go?.click()
+    out.went = Boolean(await until(() => !document.querySelector('[data-help]') && document.querySelector('[data-page="tasks"]:not([hidden])'), 4000))
+    // F1 la abre y la cierra; desde ella se repite el recorrido.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', bubbles: true }))
+    out.f1 = Boolean(await until(() => document.querySelector('[data-help]'), 3000))
+    document.querySelector('[data-help-tour]')?.click()
+    out.replay = Boolean(await until(() => document.querySelector('[data-tour]') && !document.querySelector('[data-help]'), 3000))
+    document.querySelector('[data-tour-skip]')?.click()
+    out.skipped = Boolean(await until(() => !document.querySelector('[data-tour]'), 3000))
+    window.__accEngine.navigate('dashboard')
+    return out
+  })()`)
+
+  log(
+    t1.auto && /Te damos la bienvenida/.test(t1.first) && t1.looks === 'mesa,mesa-clara,command,github-dark',
+    'T1: LA PRIMERA VEZ SALE SOLO EL RECORRIDO DE BIENVENIDA, CON EL ASPECTO A ELEGIR',
+    t1.looks
+  )
+  log(t1.themeBefore === 'mesa' && t1.themeLight === 'light', 'el tema de fábrica es el nuevo y elegir otro en el recorrido lo cambia al momento', `${t1.themeBefore} → ${t1.themeLight}`)
+  log(
+    t1.steps === 'Las secciones* | Varias secciones a la vez* | Ir a cualquier sitio* | Lo que está pasando* | La ayuda, siempre aquí* | Listo. ¿Por dónde empiezas?' && t1.back,
+    'CADA PASO SEÑALA EN LA PROPIA INTERFAZ LO QUE EXPLICA, Y SE PUEDE VOLVER ATRÁS',
+    t1.steps
+  )
+  log(t1.closed && t1.accounts && t1.done === true, 'el último paso lleva a conectar las IAs y deja apuntado que el recorrido ya se hizo', JSON.stringify({ closed: t1.closed, accounts: t1.accounts, done: t1.done }))
+  log(t1b.again === false, 'LA SEGUNDA VEZ YA NO SALE')
+  log(
+    t1b.open && t1b.topics >= 18 && t1b.thin === '' && /tasks/.test(t1b.search ?? '') && t1b.none,
+    'EL BOTÓN DE AYUDA ABRE LA DOCUMENTACIÓN: TODOS LOS TEMAS TIENEN TEXTO Y EL BUSCADOR LOS FILTRA',
+    `${t1b.topics} temas · «worktree» → ${t1b.search}`
+  )
+  log(t1b.goLabel === 'Abrir Tareas' && t1b.went, 'cada tema lleva a su sección', String(t1b.goLabel))
+  log(t1b.f1 && t1b.replay && t1b.skipped, 'F1 abre la ayuda y desde ella se repite el recorrido', JSON.stringify({ f1: t1b.f1, replay: t1b.replay }))
 
   /* -------------------------------------------------------------- *
    * H2 · Poda del histórico                                        *
@@ -810,11 +932,16 @@ app.whenReady().then(async () => {
     ] })
     await api.quotas.get(true)
     const sid = await engine.newSession('cli', { cliAgentId: 'claude-cupo' })
+    // La conversación tiene que existir y estar libre antes de cada turno: si no, el envío no sale.
+    const free = async () => { for (let i = 0; i < 100; i++) { const c = engine.peekChat(sid); if (c && !c.runningRunId) return; await wait(50) } }
+    await free()
     const r1 = await engine.sendCli(sid, { prompt: 'uno', agentId: 'claude-cupo', projectPath: repo })
     await wait(1200)
     const after1 = (await api.quotas.get(true)).data
+    await free()
     const r2 = await engine.sendCli(sid, { prompt: 'dos', agentId: 'claude-cupo', projectPath: repo })
     await wait(1200)
+    await free()
     const r3 = await engine.sendCli(sid, { prompt: 'tres', agentId: 'claude-cupo', projectPath: repo })
 
     // Una llamada por API (dinero de verdad) cuenta en un presupuesto de proveedor.
@@ -844,7 +971,7 @@ app.whenReady().then(async () => {
   log(
     b.r3?.status === 'error' && /Presupuesto agotado/.test(b.r3?.error ?? ''),
     'CON EL PRESUPUESTO AGOTADO Y EL FRENO PUESTO, NO SE LANZA',
-    (b.r3?.error ?? '').slice(0, 80)
+    b.r3 ? `${b.r3.status}: ${(b.r3.error ?? '').slice(0, 80)}` : `sin ejecución (r1 ${b.r1?.status}/${b.r1?.costTotal}, r2 ${b.r2?.status}/${b.r2?.costTotal})`
   )
   log(
     b.alerts.some((a) => a.quotaId === 'budget.b-agente' && a.level === 50) && b.alerts.some((a) => a.quotaId === 'budget.b-agente' && a.level === 100),
@@ -4160,8 +4287,8 @@ app.whenReady().then(async () => {
     const selects = modal ? [...modal.querySelectorAll('select')] : []
     const projectSel = selects[0]
     if (projectSel) { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(projectSel, 'proyecto-g5'); projectSel.dispatchEvent(new Event('change', { bubbles: true })) }
-    await sleep(100)
-    const agentSel = selects[1]
+    await sleep(250)
+    const agentSel = [...(document.querySelector('[data-schedule-fields]')?.closest('.fixed')?.querySelectorAll('select') ?? [])][1]
     if (agentSel) { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(agentSel, 'cli:tarea-g5'); agentSel.dispatchEvent(new Event('change', { bubbles: true })) }
     set(document.querySelector('[data-task-prompt]'), 'desde el formulario zq5')
     set(document.querySelector('[data-schedule-name]'), 'Formulario zq5')
@@ -4172,12 +4299,13 @@ app.whenReady().then(async () => {
     out.formNext = document.querySelector('[data-form-next]')?.textContent ?? ''
     document.querySelector('[data-task-submit]')?.click()
     const saved = await until(async () => (await api.config.get()).data.schedules?.find((s) => s.name === 'Formulario zq5'))
+    if (!saved) out.formWhy = [...document.querySelectorAll('.fixed')].map((x) => (x.textContent ?? '').slice(0, 160)).join(' || ')
     out.form = saved ? { repeat: saved.repeat, time: saved.time, agent: saved.agent, worktree: saved.worktree, project: saved.projectId } : null
     out.formLaunched = engine.peekSessions().some((s) => !before.has(s.id) && s.title.includes('Formulario zq5'))
     out.login = (await api.app.loginItem()).data
 
     // Limpieza.
-    for (const s of (await api.config.get()).data.schedules ?? []) if (s.id.startsWith('g5-') || s.name === 'Formulario zq5') await api.schedules.remove(s.id)
+    for (const s of (await api.config.get()).data.schedules ?? []) if (s.id.startsWith('g5-') || s.name === 'Formulario zq5' || s.prompt === 'desde el formulario zq5') await api.schedules.remove(s.id)
     for (const s of engine.peekSessions()) if (!before.has(s.id)) await engine.deleteSession(s.id)
     await api.agents.removeCli('tarea-g5')
     await api.projects.remove('proyecto-g5')
@@ -4207,7 +4335,7 @@ app.whenReady().then(async () => {
   log(
     g5.form?.repeat === 'daily' && g5.form.time === '22:45' && g5.form.agent === 'cli:tarea-g5' && g5.form.worktree && !g5.formLaunched && /La próxima/.test(g5.formNext),
     'EL FORMULARIO PROGRAMA EN VEZ DE LANZAR Y DICE CUÁNDO TOCA',
-    `${JSON.stringify(g5.form)} · ${g5.formNext}`
+    `${JSON.stringify(g5.form)} · ${g5.formNext}${g5.formWhy ? ' · ' + g5.formWhy : ''}`
   )
   log(g5.login?.supported === false && g5.login.reason === 'dev', 'abrir al iniciar sesión sólo se ofrece en la app instalada', JSON.stringify(g5.login))
   /* -------------------------------------------------------------- *
@@ -5106,6 +5234,223 @@ app.whenReady().then(async () => {
     p3Or.auth.every((a) => a === 'Bearer sk-or-v1-clave-p3-0000'),
     'la clave sólo viaja al propio OpenRouter (aquí, su doble de pruebas)',
     `${p3Or.auth.length} consultas`
+  )
+  /* -------------------------------------------------------------- *
+   * T2 · La mesa de trabajo: varias secciones a la vez, que se      *
+   *      dividen, se arrastran, se guardan y se recuerdan           *
+   * -------------------------------------------------------------- */
+  const t2 = await js(`(async () => {
+    const api = window.api
+    const wb = window.__accWorkspace
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 6000) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await fn(); if (v) return v; await sleep(60) } return null }
+    const out = {}
+    const panes = () => Number(document.querySelector('[data-workbench]')?.getAttribute('data-panes'))
+    const shown = () => [...document.querySelectorAll('[data-page]')].filter((p) => !p.hidden).map((p) => p.getAttribute('data-page')).sort().join(',')
+    const box = (page) => document.querySelector('[data-page="' + page + '"]')?.getBoundingClientRect()
+    const headers = () => [...document.querySelectorAll('[data-pane-header]')].map((h) => h.getAttribute('data-pane-header') + (h.hasAttribute('data-focused') ? '*' : '')).join(',')
+    wb.applyPresetLayout('single')
+    // Lo último usado, en un orden conocido: es lo que entra al partir.
+    wb.openSection('dashboard')
+    wb.openSection('chat')
+    await until(() => shown() === 'chat')
+    out.single = panes() + ':' + headers()
+    const firstLeaf = (n) => (n.kind === 'leaf' ? n : firstLeaf(n.a))
+
+    // Lo que hay escrito no se pierde al cambiar la distribución: la sección no se vuelve a montar.
+    const area = await until(() => document.querySelector('[data-page="chat"] textarea'))
+    if (area) area.__marca = 'sigo-aqui'
+
+    // 1. El botón de la barra: «Dos columnas» pone otra sección al lado.
+    document.querySelector('[data-layout-menu]')?.click()
+    const preset = await until(() => document.querySelector('[data-layout-popover] [data-preset="columns"]'))
+    out.presets = [...document.querySelectorAll('[data-layout-popover] [data-preset]')].map((b) => b.getAttribute('data-preset')).join(',')
+    preset?.click()
+    await until(() => panes() === 2)
+    const second = wb.peek().ws.root.b?.page
+    out.columns = { panes: panes(), headers: headers(), sideBySide: Math.abs(box('chat').right - box(second).left) < 3 && Math.abs(box('chat').top - box(second).top) < 2 }
+    document.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    // 2. El menú: un clic abre en el panel activo; Ctrl+clic, al lado; una que ya está a la vista no se duplica.
+    wb.focusPane(wb.peek().ws.root.a.id)
+    document.querySelector('[data-nav="terminal"]')?.click()
+    await until(() => shown().includes('terminal'))
+    out.replace = shown()
+    document.querySelector('[data-nav="history"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    await until(() => panes() === 3)
+    out.beside = { panes: panes(), shown: shown(), focus: headers().split(',').find((h) => h.endsWith('*')) }
+    document.querySelector('[data-nav="terminal"]')?.click()
+    await sleep(150)
+    out.noDup = { panes: panes(), focus: headers().split(',').find((h) => h.endsWith('*')) }
+    out.navState = [...document.querySelectorAll('[data-nav][data-nav-state]')].map((b) => b.getAttribute('data-nav') + ':' + b.getAttribute('data-nav-state')).sort().join(',')
+
+    // 3. Cerrar un panel con su ✕: el de al lado se queda con el hueco.
+    document.querySelector('[data-pane-header="history"] [data-pane-close]')?.click()
+    await until(() => panes() === 2)
+    out.closed = shown()
+
+    // 4. Arrastrar una sección del menú y soltarla en el borde de abajo de un panel lo parte.
+    const target = wb.peek().ws.focus
+    wb.setDrag('tasks')
+    const drop = await until(() => document.querySelector('[data-drop-layer] [data-drop-pane="terminal"]'))
+    const r = drop.getBoundingClientRect()
+    const dt = new DataTransfer()
+    const at = { clientX: r.left + r.width / 2, clientY: r.bottom - 12, bubbles: true, cancelable: true, dataTransfer: dt }
+    drop.dispatchEvent(new DragEvent('dragover', at))
+    await sleep(80)
+    out.dropHint = drop.textContent
+    drop.dispatchEvent(new DragEvent('drop', at))
+    await until(() => panes() === 3)
+    const bt = box('terminal'), bk = box('tasks')
+    out.dropped = { panes: panes(), below: Math.abs(bt.bottom + 30 - bk.top) < 4 && Math.abs(bt.left - bk.left) < 2, layer: Boolean(document.querySelector('[data-drop-layer]')) }
+    // Soltarla en el centro de otro panel las intercambia.
+    wb.dropSection('tasks', wb.peek().ws.root.kind === 'split' ? (wb.peek().ws.root.a.kind === 'leaf' ? wb.peek().ws.root.a.id : wb.peek().ws.root.b.id) : target, 'center')
+    await sleep(150)
+    out.swapped = shown()
+
+    // 5. El tirador reparte el espacio y se recuerda.
+    const rootId = wb.peek().ws.root.id
+    const handle = document.querySelector('[data-split-handle="' + rootId + '"]')
+    out.handle = Boolean(handle)
+    wb.resizeSplit(rootId, 0.7, true)
+    await sleep(120)
+    const host = document.querySelector('[data-workbench]').getBoundingClientRect()
+    const firstPage = firstLeaf(wb.peek().ws.root.a).page
+    out.ratio = firstPage ? Math.round((box(firstPage).width / host.width) * 100) : null
+    handle?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await sleep(120)
+    out.even = firstPage ? Math.round((box(firstPage).width / host.width) * 100) : null
+
+    // 6. Guardar la distribución con nombre, cambiar y volver a ella.
+    document.querySelector('[data-layout-menu]')?.click()
+    const name = await until(() => document.querySelector('[data-layout-name]'))
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(name, 'Mi mesa zq9')
+    name.dispatchEvent(new Event('input', { bubbles: true }))
+    await sleep(80)
+    document.querySelector('[data-layout-save]')?.click()
+    out.saved = Boolean(await until(() => document.querySelector('[data-saved-layout="Mi mesa zq9"]')))
+    const before = shown()
+    document.querySelector('[data-layout-popover] [data-preset="single"]')?.click()
+    await until(() => panes() === 1)
+    out.one = panes()
+    document.querySelector('[data-saved-layout="Mi mesa zq9"] button')?.click()
+    await until(() => panes() === 3)
+    out.restored = shown() === before
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    // 7. Atajos: F6 pasa de panel; Ctrl+Mayús+W lo cierra; Ctrl+\\ parte.
+    const f0 = wb.peek().ws.focus
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', bubbles: true }))
+    await sleep(80)
+    out.f6 = wb.peek().ws.focus !== f0
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'W', ctrlKey: true, shiftKey: true, bubbles: true }))
+    await until(() => panes() === 2)
+    out.closeKey = panes()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '\\\\', code: 'Backslash', ctrlKey: true, bubbles: true }))
+    await until(() => panes() === 3)
+    out.splitKey = panes()
+
+    // 8. En un panel estrecho la lista y el detalle de la Consola se pliegan en pestañas que se abren por encima.
+    wb.applyPresetLayout('single')
+    wb.openSection('chat')
+    wb.applyPresetLayout('grid')
+    await until(() => panes() === 4)
+    // La columna de la Consola, bien estrecha, sea cual sea el tamaño de la ventana.
+    wb.resizeSplit(wb.peek().ws.root.id, 0.3, true)
+    await until(() => document.querySelector('[data-page="chat"]')?.getAttribute('data-w') === 'tight', 3000)
+    const rail = await until(() => document.querySelector('[data-page="chat"] [data-pane-rail="chat.detail"]'), 4000)
+    out.rails = [...document.querySelectorAll('[data-page="chat"] [data-pane-rail]')].map((b) => b.getAttribute('data-pane-rail')).sort().join(',')
+    out.w = document.querySelector('[data-page="chat"]')?.getAttribute('data-w')
+    rail?.click()
+    out.drawer = Boolean(await until(() => { const d = document.querySelector('[data-page="chat"] [data-pane-drawer="chat.detail"]'); return d && !d.hidden }, 3000))
+    out.four = { panes: panes(), max: wb.splitPane('row') === false }
+    out.kept = document.querySelector('[data-page="chat"] textarea')?.__marca === 'sigo-aqui'
+
+    // 9. El menú a tu gusto: esconder una sección y cambiar el orden; los atajos siguen al orden.
+    const navIds = () => [...document.querySelectorAll('[data-sidebar] [data-nav]')].map((b) => b.getAttribute('data-nav')).join(',')
+    out.navBefore = navIds()
+    const st = wb.peek()
+    wb.setNav(['terminal', ...st.navOrder.filter((p) => p !== 'terminal')], ['house'])
+    await sleep(150)
+    out.navAfter = navIds()
+    wb.applyPresetLayout('single')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '1', ctrlKey: true, bubbles: true }))
+    await until(() => shown() === 'terminal', 3000)
+    out.ctrl1 = shown()
+    // Lo guardado: la mesa, las distribuciones y el menú están en la configuración.
+    wb.applyPresetLayout('columns')
+    await sleep(700)
+    const s = (await api.config.get()).data.settings
+    out.persisted = { panes: s.workspace?.root?.kind, layouts: (s.layouts ?? []).map((l) => l.name).join(','), hidden: (s.nav?.hidden ?? []).join(','), first: s.nav?.order?.[0] }
+    out.beforeReload = shown()
+    return out
+  })()`)
+  // 10. Al volver a abrir la app, la mesa está como la dejaste.
+  await reloadT1()
+  const t2b = await js(`(async () => {
+    const wb = window.__accWorkspace
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 6000) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await fn(); if (v) return v; await sleep(60) } return null }
+    const shown = () => [...document.querySelectorAll('[data-page]')].filter((p) => !p.hidden).map((p) => p.getAttribute('data-page')).sort().join(',')
+    await until(() => Number(document.querySelector('[data-workbench]')?.getAttribute('data-panes')) === 2)
+    const out = { shown: shown(), nav: [...document.querySelectorAll('[data-sidebar] [data-nav]')].map((b) => b.getAttribute('data-nav')).join(',') }
+    // Y se deja todo como venía para las demás baterías.
+    wb.resetNav()
+    wb.removeLayout(wb.peek().layouts[0]?.id)
+    wb.applyPresetLayout('single')
+    wb.openSection('dashboard')
+    await sleep(700)
+    out.clean = JSON.stringify({ k: wb.peek().ws.root.kind, l: wb.peek().layouts.length })
+    return out
+  })()`)
+
+  log(t2.single === '1:' && t2.presets === 'single,columns,rows,side,grid', 'T2: CON UNA SOLA SECCIÓN NO HAY CABECERAS; EL BOTÓN DE LA BARRA OFRECE LAS DISTRIBUCIONES', t2.presets)
+  log(
+    t2.columns?.panes === 2 && t2.columns.sideBySide && /chat/.test(t2.columns.headers),
+    '«DOS COLUMNAS» PONE OTRA SECCIÓN AL LADO, CADA UNA CON SU CABECERA',
+    JSON.stringify(t2.columns)
+  )
+  log(
+    /terminal/.test(t2.replace) && !/chat/.test(t2.replace) && t2.beside?.panes === 3 && /history/.test(t2.beside.shown) && t2.beside.focus === 'history*',
+    'UN CLIC EN EL MENÚ ABRE EN EL PANEL ACTIVO Y CTRL+CLIC ABRE AL LADO',
+    `${t2.replace} → ${t2.beside?.shown}`
+  )
+  log(
+    t2.noDup?.panes === 3 && t2.noDup.focus === 'terminal*' && /terminal:focus/.test(t2.navState) && /history:shown/.test(t2.navState),
+    'pedir una sección que ya está a la vista lleva a su panel, no la duplica; el menú marca las que se ven',
+    t2.navState
+  )
+  log(t2.closed && !/history/.test(t2.closed) && t2.closed.split(',').length === 2, 'la ✕ de la cabecera cierra el panel', t2.closed)
+  log(
+    /Abrir abajo/.test(t2.dropHint ?? '') && t2.dropped?.panes === 3 && t2.dropped.below && !t2.dropped.layer,
+    'ARRASTRAR UNA SECCIÓN Y SOLTARLA EN EL BORDE DE UN PANEL LO PARTE POR ESE LADO',
+    JSON.stringify(t2.dropped) + ' · ' + t2.dropHint
+  )
+  log(t2.swapped && t2.swapped.split(',').length === 3 && /tasks/.test(t2.swapped), 'soltarla en el centro de otro panel las intercambia', t2.swapped)
+  log(t2.handle && t2.ratio === 70 && t2.even === 50, 'EL TIRADOR REPARTE EL ESPACIO Y EL DOBLE CLIC LO IGUALA', `${t2.ratio} % → ${t2.even} %`)
+  log(t2.saved && t2.one === 1 && t2.restored, 'UNA DISTRIBUCIÓN SE GUARDA CON NOMBRE Y SE VUELVE A ELLA', JSON.stringify({ saved: t2.saved, restored: t2.restored }))
+  log(t2.f6 && t2.closeKey === 2 && t2.splitKey === 3, 'atajos: F6 pasa de panel, Ctrl+Mayús+W lo cierra y Ctrl+\\ parte', JSON.stringify({ f6: t2.f6, close: t2.closeKey, split: t2.splitKey }))
+  log(
+    t2.rails === 'chat.detail,chat.sessions' && t2.w === 'tight' && t2.drawer && t2.four?.panes === 4 && t2.four.max,
+    'EN UN PANEL ESTRECHO LA CONSOLA PLIEGA SU LISTA Y SU DETALLE EN PESTAÑAS; MÁS DE CUATRO PANELES NO CABEN',
+    `${t2.rails} · ${t2.w}`
+  )
+  log(t2.kept, 'CAMBIAR LA DISTRIBUCIÓN NO VUELVE A MONTAR LA SECCIÓN: LO ESCRITO SIGUE AHÍ')
+  log(
+    !/house/.test(t2.navAfter ?? '') && (t2.navAfter ?? '').startsWith('terminal,') && /house/.test(t2.navBefore ?? '') && t2.ctrl1 === 'terminal',
+    'EL MENÚ SE ORDENA Y SE ESCONDE A GUSTO, Y CTRL+1 SIGUE A TU ORDEN',
+    t2.navAfter
+  )
+  log(
+    t2.persisted?.panes === 'split' && t2.persisted.layouts === 'Mi mesa zq9' && t2.persisted.hidden === 'house' && t2.persisted.first === 'terminal',
+    'la mesa, las distribuciones y el menú quedan guardados',
+    JSON.stringify(t2.persisted)
+  )
+  log(
+    t2b.shown === t2.beforeReload && t2b.shown.split(',').length === 2 && !/house/.test(t2b.nav) && t2b.nav.startsWith('terminal,'),
+    'AL VOLVER A ABRIR, LA MESA Y EL MENÚ ESTÁN COMO LOS DEJASTE',
+    `${t2b.shown} · ${t2b.nav}`
   )
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

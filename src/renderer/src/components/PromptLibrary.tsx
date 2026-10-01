@@ -385,7 +385,7 @@ export function PromptLibrary(): React.JSX.Element {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('Buscar…')}
-              className="w-full h-8 pl-7 pr-2 bg-raised border border-line rounded-md text-[12px] outline-none focus:border-[#2c3346] placeholder:text-dim"
+              className="w-full h-8 pl-7 pr-2 bg-raised border border-line rounded-md text-[12px] outline-none focus:border-dim/60 placeholder:text-dim"
             />
           </div>
           <Button size="sm" variant="primary" onClick={() => setDraft(blank())} title={t('Prompt nuevo')}>

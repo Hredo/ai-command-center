@@ -224,7 +224,7 @@ export function BatteryPanel({ names }: { names: (c: Contender) => string }): Re
                           .join('\n')
                         return (
                           <td key={c.key} className="px-2 py-1.5 text-center" title={why} data-cell={`${caseId}:${c.key}`} data-ok={cell.ok ? '1' : '0'}>
-                            <div className={cx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded num', cell.ok ? 'text-ok bg-[#0d2019]' : 'text-bad bg-[#241016]')}>
+                            <div className={cx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded num', cell.ok ? 'text-ok bg-ok/10' : 'text-bad bg-bad/15')}>
                               {cell.ok ? <Check size={11} /> : <X size={11} />} {passed}/{cell.checks.length}
                             </div>
                             <div className="text-[10px] text-dim num mt-0.5">

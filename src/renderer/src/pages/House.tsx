@@ -239,7 +239,7 @@ export default function House(): React.JSX.Element {
 
       <div className="flex-1 min-h-0 flex">
         {/* Escena */}
-        <div className="flex-1 min-w-0 relative bg-[#0d1119]">
+        <div className="flex-1 min-w-0 relative bg-void">
           <HouseCanvas
             residents={residents}
             jobs={jobs}
@@ -251,7 +251,7 @@ export default function House(): React.JSX.Element {
         </div>
 
         {/* Quién es quién */}
-        <Pane paneKey="house.panel" side="left" className="border-l border-line bg-void/50 overflow-y-auto">
+        <Pane paneKey="house.panel" side="left" collapse="narrow" label={t('Detalle')} className="border-l border-line bg-void overflow-y-auto">
           <div className="px-3 py-2.5 text-[11px] text-dim border-b border-line-soft">
             {t('Quién vive aquí y qué está haciendo')}
           </div>
@@ -267,7 +267,7 @@ export default function House(): React.JSX.Element {
                 onMouseLeave={() => setMirando(null)}
                 className={cx(
                   'w-full text-left px-3 py-2 flex items-center gap-3 border-b border-line-soft transition-colors',
-                  mirando === r.id ? 'bg-raised' : 'hover:bg-[#12151f]'
+                  mirando === r.id ? 'bg-raised' : 'hover:bg-raised/60'
                 )}
               >
                 <span className="shrink-0 w-[24px] h-[40px] flex items-end">

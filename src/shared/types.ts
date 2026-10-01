@@ -953,6 +953,14 @@ export interface Settings {
   closeToTray?: boolean
   /** Ya se avisó una vez de que la app sigue en la bandeja. */
   trayHintShown?: boolean
+  /** La mesa de trabajo: qué secciones están a la vista y cómo se reparten. Ver shared/workspace.ts. */
+  workspace?: import('./workspace').Workspace
+  /** Distribuciones de la mesa guardadas con nombre. */
+  layouts?: import('./workspace').SavedLayout[]
+  /** El menú lateral a tu gusto: el orden de las secciones y las que no quieres ver. */
+  nav?: { order?: string[]; hidden?: string[] }
+  /** Ya se hizo (o se saltó) el recorrido de bienvenida. */
+  tourDone?: boolean
   /**
    * Atajo global del prompt rápido, en formato de Electron
    * («Control+Alt+Space»). Sin definir: el de cada sistema; vacío: apagado.

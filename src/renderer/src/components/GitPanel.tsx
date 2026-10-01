@@ -301,7 +301,7 @@ export function GitPanel({
 
       {/* ------------------------------- Operación sin terminar */}
       {state && state.operation !== 'none' ? (
-        <div className="px-3 py-2 rounded-lg bg-[#241a09] border border-[#4a3512] flex items-center gap-2.5">
+        <div className="px-3 py-2 rounded-lg bg-warn/10 border border-warn/30 flex items-center gap-2.5">
           <AlertTriangle size={13} className="text-warn shrink-0" />
           <div className="text-[12px] text-warn min-w-0 flex-1">
             {state.detail ?? state.operation}
@@ -341,7 +341,7 @@ export function GitPanel({
         {changes.length === 0 ? (
           <div className="px-3 py-4 text-[12px] text-dim">{t('El árbol está limpio.')}</div>
         ) : (
-          <div className="divide-y divide-[#151a26]">
+          <div className="divide-y divide-line-soft">
             {changes.map((c) => (
               <div key={c.path} className="px-3 py-1.5 flex items-center gap-2 text-[12px]">
                 <Badge tone={c.status === '?' ? 'warn' : c.status === 'D' ? 'bad' : 'accent'} title={t(STATUS_LABEL[c.status])}>
@@ -487,7 +487,7 @@ export function GitPanel({
               if (e.key === 'Enter' && command.trim()) void maybeRun(command.trim())
             }}
             placeholder="log --oneline -20"
-            className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1.5 font-mono text-[12px] outline-none focus:border-[#2c3346]"
+            className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1.5 font-mono text-[12px] outline-none focus:border-dim/60"
           />
           <Button size="sm" disabled={!command.trim() || Boolean(busy)} onClick={() => void maybeRun(command.trim())}>
             {t('Ejecutar')}
@@ -513,7 +513,7 @@ export function GitPanel({
               </div>
             ) : null}
             {result.out || result.err ? (
-              <pre className="bg-[#07080c] border border-line rounded p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto m-0">
+              <pre className="bg-[var(--editor-bg)] border border-line rounded p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto m-0">
                 {result.out}
                 {result.err ? <span className={result.ok ? 'text-dim' : 'text-bad'}>{result.err}</span> : null}
               </pre>
@@ -544,7 +544,7 @@ export function GitPanel({
           ) : null}
         </div>
         {showLog ? (
-          <div className="divide-y divide-[#151a26]">
+          <div className="divide-y divide-line-soft">
             {log.map((c) => (
               <div key={c.hash} className="px-3 py-1.5 flex items-center gap-2 text-[12px]">
                 <span className="font-mono text-accent shrink-0">{c.short}</span>
@@ -559,7 +559,7 @@ export function GitPanel({
       </div>
 
       <Modal open={Boolean(diff)} onClose={() => setDiff(null)} title={diff?.file ?? ''} width="max-w-4xl">
-        <pre className="bg-[#07080c] border border-line rounded p-3 font-mono text-[11.5px] leading-[1.5] whitespace-pre max-h-[60vh] overflow-auto m-0">
+        <pre className="bg-[var(--editor-bg)] border border-line rounded p-3 font-mono text-[11.5px] leading-[1.5] whitespace-pre max-h-[60vh] overflow-auto m-0">
           {(diff?.text ?? '').split('\n').map((l, i) => (
             <div
               key={i}

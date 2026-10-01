@@ -97,6 +97,48 @@ const LIGHT_BRACKETS: Theme['brackets'] = [
 
 export const THEMES: Theme[] = [
   {
+    // El de fábrica desde la 0.8: carbón cálido en vez de negro, texto con más
+    // contraste (también el secundario) y un acento azul lavanda.
+    id: 'mesa',
+    name: 'Mesa',
+    dark: true,
+    ui: {
+      void: '#131417', panel: '#1a1c21', raised: '#22252c', hover: '#2b2f38',
+      line: '#2e323c', lineSoft: '#24272e',
+      ink: '#eceae4', muted: '#a9adb8', dim: '#7d8390',
+      accent: '#8fa8ff', accentDim: '#4a5fb0', violet: '#c7a6ff',
+      ok: '#6fd3a0', warn: '#f0b354', bad: '#f27d7d',
+      editorBg: '#101114', editorActiveLine: '#1c1f26', editorSelection: '#34416a',
+      editorGuide: '#363b48', editorGutter: '#5a6070'
+    },
+    tokens: {
+      com: '#717787', key: '#c7a6ff', str: '#9bd9a8', num: '#f0b98a', fn: '#8fb8ff',
+      typ: '#7fd6cf', lit: '#f2a37c', prop: '#b6c8ff', tag: '#f58fa0', attr: '#f0cc7a',
+      op: '#969cab'
+    },
+    brackets: ['#8fa8ff', '#c7a6ff', '#f0b354', '#6fd3a0', '#f27d7d', '#7fd6cf']
+  },
+  {
+    id: 'mesa-clara',
+    name: 'Mesa clara',
+    dark: false,
+    ui: {
+      void: '#eef0f4', panel: '#ffffff', raised: '#f5f6f9', hover: '#e6e9ef',
+      line: '#d6dae2', lineSoft: '#e6e9ee',
+      ink: '#1c1e24', muted: '#4d535f', dim: '#737a87',
+      accent: '#3554d1', accentDim: '#c3cdf7', violet: '#7a46d4',
+      ok: '#177d4e', warn: '#a96a0f', bad: '#c73838',
+      editorBg: '#ffffff', editorActiveLine: '#f3f5f9', editorSelection: '#c9d5ff',
+      editorGuide: '#d6dae2', editorGutter: '#8a909c'
+    },
+    tokens: {
+      com: '#6c7381', key: '#7a46d4', str: '#17714a', num: '#a8541a', fn: '#2f55c8',
+      typ: '#157a82', lit: '#b3471f', prop: '#34446e', tag: '#b8324b', attr: '#8a5a0b',
+      op: '#4d535f'
+    },
+    brackets: LIGHT_BRACKETS
+  },
+  {
     id: 'command',
     name: 'Command (original)',
     dark: true,
@@ -378,7 +420,7 @@ export const THEMES: Theme[] = [
   }
 ]
 
-export const DEFAULT_THEME = 'command'
+export const DEFAULT_THEME = 'mesa'
 
 export function themeById(id: string | undefined): Theme {
   return THEMES.find((t) => t.id === id) ?? THEMES[0]
@@ -394,6 +436,7 @@ export function themeById(id: string | undefined): Theme {
  * nada de internet, así que una fuente que no esté instalada no se vería.
  */
 export const CODE_FONTS: { value: string; label: string }[] = [
+  { value: "'Atkinson Hyperlegible Mono Variable', 'Cascadia Mono', Consolas, monospace", label: 'Atkinson Hyperlegible Mono (incluida)' },
   { value: "'Cascadia Code', 'Cascadia Mono', Consolas, monospace", label: 'Cascadia Code' },
   { value: "'Cascadia Mono', Consolas, monospace", label: 'Cascadia Mono' },
   { value: "'JetBrains Mono', 'Cascadia Mono', monospace", label: 'JetBrains Mono' },
@@ -407,6 +450,8 @@ export const CODE_FONTS: { value: string; label: string }[] = [
 ]
 
 export const UI_FONTS: { value: string; label: string }[] = [
+  { value: "'Atkinson Hyperlegible Next Variable', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif", label: 'Atkinson Hyperlegible (incluida)' },
+  { value: "'Bricolage Grotesque Variable', 'Segoe UI', system-ui, sans-serif", label: 'Bricolage Grotesque (incluida)' },
   { value: "'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif", label: 'Segoe UI' },
   { value: "Inter, 'Segoe UI', system-ui, sans-serif", label: 'Inter' },
   { value: "'SF Pro Display', -apple-system, system-ui, sans-serif", label: 'SF Pro' },
@@ -419,6 +464,7 @@ export const UI_FONTS: { value: string; label: string }[] = [
 /** Acentos sugeridos; el selector de color admite cualquier otro. */
 export const ACCENTS: { value: string; label: string }[] = [
   { value: '', label: 'El del tema' },
+  { value: '#8fa8ff', label: 'Lavanda' },
   { value: '#22d3ee', label: 'Cian' },
   { value: '#0078d4', label: 'Azul' },
   { value: '#7aa2f7', label: 'Índigo' },

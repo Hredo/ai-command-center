@@ -7,7 +7,7 @@
  * lanzarse. A su hora la lanza la app igual que una del tablero, y la tarjeta
  * aparece en las columnas como cualquier otra.
  */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { CalendarClock, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { Badge, Button, Dot, Field, Input, Modal, Select, Textarea, Toggle, cx } from './ui'
 import { ModelPicker, type Pick as ModelPick } from './ModelPicker'
@@ -100,9 +100,18 @@ export function TaskForm({
   const [catchUp, setCatchUp] = useState(true)
 
   // Al abrir: lo de la programada que se edita o, si no, el proyecto del
-  // filtro (o el primero) con su agente por defecto.
+  // filtro (o el primero) con su agente por defecto. Sólo al abrir: la
+  // configuración se recarga por detrás a menudo (un cupo, una sesión de fuera,
+  // la mesa que se guarda) y volver a rellenar el formulario entonces borraba
+  // el nombre y deshacía el proyecto y el agente que acababas de elegir.
+  const filled = useRef(false)
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      filled.current = false
+      return
+    }
+    if (filled.current) return
+    filled.current = true
     if (editing) {
       setProject(editing.projectId)
       setAgent(editing.agent)

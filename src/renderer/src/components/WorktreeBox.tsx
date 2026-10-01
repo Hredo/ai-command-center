@@ -120,7 +120,7 @@ export function WorktreeBox({
   }
 
   return (
-    <div className="border border-[#1c3a44] bg-[#0b161b] rounded-lg p-3 space-y-2">
+    <div className="border border-accent/30 bg-accent/5 rounded-lg p-3 space-y-2">
       <div className="flex items-center gap-1.5 text-[12px] font-medium">
         <FolderGit2 size={13} className="text-accent" /> {t('En un worktree aparte')}
       </div>

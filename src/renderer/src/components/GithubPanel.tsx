@@ -186,7 +186,7 @@ export function GithubPanel({
               if (e.key === 'Enter') void load()
             }}
             placeholder={t('buscar entre tus repositorios…')}
-            className="w-full bg-void border border-line rounded-md pl-7 pr-2 py-1.5 text-[12.5px] outline-none focus:border-[#2c3346]"
+            className="w-full bg-void border border-line rounded-md pl-7 pr-2 py-1.5 text-[12.5px] outline-none focus:border-dim/60"
           />
         </div>
         <Button size="sm" onClick={() => void load()} disabled={loading}>
@@ -200,7 +200,7 @@ export function GithubPanel({
           {loading ? t('Pidiendo la lista…') : t('No hay repositorios que mostrar.')}
         </div>
       ) : (
-        <div className="border border-line rounded-lg divide-y divide-[#151a26] max-h-[440px] overflow-y-auto">
+        <div className="border border-line rounded-lg divide-y divide-line-soft max-h-[440px] overflow-y-auto">
           {repos.map((r) => (
             <div key={r.nameWithOwner} className="px-3 py-2 flex items-start gap-2.5 hover:bg-raised transition-colors">
               <div className="min-w-0 flex-1">

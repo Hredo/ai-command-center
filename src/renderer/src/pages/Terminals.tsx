@@ -113,7 +113,7 @@ export default function Terminals(): React.JSX.Element {
                 onClick={() => setActive(term.info.id)}
                 className={cx(
                   'group px-3 flex items-center gap-2 border-r border-line shrink-0 max-w-[240px] transition-colors',
-                  on ? 'bg-panel text-ink' : 'text-muted hover:text-ink hover:bg-[#12151f]'
+                  on ? 'bg-panel text-ink' : 'text-muted hover:text-ink hover:bg-raised/60'
                 )}
               >
                 {on ? <span className="absolute" /> : null}
@@ -227,7 +227,7 @@ export default function Terminals(): React.JSX.Element {
                   <button
                     key={p.id}
                     onClick={() => void spawn(p.path, p.id, p.name)}
-                    className="w-full px-3 py-2 rounded-lg border border-line hover:border-[#2c3346] hover:bg-hover flex items-center gap-2.5 text-left"
+                    className="w-full px-3 py-2 rounded-lg border border-line hover:border-dim/60 hover:bg-hover flex items-center gap-2.5 text-left"
                   >
                     <span className="w-1.5 h-6 rounded-full shrink-0" style={{ background: p.color }} />
                     <span className="flex-1 min-w-0">
@@ -247,7 +247,7 @@ export default function Terminals(): React.JSX.Element {
                 value={newCwd}
                 onChange={(e) => setNewCwd(e.target.value)}
                 placeholder={t('Vacío = tu carpeta de usuario')}
-                className="flex-1 min-w-0 h-9 px-3 bg-raised border border-line rounded-lg num text-[12px] outline-none focus:border-[#2c3346]"
+                className="flex-1 min-w-0 h-9 px-3 bg-raised border border-line rounded-lg num text-[12px] outline-none focus:border-dim/60"
               />
               <Button variant="outline" onClick={() => void pickFolder()}>
                 {t('Elegir…')}

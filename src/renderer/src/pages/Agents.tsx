@@ -191,7 +191,7 @@ function AgentEditor({
                     setSystem(t(p.system))
                     setTemperature(p.temp)
                   }}
-                  className="px-2.5 h-7 rounded-md bg-raised border border-line text-[12px] text-muted hover:text-ink hover:border-[#2c3245] transition-colors"
+                  className="px-2.5 h-7 rounded-md bg-raised border border-line text-[12px] text-muted hover:text-ink hover:border-dim/60 transition-colors"
                 >
                   {t(p.name)}
                 </button>
@@ -220,7 +220,7 @@ function AgentEditor({
               type="range" min={0} max={2} step={0.05}
               value={temperature}
               onChange={(e) => setTemperature(Number(e.target.value))}
-              className="w-full accent-cyan-400"
+              className="w-full accent-[var(--color-accent)]"
             />
           </div>
           <Field label={t('Máx. tokens')}>

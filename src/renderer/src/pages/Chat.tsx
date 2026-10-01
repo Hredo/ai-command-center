@@ -106,7 +106,7 @@ function SessionRow({
     <div
       className={cx(
         'group relative mx-1.5 rounded-lg transition-colors',
-        active ? 'bg-raised' : 'hover:bg-[#12151f]'
+        active ? 'bg-raised' : 'hover:bg-raised/60'
       )}
       data-session-item={session.id}
       data-active={active ? '' : undefined}
@@ -289,7 +289,7 @@ function TurnView({
             </div>
           ) : null}
         </div>
-        <div className="w-6 h-6 rounded-md bg-[#1e2231] flex items-center justify-center shrink-0 mt-0.5">
+        <div className="w-6 h-6 rounded-md bg-hover flex items-center justify-center shrink-0 mt-0.5">
           <User size={13} className="text-muted" />
         </div>
       </div>
@@ -301,7 +301,7 @@ function TurnView({
       <div
         className={cx(
           'w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5 border',
-          isCli ? 'bg-[#2a1f08] border-[#5c4413]' : 'bg-[#082a31] border-[#12525f]'
+          isCli ? 'bg-warn/15 border-warn/40' : 'bg-accent/10 border-accent/40'
         )}
       >
         {isCli ? <Cpu size={13} className="text-warn" /> : <Bot size={13} className="text-accent" />}
@@ -356,7 +356,7 @@ function TurnView({
         </div>
 
         {turn.error ? (
-          <div className="bg-[#1a1015] border border-[#4a2029] rounded-xl px-3.5 py-3 flex items-start gap-2.5">
+          <div className="bg-bad/10 border border-bad/30 rounded-xl px-3.5 py-3 flex items-start gap-2.5">
             <AlertTriangle size={15} className="text-bad shrink-0 mt-0.5" />
             <div className="min-w-0">
               <div className="text-bad text-[12.5px] font-medium mb-0.5">{t('No se pudo completar')}</div>
@@ -371,7 +371,7 @@ function TurnView({
                   <ChevronRight size={12} className="group-open:rotate-90 transition-transform" />
                   {t('Razonamiento interno')}
                 </summary>
-                <div className="mt-2 text-[12px] text-muted whitespace-pre-wrap border-l-2 border-[#37275c] pl-3">
+                <div className="mt-2 text-[12px] text-muted whitespace-pre-wrap border-l-2 border-violet/35 pl-3">
                   {turn.reasoning}
                 </div>
               </details>
@@ -412,7 +412,7 @@ function TurnView({
 
             {/* Lo que no pudo hacer por falta de permiso: suele ser por qué se quedó a medias. */}
             {!turn.streaming && denied.length ? (
-              <div className="mt-2.5 bg-[#241a09] border border-[#4a3512] rounded-lg px-3 py-2.5 space-y-2" data-denied>
+              <div className="mt-2.5 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2.5 space-y-2" data-denied>
                 <div className="flex items-center gap-1.5 text-[12px] text-warn font-medium">
                   <AlertTriangle size={13} /> {t('Le faltó permiso para:')}
                 </div>
@@ -803,7 +803,7 @@ export default function Chat(): React.JSX.Element {
   return (
     <div className="h-full flex">
       {/* ------------------------------------------------ Sesiones */}
-      <Pane paneKey="chat.sessions" side="right" className="border-r border-line bg-void flex flex-col">
+      <Pane paneKey="chat.sessions" side="right" collapse="tight" label={t('Conversaciones')} className="border-r border-line bg-void flex flex-col">
         <div className="px-2.5 pt-2.5 pb-2 space-y-2 shrink-0">
           <div className="flex gap-1.5">
             <Button size="sm" variant="primary" className="flex-1 justify-center" onClick={() => void create('chat')}>
@@ -828,7 +828,7 @@ export default function Chat(): React.JSX.Element {
               }}
               title={t('Filtra la lista. Enter busca en todos los mensajes y en el histórico.')}
               placeholder={t('Buscar…')}
-              className="w-full h-7 pl-7 pr-2 bg-raised border border-line rounded-md text-[12px] outline-none focus:border-[#2c3346] placeholder:text-[#3a4255]"
+              className="w-full h-7 pl-7 pr-2 bg-raised border border-line rounded-md text-[12px] outline-none focus:border-dim/60 placeholder:text-dim/60"
             />
           </div>
           <div className="flex items-center gap-1 text-[11px]">
@@ -1189,7 +1189,7 @@ export default function Chat(): React.JSX.Element {
       ) : null}
 
       {/* ------------------------------------------------ Ajustes de la sesión */}
-      <Pane paneKey="chat.detail" side="left" className="border-l border-line bg-void overflow-y-auto">
+      <Pane paneKey="chat.detail" side="left" collapse="narrow" label={t('Ajustes de la sesión')} className="border-l border-line bg-void overflow-y-auto">
         {!session ? (
           <div className="p-4 text-[12px] text-dim">{t('Crea o abre una conversación.')}</div>
         ) : (
@@ -1418,7 +1418,7 @@ export default function Chat(): React.JSX.Element {
                       type="checkbox"
                       checked={session.includeContext ?? true}
                       onChange={(e) => patchSessionConfig(session.id, { includeContext: e.target.checked })}
-                      className="accent-cyan-400"
+                      className="accent-[var(--color-accent)]"
                     />
                     {t('Adjuntar contexto del proyecto')}
                   </label>
@@ -1551,7 +1551,7 @@ export default function Chat(): React.JSX.Element {
               type="button"
               data-format={format}
               onClick={() => void exportAs(format)}
-              className="w-full text-left rounded-lg border border-line hover:border-[#2c3346] hover:bg-raised px-3.5 py-2.5"
+              className="w-full text-left rounded-lg border border-line hover:border-dim/60 hover:bg-raised px-3.5 py-2.5"
             >
               <div className="text-[13px] font-medium flex items-center gap-2">
                 <Download size={13} className="text-accent" /> {label}

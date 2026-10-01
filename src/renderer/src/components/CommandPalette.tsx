@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot, Compass, FileText, FolderGit2, FolderOpen, GitBranch, MessageSquarePlus, MessagesSquare, Network, Play,
-  Search, Settings2, SquareTerminal, TerminalSquare, Workflow, Zap
+  Search, Settings2, SquareTerminal, TerminalSquare, Workflow, Zap, Columns2, Rows2, PanelRightClose, CircleHelp
 } from 'lucide-react'
 import { cx } from './ui'
 import { useStore } from '../lib/store'
@@ -21,7 +21,9 @@ import { relTime } from '../lib/format'
 import { focusChat, newSession, useSessions } from '../lib/engine'
 import { navigate } from '../lib/nav'
 import { modKey, withMod } from '../lib/platform'
-import { SECTIONS, sectionShortcut } from '../lib/sections'
+import { SECTIONS } from '../lib/sections'
+import { closePane, shortcutOf, splitPane } from '../lib/workspace'
+import { openHelp, startTour } from './Help'
 import { matchPalette } from '../lib/palette'
 import { openSearch } from './SearchModal'
 import type { ProjectScripts } from '@shared/types'
@@ -209,6 +211,57 @@ export function CommandPalette(): React.JSX.Element | null {
       boost: 3,
       run: () => openSearch()
     })
+    out.push({
+      id: 'action:help',
+      group: 'actions',
+      label: t('Ayuda'),
+      detail: t('todo lo que hace la app, explicado'),
+      keywords: 'ayuda help documentacion manual como se usa guia tutorial',
+      icon: CircleHelp,
+      shortcut: 'F1',
+      boost: 2,
+      run: () => openHelp()
+    })
+    out.push({
+      id: 'action:tour',
+      group: 'actions',
+      label: t('Recorrido de bienvenida'),
+      detail: t('dónde está cada cosa, en un minuto'),
+      keywords: 'tutorial recorrido bienvenida tour primeros pasos guia',
+      icon: CircleHelp,
+      run: () => startTour()
+    })
+    out.push({
+      id: 'action:split-right',
+      group: 'actions',
+      label: t('Dividir a la derecha'),
+      detail: t('otra sección al lado de ésta'),
+      keywords: 'dividir split panel ventana lado columnas mesa distribucion',
+      icon: Columns2,
+      shortcut: 'Ctrl+\\',
+      boost: 2,
+      run: () => void splitPane('row')
+    })
+    out.push({
+      id: 'action:split-down',
+      group: 'actions',
+      label: t('Dividir abajo'),
+      detail: t('otra sección debajo de ésta'),
+      keywords: 'dividir split panel ventana abajo filas mesa distribucion',
+      icon: Rows2,
+      shortcut: 'Ctrl+Shift+\\',
+      boost: 1,
+      run: () => void splitPane('col')
+    })
+    out.push({
+      id: 'action:close-pane',
+      group: 'actions',
+      label: t('Cerrar este panel'),
+      keywords: 'cerrar panel ventana dividir quitar mesa',
+      icon: PanelRightClose,
+      shortcut: 'Ctrl+Shift+W',
+      run: () => closePane()
+    })
 
     for (const s of SECTIONS) {
       out.push({
@@ -217,7 +270,7 @@ export function CommandPalette(): React.JSX.Element | null {
         label: t(`nav.${s.id}`),
         keywords: s.id,
         icon: s.icon,
-        shortcut: sectionShortcut(s.id),
+        shortcut: shortcutOf(s.id),
         boost: 8,
         run: () => navigate(s.id)
       })

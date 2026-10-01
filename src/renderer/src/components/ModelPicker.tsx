@@ -89,7 +89,7 @@ export function ModelPicker({
         onClick={() => setOpen((o) => !o)}
         className={cx(
           'w-full flex items-center gap-2 bg-void border border-line rounded-lg px-2.5 transition-colors',
-          'hover:border-[#2c3245] text-left',
+          'hover:border-dim/60 text-left',
           compact ? 'h-8 text-[12.5px]' : 'h-9'
         )}
       >
@@ -148,7 +148,7 @@ export function ModelPicker({
                     <span className="text-[10.5px] uppercase tracking-wider text-dim font-medium">
                       {pid === FAV ? t('Favoritos') : providerName(pid)}
                     </span>
-                    <span className="num text-[10.5px] text-[#3a4255]">{list.length}</span>
+                    <span className="num text-[10.5px] text-dim/60">{list.length}</span>
                   </div>
                   {list.map((m) => {
                     const sel = value?.providerId === m.providerId && value?.model === m.id
@@ -162,7 +162,7 @@ export function ModelPicker({
                         }}
                         className={cx(
                           'w-full px-3 py-1.5 flex items-center gap-2 text-left transition-colors',
-                          sel ? 'bg-[#0d2b33]' : 'hover:bg-hover'
+                          sel ? 'bg-accent/15' : 'hover:bg-hover'
                         )}
                       >
                         <span className="w-3.5 shrink-0">
@@ -173,7 +173,7 @@ export function ModelPicker({
                           <span className="text-[10.5px] text-dim shrink-0 truncate max-w-[90px]">{providerName(m.providerId)}</span>
                         ) : null}
                         {m.contextLength ? (
-                          <span className="num text-[10.5px] text-[#4a5266] shrink-0">
+                          <span className="num text-[10.5px] text-dim/70 shrink-0">
                             {tokens(m.contextLength)}
                           </span>
                         ) : null}
