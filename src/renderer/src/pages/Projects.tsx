@@ -29,7 +29,7 @@ import {
   sendCli, sendChat, approveStep, stopSession, patchSessionConfig, useRunsVersion
 } from '../lib/engine'
 import {
-  API_PERMISSION_MODES, PERMISSION_MODES, ACP_PERMISSION_MODES, type Attachment, type Effort, type Project, type ProjectInfo,
+  API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type Project, type ProjectInfo,
   type RunRecord
 } from '@shared/types'
 import { cliPermissionModes } from '@shared/cliCaps'
@@ -50,8 +50,11 @@ const EFFORT_CLIS = new Set(['claude', 'codex', 'aider'])
 /** Los que admiten elegir modelo y modo de permisos desde aquí. */
 const CLAUDE_LIKE = new Set(['claude'])
 
-/** OpenCode y Gemini CLI tienen sus propios modos: uno de Claude se lee como «Pregunta». */
-const acpModeOf = (mode: string): string => (ACP_PERMISSION_MODES.some((m) => m.id === mode) ? mode : 'manual')
+/** Cada CLI tiene sus modos: uno que no es suyo se lee como el suyo de partida. */
+const cliModeOf = (command: string, mode: string): string => {
+  const own = cliPermissionModes(command)
+  return own ? (own.modes.some((m) => m.id === mode) ? mode : own.initial) : mode
+}
 
 /** En el selector de agente, un modelo local de Ollama va con este prefijo delante. */
 const LOCAL_PREFIX = 'ollama:'
@@ -473,7 +476,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
         projectName: project.name,
         effort: cliEffort,
         model: cliModel || undefined,
-        permissionMode: cliPermission,
+        permissionMode: agent ? cliModeOf(agent.command, cliPermission) : cliPermission,
         attachments
       })
     }
@@ -1046,12 +1049,14 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                         <>
                           <span className="text-[11px] text-dim">{t('Permisos')}</span>
                           <select
-                            value={acpModeOf(cliPermission)}
+                            value={cliModeOf(selectedCli.command, cliPermission)}
                             onChange={(e) => setCliPermission(e.target.value)}
-                            title={t(ACP_PERMISSION_MODES.find((m) => m.id === acpModeOf(cliPermission))?.hint ?? '')}
+                            title={t(
+                              cliPermissionModes(selectedCli.command)?.modes.find((m) => m.id === cliModeOf(selectedCli.command, cliPermission))?.hint ?? ''
+                            )}
                             className="bg-raised border border-line rounded-md px-1.5 py-1 text-[11px] outline-none"
                           >
-                            {ACP_PERMISSION_MODES.map((m) => (
+                            {(cliPermissionModes(selectedCli.command)?.modes ?? []).map((m) => (
                               <option key={m.id} value={m.id}>
                                 {t(m.label)}
                               </option>

@@ -1088,5 +1088,13 @@ export const enV08: Record<string, string> = {
   "te pregunta aquí antes de cada cosa, como en su terminal": "asks you here before each action, like in its terminal",
   "lo que su configuración pide confirmar te lo pregunta aquí, como en su terminal": "whatever its config sets to ask is asked here, like in its terminal",
   "su modo plan: mira y propone, pero no edita nada": "its plan mode: looks and proposes, but edits nothing",
-  "dice que sí a todo lo que pregunte (lo que tengas denegado sigue denegado)": "says yes to everything it asks (what you have denied stays denied)"
+  "dice que sí a todo lo que pregunte (lo que tengas denegado sigue denegado)": "says yes to everything it asks (what you have denied stays denied)",
+  "Sólo lectura": "Read only",
+  "trabaja dentro del proyecto sin preguntar; para salir de él o usar la red te pregunta aquí (su modo Auto)": "works inside the project without asking; to leave it or use the network it asks you here (its Auto mode)",
+  "sólo hace sin preguntar lo que es de fiar (leer, listar); lo demás te lo pregunta aquí": "only does trusted things (read, list) without asking; everything else is asked here",
+  "lee y propone; para editar o ejecutar algo te pregunta aquí (su modo Read Only)": "reads and proposes; to edit or run anything it asks you here (its Read Only mode)",
+  "sin sandbox y sin preguntas (su Full Access): ojo con lo que le mandas": "no sandbox and no questions (its Full Access): careful with what you send it",
+  "Su terminal": "Its terminal",
+  "Abrir en su terminal": "Open in its terminal",
+  "Abre {cmd} tal cual en una terminal de la app, con esta misma sesión: sus menús, sus comandos con «/» y su inicio de sesión están allí.": "Opens {cmd} as-is in an app terminal, on this same session: its menus, its slash commands and its sign-in are there."
 }

@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -23,6 +24,9 @@ import {
   AcpConnection, acpAsk, acpDiffCounts, acpResultText, acpStatus, acpTarget, acpToolName, acpTouchKind,
   type AcpPermissionOption, type AcpPermissionOutcome, type AcpToolCall
 } from './acp'
+import {
+  CodexConnection, CodexUnsupported, codexAsk, codexConfigArgs, codexErrorText, codexItemView, codexPolicy, codexTodos
+} from './codexServer'
 import type {
   AgentStep, AgentTodo, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
@@ -1031,6 +1035,7 @@ function isOpencode(command: string): boolean {
 
 const CLAUDE_BIN = /(^|[\\/])claude(\.(cmd|exe|ps1))?$/i
 const GEMINI_BIN = /(^|[\\/])gemini(\.(cmd|exe|ps1))?$/i
+const CODEX_BIN = /(^|[\\/])codex(\.(cmd|exe|ps1))?$/i
 
 /**
  * Claude Code que no entendió los permisos por la entrada estándar (una
@@ -1038,16 +1043,21 @@ const GEMINI_BIN = /(^|[\\/])gemini(\.(cmd|exe|ps1))?$/i
  */
 let claudeStdioOff = false
 
+/** Un Codex sin `app-server` (muy viejo): mientras la app siga abierta va con `codex exec`. */
+let codexServerOff = false
+
 /**
  * Cómo se habla con cada CLI para que pueda preguntar:
  * - acp: OpenCode (`opencode acp`) y Gemini CLI (`--experimental-acp`).
  * - claude: Claude Code con entrada y salida stream-json y los permisos por
  *   la entrada estándar, que es lo que hace su propio SDK.
+ * - codex: Codex por su `app-server`, el protocolo de su extensión de VS Code.
  * - null: el resto, de una vez y sin preguntas, como hasta ahora.
  */
-function interactiveMode(agent: CliAgent, usesArgPrompt: boolean): 'acp' | 'claude' | null {
+function interactiveMode(agent: CliAgent, usesArgPrompt: boolean): 'acp' | 'claude' | 'codex' | null {
   const cmd = agent.command.trim()
   if (isOpencode(cmd) || GEMINI_BIN.test(cmd)) return 'acp'
+  if (agent.parser === 'codex-json' && CODEX_BIN.test(cmd) && !codexServerOff) return 'codex'
   if (agent.parser === 'claude-stream-json' && CLAUDE_BIN.test(cmd) && !usesArgPrompt && !claudeStdioOff) return 'claude'
   return null
 }
@@ -1185,9 +1195,15 @@ function startCliAgent(
     // Retomar la sesión del propio agente, para que recuerde el turno anterior.
     // Si su CLI no sabe, la conversación va dentro del prompt: nunca empieza
     // de cero sin decirlo.
+    const usesArgPrompt = agent.args.some((a) => a.includes('{{prompt}}'))
+    // Los que saben preguntar se lanzan en su modo interactivo (ver interactiveMode).
+    const mode = interactiveMode(agent, usesArgPrompt)
     const resume =
       !opts.rewound && (opts.resumeSessionId || (opts.history?.length && resumeCaps(agent.command).byFolder))
-        ? resumeArgs(agent.command, opts.resumeSessionId, opts.fork)
+        ? mode === 'codex' && opts.resumeSessionId
+          ? // Retomar o bifurcar lo hace su servidor, no un argumento.
+            { args: [] as string[], beforePrompt: false }
+          : resumeArgs(agent.command, opts.resumeSessionId, opts.fork)
         : null
     const fallbackHistory = !resume && Boolean(opts.history?.length)
     const prompt = fallbackHistory ? withHistory(composed, opts.history) : composed
@@ -1211,7 +1227,6 @@ function startCliAgent(
       ...(allowFile ? ['--settings', allowFile] : [])
     ]
 
-    const usesArgPrompt = agent.args.some((a) => a.includes('{{prompt}}'))
     let template = injectArgs(agent.args, extra)
     // Codex retoma con un subcomando (`exec … resume <id> "prompt"`) que va
     // detrás de las opciones y justo delante del prompt.
@@ -1226,12 +1241,12 @@ function startCliAgent(
     // directorio del usuario en vez de fallar por un cwd que no existe.
     const cwd = opts.projectPath && existsSync(opts.projectPath) ? opts.projectPath : homedir()
 
-    // Los que saben preguntar se lanzan en su modo interactivo (ver interactiveMode).
-    const mode = interactiveMode(agent, usesArgPrompt)
     const permMode = opts.permissionMode ?? agent.permissionMode
     let spawnArgs = args
     if (mode === 'acp') {
       spawnArgs = acpArgs(agent, cwd, prep ? null : modelArgs)
+    } else if (mode === 'codex') {
+      spawnArgs = ['app-server', ...codexConfigArgs(agent.args)]
     } else if (mode === 'claude') {
       spawnArgs = [...args]
       if (!spawnArgs.includes('--input-format')) spawnArgs.push('--input-format', 'stream-json')
@@ -1281,8 +1296,8 @@ function startCliAgent(
           session_id: ''
         }) + '\n'
       )
-    } else if (mode === 'acp') {
-      // Lo lleva la conversación ACP de más abajo.
+    } else if (mode === 'acp' || mode === 'codex') {
+      // Lo lleva la conversación (ACP o con el servidor de Codex) de más abajo.
     } else if (!usesArgPrompt) {
       child.stdin?.write(prompt)
       child.stdin?.end()
@@ -1341,7 +1356,13 @@ function startCliAgent(
       status: 'ok',
       detail:
         `$ ${agent.command} ${spawnArgs.join(' ')}` +
-        (mode === 'acp' ? ' · por ACP: pregunta aquí lo que necesite' : mode === 'claude' ? ' · pregunta aquí sus permisos' : '')
+        (mode === 'acp'
+          ? ' · por ACP: pregunta aquí lo que necesite'
+          : mode === 'claude'
+            ? ' · pregunta aquí sus permisos'
+            : mode === 'codex'
+              ? ' · por su app-server: pregunta aquí sus aprobaciones'
+              : '')
     })
     if (resume) {
       onStep({
@@ -1737,6 +1758,317 @@ function startCliAgent(
         })
     }
 
+    /* ---------------- Codex: su app-server ---------------- */
+    let codexDone = false
+    let codexFailure: string | undefined
+    let codexTurnStatus: string | undefined
+    let codexThread: string | undefined
+    let codexTurn: string | undefined
+    let codexRetry: string | undefined
+    let codexTurnEnd: (() => void) | null = null
+    let codexBase: { input: number; output: number; cached: number; reasoning: number } | null = null
+    let codexMessages = 0
+    const codexSaid = new Set<string>()
+    const codexThinking = new Map<string, AgentStep>()
+    const codexSteps = new Map<string, AgentStep>()
+    const codexTouched = new Set<string>()
+    const codexAsking = new Map<string, Promise<void>>()
+    const codexReqs = new Map<string, string>()
+
+    const codexSay = (itemId: string, chunk: string): void => {
+      if (!chunk) return
+      let t = chunk
+      if (!codexSaid.has(itemId)) {
+        codexSaid.add(itemId)
+        // Cada mensaje suyo es un párrafo aparte.
+        if (codexMessages++ > 0) t = '\n\n' + t
+      }
+      onText(t)
+      onEvent({ type: 'stdout', data: t })
+    }
+    const codexThink = (itemId: string, t: string): void => {
+      if (!t) return
+      onThink(t)
+      const prev = codexThinking.get(itemId)
+      const step: AgentStep = prev
+        ? { ...prev, detail: (prev.detail ?? '') + t }
+        : { id: 'cx-th-' + itemId, at: Date.now(), kind: 'thinking', detail: t, status: 'ok' }
+      codexThinking.set(itemId, step)
+      onStep(step)
+    }
+    const codexNotify = (method: string, p: any): void => {
+      // El servidor avisa también de otras conversaciones y de otros turnos.
+      if (p?.threadId && codexThread && p.threadId !== codexThread) return
+      if (p?.turnId && codexTurn && p.turnId !== codexTurn) return
+      switch (method) {
+        case 'item/agentMessage/delta':
+          codexSay(String(p.itemId), String(p.delta ?? ''))
+          return
+        case 'item/reasoning/summaryTextDelta':
+        case 'item/reasoning/textDelta':
+          codexThink(String(p.itemId), String(p.delta ?? ''))
+          return
+        case 'item/reasoning/summaryPartAdded':
+          if (codexThinking.has(String(p.itemId))) codexThink(String(p.itemId), '\n\n')
+          return
+        case 'item/started':
+        case 'item/completed': {
+          if (!codexTurnEnd) return
+          const item = p.item ?? {}
+          const id = String(item.id ?? '')
+          const done = method === 'item/completed'
+          if (item.type === 'agentMessage') {
+            if (done && typeof item.text === 'string' && !codexSaid.has(id)) codexSay(id, item.text)
+            return
+          }
+          if (item.type === 'reasoning') {
+            if (done && !codexThinking.has(id)) {
+              const parts = (Array.isArray(item.summary) && item.summary.length ? item.summary : item.content) ?? []
+              codexThink(id, parts.filter((x: unknown) => typeof x === 'string' && x.trim()).join('\n\n'))
+            }
+            return
+          }
+          const view = codexItemView(item, done, cwd)
+          if (!view.step) return
+          const prev = codexSteps.get(view.step.id)
+          // Lo que ya se decidió sobre su permiso no lo pisa el estado nuevo.
+          const step: AgentStep = {
+            ...view.step,
+            at: prev?.at ?? view.step.at,
+            approval: prev?.approval,
+            ask: prev?.ask,
+            denied: prev?.denied,
+            detail: view.step.detail ?? prev?.detail,
+            status: prev?.denied ? 'error' : view.step.status
+          }
+          codexSteps.set(step.id, step)
+          if (!codexTouched.has(step.id)) {
+            codexTouched.add(step.id)
+            for (const tch of view.touches ?? []) onTouch(tch.path, tch.kind)
+          }
+          onStep(step)
+          return
+        }
+        case 'turn/plan/updated':
+          onTodos(codexTodos(p.plan))
+          return
+        case 'thread/tokenUsage/updated': {
+          if (!codexTurn) return
+          const total = p.tokenUsage?.total ?? {}
+          const last = p.tokenUsage?.last ?? {}
+          const n = (v: unknown): number => (typeof v === 'number' ? v : 0)
+          // Los totales son de toda la conversación: lo de este turno es lo que ha crecido.
+          codexBase ??= {
+            input: n(total.inputTokens) - n(last.inputTokens),
+            output: n(total.outputTokens) - n(last.outputTokens),
+            cached: n(total.cachedInputTokens) - n(last.cachedInputTokens),
+            reasoning: n(total.reasoningOutputTokens) - n(last.reasoningOutputTokens)
+          }
+          meta.inputTokens = Math.max(0, n(total.inputTokens) - codexBase.input)
+          meta.outputTokens = Math.max(0, n(total.outputTokens) - codexBase.output)
+          meta.cachedTokens = Math.max(0, n(total.cachedInputTokens) - codexBase.cached)
+          meta.reasoningTokens = Math.max(0, n(total.reasoningOutputTokens) - codexBase.reasoning)
+          // La última petición lleva la conversación entera: es lo que ocupa.
+          meta.contextUsed = n(last.totalTokens) || n(last.inputTokens) + n(last.outputTokens)
+          if (typeof p.tokenUsage?.modelContextWindow === 'number') meta.contextLimit = p.tokenUsage.modelContextWindow
+          onUsage()
+          return
+        }
+        case 'model/rerouted':
+          if (p.toModel) meta.model = String(p.toModel)
+          return
+        case 'serverRequest/resolved': {
+          // La pregunta ya no hace falta (se paró el turno, la contestó otro cliente).
+          const stepId = codexReqs.get(String(p.requestId))
+          if (!stepId) return
+          const waiting = approvals.get(`${runId}:${stepId}`)
+          approvals.delete(`${runId}:${stepId}`)
+          waiting?.({ allow: false, always: false, cancelled: true })
+          return
+        }
+        case 'error': {
+          const why = codexErrorText(p.error)
+          // Las reconexiones también llegan como error: sólo cuenta el que no reintenta.
+          if (p.willRetry) {
+            codexRetry = why
+            return
+          }
+          meta.error = why
+          onStep({ id: 'cx-error-' + randomUUID(), at: Date.now(), kind: 'note', status: 'error', detail: why })
+          return
+        }
+        case 'turn/started':
+          if (p.turn?.id && codexTurnEnd) codexTurn = String(p.turn.id)
+          return
+        case 'turn/completed': {
+          const turn = p.turn ?? {}
+          if (!codexTurnEnd || (codexTurn && turn.id && turn.id !== codexTurn)) return
+          codexTurnStatus = String(turn.status ?? 'completed')
+          if (turn.error) meta.error = codexErrorText(turn.error)
+          else if (codexTurnStatus === 'failed' && !meta.error) meta.error = codexRetry
+          if (codexTurnStatus !== 'completed') meta.finishReason = codexTurnStatus
+          codexTurnEnd()
+          return
+        }
+        default:
+          return
+      }
+    }
+    const codexRequest = async (method: string, p: any, requestId: string): Promise<unknown> => {
+      const isCmd = method === 'item/commandExecution/requestApproval'
+      const isPatch = method === 'item/fileChange/requestApproval'
+      const isPerm = method === 'item/permissions/requestApproval'
+      if (method === 'item/tool/requestUserInput') {
+        const asked = (Array.isArray(p.questions) ? p.questions : []).map((q: any) => String(q?.question ?? '')).filter(Boolean).join(' · ')
+        onStep({
+          id: 'cx-q-' + randomUUID(),
+          at: Date.now(),
+          kind: 'note',
+          status: 'ok',
+          detail: 'Codex pregunta algo que desde aquí todavía no se puede contestar; sigue sin respuesta' + (asked ? `: ${asked}` : '')
+        })
+        return { answers: {} }
+      }
+      if (method === 'mcpServer/elicitation/request') return { action: 'decline', content: null, _meta: null }
+      if (!isCmd && !isPatch && !isPerm) throw new CodexUnsupported(`Método no soportado: ${method}`)
+
+      const stepId = 'cx-' + String(p.itemId ?? randomUUID())
+      // Un mismo elemento puede preguntar varias veces (cada subcomando): de una en una.
+      const before = codexAsking.get(stepId) ?? Promise.resolve()
+      let release: () => void = () => {}
+      codexAsking.set(stepId, new Promise<void>((r) => (release = r)))
+      await before
+      try {
+        const prev = codexSteps.get(stepId)
+        const base: AgentStep = prev ?? {
+          id: stepId,
+          at: Date.now(),
+          kind: 'tool',
+          tool: isCmd ? 'Bash' : isPatch ? 'Edit' : 'Permisos',
+          target: isCmd ? String(p.command ?? '') : undefined,
+          status: 'running'
+        }
+        const ask = codexAsk(method, p, prev)
+        const amendment: string[] | null =
+          isCmd && Array.isArray(p.proposedExecpolicyAmendment) && p.proposedExecpolicyAmendment.length
+            ? p.proposedExecpolicyAmendment.map(String)
+            : null
+        const settle = (st: AgentStep): void => {
+          codexSteps.set(stepId, st)
+          onStep(st)
+        }
+        const granted = {
+          ...(p.permissions?.network ? { network: p.permissions.network } : {}),
+          ...(p.permissions?.fileSystem ? { fileSystem: p.permissions.fileSystem } : {})
+        }
+        const yes = (always: boolean): unknown =>
+          isPerm
+            ? { permissions: granted, scope: always ? 'session' : 'turn' }
+            : {
+                decision: !always
+                  ? 'accept'
+                  : amendment
+                    ? { acceptWithExecpolicyAmendment: { execpolicy_amendment: amendment } }
+                    : 'acceptForSession'
+              }
+        const no = (): unknown => (isPerm ? { permissions: {}, scope: 'turn' } : { decision: 'decline' })
+        if (permMode === 'bypassPermissions') {
+          settle({ ...base, approval: 'approved', ask })
+          return yes(false)
+        }
+        if (opts.kind === 'arena') {
+          settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'en la Arena nadie puede contestar: se le dijo que no' })
+          return no()
+        }
+        codexReqs.set(requestId, stepId)
+        const answer = waitCliApproval(runId, stepId)
+        onStep({
+          ...base,
+          status: 'running',
+          approval: 'pending',
+          ask,
+          // «Sí, y no vuelvas a preguntar»: con regla propuesta se guarda en sus reglas; si no, vale para la sesión.
+          always: amendment ? { scope: 'user', what: amendment.join(' ') } : { scope: 'session' },
+          detail: typeof p.reason === 'string' && p.reason ? p.reason : base.detail
+        })
+        const a = await answer
+        codexReqs.delete(requestId)
+        if (a.cancelled) {
+          settle({ ...base, approval: undefined })
+          return isPerm ? no() : { decision: 'cancel' }
+        }
+        if (!a.allow) {
+          settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'no lo has permitido' })
+          return no()
+        }
+        settle({ ...base, status: 'running', approval: 'approved', ask })
+        return yes(a.always)
+      } finally {
+        release()
+      }
+    }
+    const codex = mode === 'codex' ? new CodexConnection(writeIn, { onNotification: codexNotify, onRequest: codexRequest }) : null
+
+    // La conversación con su servidor: saludo, abrir (o retomar, o bifurcar) el
+    // hilo con modelo y permisos, lanzar el turno y esperar a que acabe.
+    if (codex) {
+      const policy = codexPolicy(permMode)
+      const model = (opts.model ?? agent.model ?? '').trim()
+      const effort = (effortArgs ?? []).find((a) => a.startsWith('model_reasoning_effort='))?.split('=')[1]
+      const want = opts.rewound ? undefined : opts.resumeSessionId
+      void (async () => {
+        await codex.request('initialize', {
+          clientInfo: { name: 'ai-command-center', title: 'AI Command Center', version: app.getVersion() },
+          capabilities: null
+        })
+        codex.notify('initialized')
+        const common = {
+          cwd,
+          ...(model ? { model } : {}),
+          ...(policy ? { approvalPolicy: policy.approvalPolicy, sandbox: policy.sandbox } : {})
+        }
+        let opened: any
+        if (want) {
+          try {
+            opened = await codex.request(opts.fork ? 'thread/fork' : 'thread/resume', { threadId: want, ...common, excludeTurns: true })
+          } catch (e) {
+            onStep({
+              id: 'resume-failed',
+              at: Date.now(),
+              kind: 'note',
+              status: 'ok',
+              detail: `No se pudo retomar la sesión ${want.slice(0, 12)} (${(e as Error).message}): empieza una nueva`
+            })
+          }
+        }
+        if (!opened?.thread?.id) opened = await codex.request('thread/start', common)
+        const threadId = opened?.thread?.id ? String(opened.thread.id) : undefined
+        if (!threadId) throw new Error('Codex no abrió ninguna conversación')
+        codexThread = threadId
+        claudeCtx.sessionId = threadId
+        onSession(threadId)
+        if (opened.model) meta.model = String(opened.model)
+        const ended = new Promise<void>((r) => (codexTurnEnd = r))
+        const started = await codex.request('turn/start', {
+          threadId,
+          input: [{ type: 'text', text: prompt, text_elements: [] }],
+          ...(effort ? { effort } : {})
+        })
+        if (started?.turn?.id) codexTurn = String(started.turn.id)
+        await ended
+        codexDone = true
+      })()
+        .catch((e: unknown) => {
+          codexFailure = e instanceof Error ? e.message : String(e)
+        })
+        .finally(() => {
+          child.stdin?.end()
+          setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) killTree(child)
+          }, 1500).unref?.()
+        })
+    }
+
     // Mientras trabaja se va mirando qué archivos cambian, para que no haya
     // que esperar al final para ver dónde está tocando.
     let polling = false
@@ -1767,6 +2099,8 @@ function startCliAgent(
           stdoutBuf = stdoutBuf.slice(nl + 1)
           if (line && acp) {
             acp.feed(line)
+          } else if (line && codex) {
+            codex.feed(line)
           } else if (line && mode === 'claude' && line.includes('"control_') && handleClaudeControl(line)) {
             // Una pregunta de permiso (o su retirada): contestada arriba.
           } else if (line) {
@@ -1809,6 +2143,7 @@ function startCliAgent(
     child.on('close', (code) => {
       stopWatch()
       acp?.failAll(new Error('el agente se cerró'))
+      codex?.failAll(new Error('Codex se cerró'))
       cancelApprovals(runId)
       if (allowFile) {
         try {
@@ -1825,8 +2160,18 @@ function startCliAgent(
       const failed =
         mode === 'acp'
           ? !acpDone || meta.finishReason === 'refusal'
-          : code !== 0 || (meta.error != null && !finalText.trim())
+          : mode === 'codex'
+            ? !codexDone || codexTurnStatus === 'failed'
+            : code !== 0 || (meta.error != null && !finalText.trim())
       if (mode === 'acp' && !acpDone && !meta.error) meta.error = acpFailure
+      if (mode === 'codex' && !codexDone && !meta.error) meta.error = codexFailure
+      // Un Codex sin app-server: se explica y la próxima vez va con `codex exec`.
+      if (mode === 'codex' && !codexDone && /unrecognized subcommand|unexpected argument|no such (sub)?command|invalid (sub)?command/i.test(errOut)) {
+        codexServerOff = true
+        meta.error =
+          'Tu versión de Codex no trae el servidor con el que puede pedirte permiso desde aquí (actualízala con «codex update»). ' +
+          'Vuelve a lanzarlo: irá con «codex exec», sin poder preguntarte.'
+      }
       // Un Claude Code que no entiende los permisos por la entrada estándar: se
       // explica y la próxima vez va como antes, sin preguntas.
       if (mode === 'claude' && failed && /unknown option|input-format|permission-prompt-tool/i.test(errOut)) {

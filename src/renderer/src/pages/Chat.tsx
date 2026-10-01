@@ -31,8 +31,10 @@ import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
   unarchiveSession, deleteSession, sendTurn, stopSession, loadSessions, approveStep,
-  useChatFocus, useQuotas, markTurnUndone, forkAt, planRewind, rewindAndSend, saveSessionNow, type Turn
+  useChatFocus, useQuotas, markTurnUndone, forkAt, planRewind, rewindAndSend, saveSessionNow, openTerm, sendTermCommand,
+  type Turn
 } from '../lib/engine'
+import { navigate } from '../lib/nav'
 import { RewindModal } from '../components/RewindModal'
 import { PromptTextarea, SavePromptButton } from '../components/PromptLibrary'
 import { openSearch } from '../components/SearchModal'
@@ -45,12 +47,12 @@ import {
   API_PERMISSION_MODES, type Attachment, type Effort, type StoredSession, type RunCheckpoint
 } from '@shared/types'
 import { Pane } from '../components/Resizable'
-import { cliPermissionModes, resumeCaps } from '@shared/cliCaps'
+import { cliPermissionModes, nativeCommand, resumeCaps } from '@shared/cliCaps'
 import { RelayModal, endedByLimit } from '../components/RelayModal'
 import { Recommender } from '../components/Recommender'
 
 import { useT } from '../lib/i18n'
-import { withMod } from '../lib/platform'
+import { IS_WIN, withMod } from '../lib/platform'
 function CopyBtn({ text }: { text: string }): React.JSX.Element {
   const t = useT()
   const [done, setDone] = useState(false)
@@ -1274,6 +1276,36 @@ export default function Chat(): React.JSX.Element {
 
               {/* ------------------------ Seguir en la misma sesión */}
               {cliAgent ? <CliContinuity session={session} command={cliAgent.command} /> : null}
+
+              {/* ------------------------ El CLI original, en una terminal */}
+              {cliAgent ? (
+                <Field label={t('Su terminal')}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-open-native
+                    onClick={async () => {
+                      const sid = session.cliSessionAgentId === session.cliAgentId ? session.cliSessionId : undefined
+                      const { id, error } = await openTerm({
+                        cwd: session.worktreePath ?? project?.path,
+                        projectId: project?.id,
+                        title: cliAgent.name
+                      })
+                      if (!id) {
+                        toast('error', t('No se pudo abrir la terminal:') + ' ' + (error ?? t('motivo desconocido')))
+                        return
+                      }
+                      sendTermCommand(id, nativeCommand(cliAgent.command, sid, IS_WIN))
+                      navigate({ page: 'terminal', termId: id })
+                    }}
+                  >
+                    <TerminalIcon size={12} /> {t('Abrir en su terminal')}
+                  </Button>
+                  <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
+                    {t('Abre {cmd} tal cual en una terminal de la app, con esta misma sesión: sus menús, sus comandos con «/» y su inicio de sesión están allí.', { cmd: cliAgent.command })}
+                  </p>
+                </Field>
+              ) : null}
 
               {/* ----------------------------- Hasta dónde puede llegar */}
               {cliModes ? (

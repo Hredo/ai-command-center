@@ -1288,6 +1288,17 @@ export const ACP_PERMISSION_MODES = [
   { id: 'bypassPermissions', label: 'Sin límites', hint: 'dice que sí a todo lo que pregunte (lo que tengas denegado sigue denegado)' }
 ] as const
 
+/**
+ * Codex, por su app-server: los modos de su selector de aprobaciones (Read
+ * Only, Auto y Full Access) más el de preguntar por todo lo que no sea de fiar.
+ */
+export const CODEX_PERMISSION_MODES = [
+  { id: 'acceptEdits', label: 'Edita solo', hint: 'trabaja dentro del proyecto sin preguntar; para salir de él o usar la red te pregunta aquí (su modo Auto)' },
+  { id: 'manual', label: 'Pregunta', hint: 'sólo hace sin preguntar lo que es de fiar (leer, listar); lo demás te lo pregunta aquí' },
+  { id: 'plan', label: 'Sólo lectura', hint: 'lee y propone; para editar o ejecutar algo te pregunta aquí (su modo Read Only)' },
+  { id: 'bypassPermissions', label: 'Sin límites', hint: 'sin sandbox y sin preguntas (su Full Access): ojo con lo que le mandas' }
+] as const
+
 export const EFFORTS: Effort[] = ['auto', 'minimal', 'low', 'medium', 'high', 'max']
 
 /** Un archivo adjunto al prompt. */

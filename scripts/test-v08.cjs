@@ -56,6 +56,7 @@ const CLAUDE_FIXTURE = `require(${JSON.stringify(path.join(__dirname, 'fake-clau
  * Contesta qué argumentos le llegaron, para comprobar cómo se retoma.
  */
 const CODEX_FIXTURE = `
+if (process.argv.includes('app-server')) return require(${JSON.stringify(path.join(__dirname, 'fake-codex.cjs'))}).run()
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
 const args = process.argv.slice(2)
 const r = args.indexOf('resume')
@@ -585,10 +586,10 @@ app.whenReady().then(async () => {
   log(f.session?.cliForkNext === false, 'la bifurcación es sólo para ese turno')
 
   const x = a1.codex
-  log(Boolean(x.first?.cliSessionId?.startsWith('hilo-')), 'Codex: la sesión sale de thread.started', String(x.first?.cliSessionId))
+  log(Boolean(x.first?.cliSessionId?.startsWith('hilo-')), 'Codex: la sesión es el hilo que abre su servidor', String(x.first?.cliSessionId))
   log(
-    (x.second?.response ?? '').includes('resume ' + x.first?.cliSessionId + ' segundo'),
-    'CODEX RETOMA CON «exec … resume <id> prompt»',
+    (x.second?.response ?? '').includes('hilo=resume ' + x.first?.cliSessionId) && /prompt=segundo/.test(x.second?.response ?? ''),
+    'CODEX RETOMA SU HILO (thread/resume)',
     (x.second?.response ?? '').slice(0, 80)
   )
   log(x.first?.promptTokens === 500 && x.first?.completionTokens === 40 && x.first?.cachedTokens === 100, 'Codex: tokens reales del turno', `${x.first?.promptTokens}/${x.first?.completionTokens}/${x.first?.cachedTokens}`)
@@ -598,7 +599,7 @@ app.whenReady().then(async () => {
     'Codex: comandos y cambios de archivos en la línea de tiempo'
   )
   log(x.first?.todos?.length === 2 && x.first.todos[0].done === true, 'Codex: su lista de tareas queda guardada', JSON.stringify(x.first?.todos))
-  log((x.first?.response ?? '').startsWith('args='), 'Codex: la respuesta es el mensaje del agente, sin JSON')
+  log((x.first?.response ?? '').startsWith('hilo=nuevo'), 'Codex: la respuesta es el mensaje del agente, sin JSON')
 
   const g = a1.gemini
   log(g.first?.model === 'gemini-falso' && Boolean(g.first?.cliSessionId), 'Gemini: modelo y sesión del init', `${g.first?.model} ${g.first?.cliSessionId}`)
@@ -4336,6 +4337,210 @@ app.whenReady().then(async () => {
   )
   log(/no me dejaron/.test(p2.claudeDeny?.response ?? '') && p2.claudeDeny.denied, 'si se le niega a Claude Code, se entera', p2.claudeDeny?.response)
   log(p2.stop !== 'colgado' && p2.stop?.ms < 5000, 'detenerlo mientras espera un permiso no lo deja colgado', JSON.stringify(p2.stop))
+  /* -------------------------------------------------------------- *
+   * P2 · Codex por su app-server: aprobaciones, hilos y permisos    *
+   * -------------------------------------------------------------- */
+  const cx = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${JSON.stringify(BINS)}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    await api.projects.save({ id: 'proyecto-cx', name: 'Repo cx', path: repo, color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'codex-p2', name: 'Codex p2', type: 'cli', command: bins.codex, args: ['exec', '--json', '-c', 'model_verbosity=low', '{{prompt}}'], parser: 'codex-json', color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+    const pendingOf = (sid) => {
+      const chat = engine.peekChat(sid)
+      const turn = chat?.turns?.[chat.turns.length - 1]
+      const step = (turn?.steps ?? []).find((s) => s.approval === 'pending' && s.status === 'running')
+      return step ? { step, runId: chat.runningRunId ?? turn.runId } : null
+    }
+    const made = []
+    const session = async () => {
+      const sid = await engine.newSession('cli', { cliAgentId: 'codex-p2', projectId: 'proyecto-cx' })
+      made.push(sid)
+      return sid
+    }
+    const send = (sid, prompt, extra = {}) => engine.sendCli(sid, { prompt, agentId: 'codex-p2', projectPath: repo, projectId: 'proyecto-cx', ...extra })
+
+    // 1. Un comando que necesita permiso: la pregunta sale aquí; «Permitir» es accept.
+    let sid = await session()
+    let running = send(sid, 'pide permiso comando')
+    let pend = await until(() => pendingOf(sid))
+    out.ask = pend ? { kind: pend.step.ask?.kind, target: pend.step.ask?.target, scope: pend.step.always?.scope, what: pend.step.always?.what, tool: pend.step.tool, detail: pend.step.detail } : null
+    engine.focusChat(sid)
+    const buttons = await until(() => { const b = [...document.querySelectorAll('[data-approve]')].map((x) => x.getAttribute('data-approve')); return b.length >= 3 ? b : null })
+    out.buttons = buttons ? buttons.join(',') : null
+    document.querySelector('[data-approve="once"]')?.click()
+    let run = await running
+    out.once = { response: run?.response, status: run?.status, session: run?.cliSessionId, step: (run?.steps ?? []).find((s) => s.ask), cmd: (run?.steps ?? []).find((s) => s.id === 'cmd')?.detail }
+
+    // 2. «Siempre»: con regla propuesta, se le devuelve su regla.
+    sid = await session()
+    running = send(sid, 'pide permiso comando')
+    pend = await until(() => pendingOf(sid))
+    if (pend) engine.approveStep(pend.runId, pend.step.id, true, true)
+    run = await running
+    out.always = run?.response
+
+    // 3. Rechazar: Codex se entera y la fila queda negada.
+    sid = await session()
+    running = send(sid, 'pide permiso comando')
+    pend = await until(() => pendingOf(sid))
+    if (pend) engine.approveStep(pend.runId, pend.step.id, false)
+    run = await running
+    out.deny = { response: run?.response, denied: (run?.steps ?? []).some((s) => s.denied && s.approval === 'denied' && s.status === 'error') }
+
+    // 4. Un parche: pregunta antes de escribir; «Siempre» vale para la sesión.
+    sid = await session()
+    running = send(sid, 'pide permiso parche')
+    pend = await until(() => pendingOf(sid))
+    out.patchAsk = pend ? { kind: pend.step.ask?.kind, target: pend.step.ask?.target, scope: pend.step.always?.scope, tool: pend.step.tool } : null
+    if (pend) engine.approveStep(pend.runId, pend.step.id, true, true)
+    run = await running
+    const edit = (run?.steps ?? []).find((s) => s.tool === 'Edit')
+    out.patch = { response: run?.response, added: edit?.added, approval: edit?.approval, status: edit?.status }
+
+    // 5. Permisos extra (la red): se conceden para el turno.
+    sid = await session()
+    running = send(sid, 'pide permiso red')
+    pend = await until(() => pendingOf(sid))
+    out.netAsk = pend ? pend.step.ask?.kind : null
+    if (pend) engine.approveStep(pend.runId, pend.step.id, true)
+    run = await running
+    out.net = run?.response
+
+    // 6. Un turno normal con modelo, esfuerzo y «Sólo lectura»; el segundo retoma; el tercero bifurca.
+    sid = await session()
+    const nativeSid = sid
+    engine.patchSessionConfig(sid, { permissionMode: 'plan' })
+    const first = await send(sid, 'hola', { model: 'gpt-prueba', effort: 'high', permissionMode: 'plan' })
+    out.turn = {
+      response: first?.response,
+      model: first?.model,
+      thinking: (first?.steps ?? []).some((s) => s.kind === 'thinking' && s.detail === 'Pienso primero.'),
+      bash: (first?.steps ?? []).some((s) => s.tool === 'Bash' && s.target === 'ls' && s.status === 'ok' && /app\\.js/.test(s.detail ?? '')),
+      edit: (first?.steps ?? []).find((s) => s.tool === 'Edit'),
+      todos: (first?.todos ?? []).map((t) => t.text + (t.done ? '✓' : t.active ? '…' : '')).join(','),
+      tokens: first?.promptTokens + '/' + first?.completionTokens + '/' + first?.cachedTokens + '/' + first?.reasoningTokens,
+      context: first?.contextUsed + '/' + first?.contextLimit,
+      session: first?.cliSessionId
+    }
+    const second = await send(sid, 'otra', { permissionMode: 'bypassPermissions' })
+    out.second = { response: second?.response, tokens: second?.promptTokens + '/' + second?.completionTokens, resumed: second?.resumedFrom }
+    engine.patchSessionConfig(sid, { cliForkNext: true })
+    const third = await send(sid, 'bifurca')
+    out.fork = { response: third?.response, session: third?.cliSessionId, forked: third?.forked }
+
+    // 7. Sin modo elegido la Consola manda el de partida de Codex (su Auto).
+    sid = await session()
+    await engine.sendTurn(sid, 'por omisión', (await api.config.get()).data)
+    out.initial = engine.peekChat(sid)?.turns?.slice(-1)[0]?.content
+    engine.focusChat(sid)
+    engine.navigate('chat')
+    await sleep(300)
+    const sel = await until(() => document.querySelector('[data-cli-permission]'), 3000)
+    out.modes = sel ? [...sel.options].map((o) => o.value).join(',') + ' → ' + sel.value : 'sin selector'
+
+    // 8. Sin sesión iniciada: el error dice qué hacer.
+    sid = await session()
+    run = await send(sid, 'sin cuenta')
+    out.noauth = { status: run?.status, error: run?.error }
+
+    // 9. Pararlo mientras espera: no se queda colgado.
+    sid = await session()
+    running = send(sid, 'pide permiso comando')
+    pend = await until(() => pendingOf(sid))
+    const t0 = Date.now()
+    engine.stopSession(sid)
+    run = await Promise.race([running, sleep(8000).then(() => 'colgado')])
+    out.stop = run === 'colgado' ? 'colgado' : { status: run?.status, ms: Date.now() - t0 }
+
+    // 10. «Abrir en su terminal»: el Codex original, retomando la sesión de la conversación.
+    engine.focusChat(nativeSid)
+    engine.navigate('chat')
+    await sleep(400)
+    const openBtn = await until(() => document.querySelector('[data-open-native]'), 4000)
+    const termsBefore = new Set(Object.keys(engine.peekTerms()))
+    openBtn?.click()
+    const term = await until(() => Object.values(engine.peekTerms()).find((x) => !termsBefore.has(x.info.id)), 10000)
+    const wanted = 'resume ' + engine.peekChat(nativeSid)?.session?.cliSessionId
+    out.native = {
+      title: term?.info?.title,
+      cwd: term?.info?.cwd,
+      typed: term ? Boolean(await until(() => engine.termScrollback(term.info.id).includes(wanted), 15000)) : false,
+      ran: term ? Boolean(await until(() => engine.termScrollback(term.info.id).includes('args=' + wanted), 15000)) : false,
+      shown: term ? Boolean(await until(() => (document.querySelector('[data-page="terminal"]')?.hidden === false && document.querySelector('[data-term-tab="' + term.info.id + '"][data-active]') ? true : null), 4000)) : false
+    }
+    if (term) await engine.closeTerm(term.info.id)
+    engine.navigate('chat')
+
+    for (const id of made) await engine.deleteSession(id)
+    for (const r of (await api.runs.query({ projectId: 'proyecto-cx' })).data.rows) await api.runs.remove(r.id)
+    await api.agents.removeCli('codex-p2')
+    await api.projects.remove('proyecto-cx')
+    return out
+  })()`)
+  const parcheCx = fs.existsSync(path.join(REPO, 'parche-codex.txt'))
+  fs.rmSync(path.join(REPO, 'parche-codex.txt'), { force: true })
+
+  log(
+    cx.ask?.kind === 'run' && cx.ask.target === 'touch fuera.txt' && cx.ask.scope === 'user' && cx.ask.what === 'touch' && cx.ask.tool === 'Bash' &&
+      /fuera del sandbox/.test(cx.ask.detail ?? '') && cx.buttons === 'once,always,deny',
+    'P2: CODEX (APP-SERVER) PIDE APROBAR UN COMANDO Y LA PREGUNTA SALE EN LA CONSOLA CON SUS BOTONES',
+    JSON.stringify(cx.ask) + ' · ' + cx.buttons
+  )
+  log(
+    /ejecutado \(decisión=accept\)/.test(cx.once?.response ?? '') && cx.once.status === 'ok' && cx.once.step?.approval === 'approved' && cx.once.step?.status === 'ok' &&
+      /^hilo-/.test(cx.once.session ?? '') && /codex(\.cmd)? app-server -c model_verbosity=low/.test(cx.once.cmd ?? ''),
+    'PERMITIR UNA VEZ: CODEX LO EJECUTA Y SIGUE (y sus -c llegan al servidor)',
+    cx.once?.response + ' · ' + cx.once?.cmd
+  )
+  log(/decisión=regla:touch/.test(cx.always ?? ''), '«Siempre» le devuelve la regla que el propio Codex propone', cx.always)
+  log(/no me dejaron \(decline\)/.test(cx.deny?.response ?? '') && cx.deny.denied, 'rechazar le llega a Codex y la fila queda negada', cx.deny?.response)
+  log(
+    cx.patchAsk?.kind === 'edit' && /parche-codex\.txt/.test(cx.patchAsk.target ?? '') && cx.patchAsk.scope === 'session' &&
+      /parche aplicado \(decisión=acceptForSession\)/.test(cx.patch?.response ?? '') && cx.patch.added === 2 && cx.patch.approval === 'approved' && cx.patch.status === 'ok' && parcheCx,
+    'CODEX PREGUNTA ANTES DE APLICAR UN PARCHE Y «SIEMPRE EN ESTA SESIÓN» ES SU acceptForSession',
+    JSON.stringify(cx.patchAsk) + ' · ' + JSON.stringify(cx.patch)
+  )
+  log(cx.netAsk === 'fetch' && /red=true alcance=turn/.test(cx.net ?? ''), 'los permisos extra (la red) se le conceden para el turno', cx.net)
+  log(
+    cx.turn?.thinking && cx.turn.bash && cx.turn.edit?.added === 2 && cx.turn.edit?.removed === 1 && cx.turn.todos === 'leer✓,arreglar…' &&
+      cx.turn.tokens === '500/40/100/10' && cx.turn.context === '540/272000' && !/DE OTRO HILO/.test(cx.turn.response ?? ''),
+    'POR SU SERVIDOR LLEGAN SU RAZONAMIENTO, SUS COMANDOS, SUS PARCHES CON +/−, SU PLAN, LOS TOKENS Y EL CONTEXTO',
+    JSON.stringify({ ...cx.turn, response: undefined })
+  )
+  log(
+    /hilo=nuevo fork=false model=gpt-prueba effort=high approval=on-request sandbox=read-only prompt=hola/.test(cx.turn?.response ?? '') && cx.turn.model === 'gpt-prueba',
+    'modelo, esfuerzo y «Sólo lectura» (on-request + read-only) van al hilo y al turno',
+    (cx.turn?.response ?? '').slice(0, 110)
+  )
+  log(
+    (cx.second?.response ?? '').includes('hilo=resume ' + cx.turn?.session) && /approval=never sandbox=danger-full-access/.test(cx.second.response) &&
+      cx.second.tokens === '500/40' && cx.second.resumed === cx.turn?.session,
+    'EL SEGUNDO TURNO RETOMA SU HILO, CUENTA SÓLO SUS TOKENS Y «SIN LÍMITES» ES SU FULL ACCESS',
+    (cx.second?.response ?? '').slice(0, 110) + ' · ' + cx.second?.tokens
+  )
+  log(
+    /fork=true/.test(cx.fork?.response ?? '') && cx.fork.session !== cx.turn?.session && cx.fork.forked === true,
+    'bifurcar abre un hilo nuevo a partir del anterior (thread/fork)',
+    (cx.fork?.response ?? '').slice(0, 60)
+  )
+  log(
+    /approval=on-request sandbox=workspace-write/.test(cx.initial ?? '') && cx.modes === 'acceptEdits,manual,plan,bypassPermissions → acceptEdits',
+    'sin elegir nada, la Consola enseña y manda el modo de partida de Codex (su Auto)',
+    (cx.initial ?? '').slice(0, 110) + ' · ' + cx.modes
+  )
+  log(cx.noauth?.status === 'error' && /no tiene sesión iniciada/.test(cx.noauth.error ?? ''), 'sin sesión de Codex, el error dice que hay que entrar', cx.noauth?.error)
+  log(cx.stop !== 'colgado' && cx.stop?.ms < 5000, 'pararlo mientras espera una aprobación no lo deja colgado', JSON.stringify(cx.stop))
+  log(
+    cx.native?.title === 'Codex p2' && cx.native.cwd === REPO && cx.native.typed && cx.native.ran && cx.native.shown,
+    '«ABRIR EN SU TERMINAL» LANZA EL CLI ORIGINAL, EN EL PROYECTO Y RETOMANDO LA SESIÓN DE LA CONVERSACIÓN',
+    JSON.stringify(cx.native)
+  )
   /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */

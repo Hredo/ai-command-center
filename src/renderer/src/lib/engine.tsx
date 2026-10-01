@@ -23,7 +23,7 @@ import type {
 import { useStore } from './store'
 import { navigate } from './nav'
 import { attentionCount } from './tasks'
-import { resumeCaps } from '@shared/cliCaps'
+import { cliPermissionModes, resumeCaps } from '@shared/cliCaps'
 
 /* ------------------------------------------------------------------ *
  * Almacén mínimo                                                     *
@@ -1421,7 +1421,9 @@ export async function sendTurn(
       agentId: session.cliAgentId,
       agentName: cliAgent?.name,
       model: session.cliModel,
-      permissionMode: session.permissionMode,
+      // Sin elegir nada va el modo de partida de su CLI, que es el que enseña el selector.
+      permissionMode:
+        session.permissionMode ?? cliAgent?.permissionMode ?? (cliAgent ? cliPermissionModes(cliAgent.command)?.initial : undefined),
       projectPath: session.worktreePath ?? project.path,
       projectId: project.id,
       projectName: project.name,

@@ -25,6 +25,8 @@ export interface NavTarget {
   tab?: string
   /** Orden que hay que lanzar en la terminal del proyecto (un script, desde la paleta). */
   command?: string
+  /** Pestaña de Terminales que hay que enseñar. */
+  termId?: string
 }
 
 type Listener = (t: NavTarget) => void

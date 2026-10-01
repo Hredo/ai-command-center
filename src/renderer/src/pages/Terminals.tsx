@@ -12,6 +12,7 @@ import { Button, Badge, Empty, cx, Dot, Field, Modal } from '../components/ui'
 import { TerminalView } from '../components/Terminal'
 import { useStore } from '../lib/store'
 import { openTerm, closeTerm, useTerms, sendTermCommand } from '../lib/engine'
+import { lastNavTarget, onNavigate } from '../lib/nav'
 
 
 import { useT } from '../lib/i18n'
@@ -70,6 +71,16 @@ export default function Terminals(): React.JSX.Element {
     setActive(list[list.length - 1]?.info.id ?? null)
   }, [active, terms, list])
 
+  // Quien abre una terminal desde otra sección (el CLI original de una
+  // conversación, un inicio de sesión) pide que se enseñe la suya.
+  useEffect(() => {
+    const last = lastNavTarget()
+    if (last?.page === 'terminal' && last.termId) setActive(last.termId)
+    return onNavigate((n) => {
+      if (n.page === 'terminal' && n.termId) setActive(n.termId)
+    })
+  }, [])
+
   const spawn = async (cwd?: string, projectId?: string, title?: string): Promise<void> => {
     const { id, error } = await openTerm({ cwd, projectId, title })
     if (id) {
@@ -97,6 +108,8 @@ export default function Terminals(): React.JSX.Element {
             return (
               <button
                 key={term.info.id}
+                data-term-tab={term.info.id}
+                data-active={on || undefined}
                 onClick={() => setActive(term.info.id)}
                 className={cx(
                   'group px-3 flex items-center gap-2 border-r border-line shrink-0 max-w-[240px] transition-colors',

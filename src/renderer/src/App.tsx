@@ -464,6 +464,7 @@ function Shell(): React.JSX.Element {
               <div
                 key={p.id}
                 className="absolute inset-0"
+                data-page={p.id}
                 hidden={page !== p.id}
                 style={page === p.id ? undefined : { contentVisibility: 'hidden' }}
               >
