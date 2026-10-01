@@ -12,9 +12,11 @@
  * algo en marcha se pregunta antes: hasta ahora se cortaba sin avisar.
  */
 import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage } from 'electron'
+import { execFile } from 'node:child_process'
 import { getConfig, updateSettings } from './config'
 import { IS_LINUX, IS_MAC } from './platform'
 import { quickStatus, showQuick } from './quick'
+import { trayHostOverride } from './testSeams'
 
 export interface Busy {
   chats: number
@@ -121,6 +123,22 @@ function quitFromTray(): void {
   app.quit()
 }
 
+/**
+ * Se va a salir sin haber pasado por la ventana ni por la bandeja (Cmd+Q en
+ * macOS, «Salir» del Dock, el menú de la app): si hay trabajo en marcha se
+ * pregunta antes, igual que al cerrar. Devuelve si se sale.
+ */
+export function confirmAppQuit(e: Electron.Event): boolean {
+  if (quitting) return true
+  const win = getWin()
+  if (confirmQuit(win && !win.isDestroyed() && win.isVisible() ? win : null, false) !== 'quit') {
+    e.preventDefault()
+    return false
+  }
+  quitting = true
+  return true
+}
+
 function hideToTray(win: BrowserWindow): void {
   win.hide()
   const s = getConfig().settings
@@ -203,6 +221,35 @@ export function refreshTray(): void {
   refresh()
 }
 
+/**
+ * En Linux crear el icono no falla aunque nadie lo pinte: GNOME sin la
+ * extensión de AppIndicator (Fedora, Debian) y Wayland sin anfitrión de iconos
+ * no tienen bandeja. Se pregunta por D-Bus si hay un StatusNotifierWatcher.
+ * Devuelve null si no se puede saber.
+ */
+function linuxTrayHost(): Promise<boolean | null> {
+  const forced = trayHostOverride()
+  if (forced !== null) return Promise.resolve(forced)
+  return new Promise((resolve) => {
+    execFile(
+      'gdbus',
+      ['call', '--session', '--dest', 'org.freedesktop.DBus', '--object-path', '/org/freedesktop/DBus', '--method', 'org.freedesktop.DBus.NameHasOwner', 'org.kde.StatusNotifierWatcher'],
+      { timeout: 4000 },
+      (err, stdout) => {
+        if (err) return resolve(null)
+        const out = String(stdout)
+        resolve(/true/.test(out) ? true : /false/.test(out) ? false : null)
+      }
+    )
+  })
+}
+
+/** Sin anfitrión de iconos, sólo los escritorios X11 clásicos (que usan XEmbed) pintan el icono. */
+function linuxNeedsHost(): boolean {
+  const desktop = (process.env['XDG_CURRENT_DESKTOP'] ?? '').toLowerCase()
+  return Boolean(process.env['WAYLAND_DISPLAY']) || process.env['XDG_SESSION_TYPE'] === 'wayland' || desktop.includes('gnome')
+}
+
 export function initTray(opts: { getWin: () => BrowserWindow | null; createWindow: () => void; icon: string }): void {
   getWin = opts.getWin
   makeWin = opts.createWindow
@@ -217,6 +264,17 @@ export function initTray(opts: { getWin: () => BrowserWindow | null; createWindo
   // En Windows y Linux un clic abre la ventana; en macOS el clic abre el menú, como allí se espera.
   if (!IS_MAC) tray.on('click', () => showWindow())
   refresh()
+  if (IS_LINUX) {
+    void linuxTrayHost().then((host) => {
+      if (host !== false || !linuxNeedsHost()) return
+      // Nadie va a pintar el icono: sin bandeja, cerrar la ventana sale (preguntando
+      // si hay algo en marcha) y una ventana que arrancó escondida se enseña.
+      console.log('[tray] este escritorio no tiene bandeja de iconos: cerrar la ventana saldrá de la app')
+      destroyTray()
+      const win = getWin()
+      if (win && !win.isDestroyed() && !win.isVisible()) win.show()
+    })
+  }
 }
 
 export function destroyTray(): void {

@@ -826,6 +826,11 @@ export interface QuickHotkeyStatus {
   registered: boolean
   /** taken: otra app ya lo tiene; invalid: no es un atajo válido. */
   error?: 'taken' | 'invalid'
+  /**
+   * Linux: la orden que abre el prompt rápido, para asignarla en los atajos del
+   * escritorio cuando el atajo global no llega (Wayland).
+   */
+  command?: string
 }
 
 /** Idioma de la interfaz. */

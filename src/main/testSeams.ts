@@ -9,6 +9,16 @@ import { app } from 'electron'
 
 const LOOPBACK = /^http:\/\/127\.0\.0\.1:\d+$/
 
+/**
+ * ¿Hay quien pinte iconos de bandeja? En las pruebas se dice a mano (el Linux
+ * de pruebas no tiene escritorio); en la app instalada se pregunta al sistema.
+ */
+export function trayHostOverride(): boolean | null {
+  const v = process.env['ACC_TRAY_HOST']
+  if (app.isPackaged || (v !== '0' && v !== '1')) return null
+  return v === '1'
+}
+
 /** Dónde está OpenRouter: openrouter.ai, salvo en las pruebas. */
 export function openRouterOrigin(): string {
   const override = process.env['ACC_OPENROUTER_URL']

@@ -44,7 +44,9 @@ function LoginItemToggle(): React.JSX.Element {
           ? t('Sólo en la app instalada: en desarrollo no se registra nada.')
           : IS_LINUX
             ? t('Para que las tareas programadas corran aunque no la abras. En Linux se hace con un fichero en ~/.config/autostart que se borra al quitarlo.')
-            : t('Para que las tareas programadas corran aunque no la abras.')}
+            : IS_MAC
+              ? t('Para que las tareas programadas corran aunque no la abras. En macOS 13 o posterior el sistema no deja arrancarla escondida: se abre con su ventana y puedes cerrarla.')
+              : t('Para que las tareas programadas corran aunque no la abras.')}
       </p>
     </div>
   )
@@ -129,8 +131,10 @@ function QuickPromptPanel({ s, setSetting }: { s: AppSettings; setSetting: (patc
           </p>
         ) : null}
         {IS_LINUX ? (
-          <p className="text-[11.5px] text-dim leading-relaxed">
-            {t('En Linux con Wayland los atajos globales sólo llegan desde apps de X11; en X11 funcionan siempre.')}
+          <p className="text-[11.5px] text-dim leading-relaxed" data-quick-linux>
+            {t('En Linux con Wayland los atajos globales sólo llegan desde apps de X11; en X11 funcionan siempre.')}{' '}
+            {status?.command ? t('Lo que funciona en cualquier escritorio: asigna en sus atajos de teclado la orden') : null}{' '}
+            {status?.command ? <span className="num text-muted select-all">{status.command}</span> : null}
           </p>
         ) : null}
         <Field label={t('Modelo')} hint={t('El de la última pregunta; también se cambia en la propia ventanita.')}>

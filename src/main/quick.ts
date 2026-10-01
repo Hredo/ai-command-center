@@ -60,8 +60,16 @@ export function registerQuickHotkey(): QuickHotkeyStatus {
   return status
 }
 
+/** Lo que hay que poner en un atajo del escritorio para abrir la ventanita. */
+function quickCommand(): string | undefined {
+  if (!IS_LINUX) return undefined
+  // Una AppImage se lanza por ella misma, no por lo que desempaqueta.
+  const exe = process.env['APPIMAGE'] || process.execPath
+  return `${/\s/.test(exe) ? `"${exe}"` : exe} --quick`
+}
+
 export function quickStatus(): QuickHotkeyStatus {
-  return status
+  return { ...status, command: quickCommand() }
 }
 
 export function unregisterQuickHotkey(): void {

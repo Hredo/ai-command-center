@@ -23,8 +23,8 @@ import { runSelfTest } from './selftest'
 import { startMaintenance, stopMaintenance } from './maintenance'
 import { watchExternal, stopWatchingExternal } from './external'
 import { startQuotas, stopQuotas, pokeQuotas } from './quotas'
-import { initTray, onWindowClose, markQuitting, showWindow, destroyTray, hasTray } from './tray'
-import { initQuick, unregisterQuickHotkey } from './quick'
+import { initTray, onWindowClose, markQuitting, showWindow, destroyTray, hasTray, confirmAppQuit } from './tray'
+import { initQuick, showQuick, unregisterQuickHotkey } from './quick'
 import { startUpdateChecks, stopUpdateChecks } from './updates'
 import { startScheduler, stopScheduler } from './schedules'
 import { stopAccounts } from './accounts'
@@ -247,6 +247,8 @@ app.whenReady().then(async () => {
   if (!SELFTEST) initTray({ getWin: () => mainWindow, createWindow, icon })
   // El atajo global del prompt rápido (Ajustes › Preferencias).
   if (!SELFTEST) initQuick({ getMain: () => mainWindow, showMain: showWindow })
+  // Lanzada con --quick sin estar ya abierta: arranca y enseña la ventanita.
+  if (!SELFTEST && process.argv.includes('--quick')) showQuick()
 
   // Las sesiones de Claude Code que corren fuera de la app —en una terminal o
   // en la app de Claude— se leen de sus transcripciones y entran al histórico
@@ -326,7 +328,9 @@ app.on('window-all-closed', () => {
 
 // Las shells de las terminales son procesos hijos: hay que cerrarlas o
 // quedarían huérfanas al salir.
-app.on('before-quit', () => {
+app.on('before-quit', (e) => {
+  // Cmd+Q o «Salir» del Dock con trabajo en marcha: se pregunta antes de cortarlo.
+  if (!SELFTEST && !confirmAppQuit(e)) return
   markQuitting()
   stopWatchingLocalServers()
   stopWatchingClaude()
@@ -353,7 +357,13 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   // También trae la ventana escondida en la bandeja: en un escritorio de Linux
   // sin iconos de estado es la forma de volver a ella.
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
+    // `ai-command-center --quick`: el prompt rápido, para asignarlo en los atajos
+    // del escritorio cuando el atajo global no llega (Wayland).
+    if (argv.includes('--quick') && app.isReady()) {
+      showQuick()
+      return
+    }
     if (mainWindow) showWindow()
     else if (app.isReady()) createWindow()
   })

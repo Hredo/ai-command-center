@@ -463,6 +463,8 @@ process.env.CLAUDE_CONFIG_DIR = CLAUDE_DIR
 process.env.GROQ_API_KEY = 'clave-de-prueba'
 // Las tareas programadas miran el reloj cada medio segundo en vez de cada 30.
 process.env.ACC_SCHEDULE_TICK_MS = '500'
+// El Linux de las pruebas no tiene quien pinte la bandeja: aquí se da por hecho que sí.
+process.env.ACC_TRAY_HOST = '1'
 
 // Un catálogo de modelos de mentira (y reciente, para que no se descargue):
 // el mismo modelo en models.dev, con sus capacidades, y en OpenRouter, con
@@ -3878,6 +3880,11 @@ app.whenReady().then(async () => {
   }
   g3.visible = qwin.isVisible()
   g3.onTop = qwin.isAlwaysOnTop()
+  // `--quick` en una segunda instancia (un atajo del escritorio) abre la ventanita.
+  qwin.hide()
+  app.emit('second-instance', {}, [process.execPath, '--quick'], process.cwd())
+  g3.flag = Boolean(await untilG3(() => qwin.isVisible(), 3000))
+  g3.command = (await js(`window.api.quick.status()`)).data?.command
   const ask = (text) =>
     qjs(`(async () => {
       const box = document.querySelector('[data-quick-input]')
@@ -3953,6 +3960,11 @@ app.whenReady().then(async () => {
     `${g3.status?.accelerator} registrado:${g3.status?.registered} · inválido:${g3.invalid?.error}`
   )
   log(g3.visible && g3.onTop, 'la ventanita se abre encima de todo', JSON.stringify({ visible: g3.visible, onTop: g3.onTop }))
+  log(
+    g3.flag && (process.platform !== 'linux' || / --quick$/.test(g3.command ?? '')),
+    'lanzar la app con --quick abre la ventanita: sirve para un atajo del escritorio (Wayland)',
+    String(g3.command)
+  )
   log(
     /Eco 1: hola rápido/.test(g3.first) && /Eco 2: otra/.test(g3.second),
     'PREGUNTA DESDE LA VENTANITA, VE LA RESPUESTA Y LA SIGUIENTE PREGUNTA CONTINÚA LA MISMA CONVERSACIÓN',
@@ -4858,7 +4870,8 @@ app.whenReady().then(async () => {
   )
   log(
     /^200 /.test(goodPage) && /OpenRouter está conectado/.test(goodPage) && p4f.waiting && p4g.stored && p4g.badge && p4g.toast && reused !== 200 &&
-      orSeen.bodies.every((b) => b.method === 'POST' && b.url === '/api/v1/auth/keys' && b.method2 === 'S256'),
+      orSeen.bodies.filter((b) => b.url === '/api/v1/auth/keys').length === 2 &&
+      orSeen.bodies.filter((b) => b.url === '/api/v1/auth/keys').every((b) => b.method === 'POST' && b.method2 === 'S256'),
     'CON EL CÓDIGO BUENO LA CLAVE QUEDA GUARDADA Y EL PROVEEDOR LISTO; EL ENLACE NO SIRVE DOS VECES',
     goodPage + ' · reuso: ' + reused
   )
