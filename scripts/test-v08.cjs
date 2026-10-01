@@ -2180,7 +2180,7 @@ app.whenReady().then(async () => {
     return out
   })()`)
   // Le contestas en la terminal y Claude sigue: su transcripción avanza.
-  await new Promise((r) => setTimeout(r, 1200))
+  await new Promise((r) => setTimeout(r, 2200))
   fs.appendFileSync(transcript, '{"type":"assistant"}\n')
   const b6c = await js(`(async () => {
     const sleep = (n) => new Promise((r) => setTimeout(r, n))
@@ -3870,6 +3870,12 @@ app.whenReady().then(async () => {
   const qjs = (code) => qwin.webContents.executeJavaScript(code)
   await untilG3(async () => !qwin.webContents.isLoading() && (await qjs(`Boolean(document.querySelector('[data-quick-input]'))`)))
   await sleepG3(700)
+  // Si perdió el foco se esconde sola (como Spotlight): entonces se vuelve a abrir y se mira al momento.
+  if (!qwin.isVisible()) {
+    await js(`window.api.quick.open()`)
+    await untilG3(() => qwin.isVisible(), 3000)
+    await sleepG3(500)
+  }
   g3.visible = qwin.isVisible()
   g3.onTop = qwin.isAlwaysOnTop()
   const ask = (text) =>
@@ -4860,6 +4866,233 @@ app.whenReady().then(async () => {
     !p4g.events.includes('sk-or-v1-clave') && p4g.preview === 'sk-or...1234',
     'la clave no pasa por la ventana: sólo se ve enmascarada',
     String(p4g.preview)
+  )
+  /* -------------------------------------------------------------- *
+   * P3 · Todo en vivo: lo que se gasta fuera de la app (Claude      *
+   *      Code, Codex) y los saldos remotos se ven al momento        *
+   * -------------------------------------------------------------- */
+  // Un OpenRouter de mentira que dice lo gastado con la clave; cada consulta queda contada.
+  const p3Or = { usage: 1.25, hits: 0, auth: [] }
+  const p3Server = await new Promise((resolve) => {
+    const s = http.createServer((req, res) => {
+      res.setHeader('content-type', 'application/json')
+      if (req.url === '/api/v1/key') {
+        p3Or.hits++
+        p3Or.auth.push(req.headers.authorization)
+        res.end(JSON.stringify({ data: { label: 'prueba', limit: 10, limit_remaining: 10 - p3Or.usage, usage: p3Or.usage, usage_daily: p3Or.usage, usage_weekly: p3Or.usage, usage_monthly: p3Or.usage, is_free_tier: false } }))
+      } else {
+        res.statusCode = 404
+        res.end('{}')
+      }
+    })
+    s.listen(0, '127.0.0.1', () => resolve(s))
+  })
+  process.env.ACC_OPENROUTER_URL = `http://127.0.0.1:${p3Server.address().port}`
+  const p3Mock = await startAgentMock()
+
+  // Un id nuevo en cada pasada: el histórico de la app de pruebas se conserva entre una y otra.
+  const p3Sid = require('node:crypto').randomUUID()
+  const p3ProjDir = path.join(CLAUDE_DIR, 'projects', REPO.replace(/[^a-zA-Z0-9]/g, '-'))
+  const p3File = path.join(p3ProjDir, p3Sid + '.jsonl')
+  const p3Line = (o) => JSON.stringify({ sessionId: p3Sid, cwd: REPO, version: '2.1.220', entrypoint: 'claude-desktop', timestamp: new Date().toISOString(), ...o }) + '\n'
+  const p3Assistant = (inTok, outTok, id) =>
+    p3Line({ type: 'assistant', uuid: id, message: { id: 'msg_' + id, role: 'assistant', model: 'claude-vivo-zq7', content: [{ type: 'text', text: 'hecho' }], usage: { input_tokens: inTok, output_tokens: outTok, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
+
+  await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    window.__p3 = { live: [], quotas: [], alerts: [] }
+    window.__p3.off = [
+      api.live.onChanged((e) => window.__p3.live.push({ at: Date.now(), topics: e.topics })),
+      api.quotas.onUpdated((r) => window.__p3.quotas.push({ at: Date.now(), r })),
+      api.quotas.onAlert((a) => window.__p3.alerts.push({ at: Date.now(), a }))
+    ]
+    await api.providers.setKey('openrouter', 'sk-or-v1-clave-p3-0000')
+    await api.quotas.get(true)
+    engine.navigate('dashboard')
+  })()`)
+  await new Promise((r) => setTimeout(r, 1500))
+
+  // Los tiempos se miden con el reloj monótono del arnés y los avisos se cuentan por
+  // posición: el reloj de pared de WSL da saltos y no sirve para comparar entre procesos.
+  const p3Ms = (t0) => Number((process.hrtime.bigint() - t0) / 1000000n)
+  const p3Mark = () => js(`({ live: window.__p3.live.length, quotas: window.__p3.quotas.length, alerts: window.__p3.alerts.length })`)
+
+  // 1. Claude Code «fuera» (aquí, la app de escritorio de Claude): la carpeta de
+  //    sesiones ni existía al arrancar la app. Aparece una sesión y va creciendo.
+  const p3M1 = await p3Mark()
+  const p3H1 = process.hrtime.bigint()
+  fs.mkdirSync(p3ProjDir, { recursive: true })
+  fs.writeFileSync(p3File, p3Line({ type: 'user', uuid: 'u1', message: { role: 'user', content: 'tarea viva zq7 desde fuera' } }) + p3Assistant(1000, 200, 'a1'))
+  const p3Found = await js(`(async () => {
+    const api = window.api
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const end = performance.now() + 20000
+    while (performance.now() < end) {
+      const run = (await api.runs.query({ limit: 400 })).data.rows.find((r) => r.cliSessionId === ${JSON.stringify(p3Sid)} || String(r.id).includes(${JSON.stringify(p3Sid)}))
+      if (run) return { tokens: run.promptTokens + '/' + run.completionTokens, source: run.source, project: run.projectName, prompt: run.prompt }
+      await sleep(100)
+    }
+    return null
+  })()`)
+  const p3a = { ...(p3Found ?? {}), found: Boolean(p3Found), ms: p3Ms(p3H1) }
+  Object.assign(
+    p3a,
+    await js(`(async () => {
+      const sleep = (n) => new Promise((r) => setTimeout(r, n))
+      const until = async (fn, ms = 6000) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await fn(); if (v) return v; await sleep(100) } return null }
+      // El Panel, que está a la vista, lo enseña sin tocar nada.
+      const panel = Boolean(await until(() => (document.querySelector('[data-page="dashboard"]')?.innerText ?? '').includes('zq7')))
+      return { panel, live: window.__p3.live.slice(${p3M1.live}).some((e) => e.topics.includes('runs')) }
+    })()`)
+  )
+  const p3M2 = await p3Mark()
+  const p3H2 = process.hrtime.bigint()
+  fs.appendFileSync(p3File, p3Assistant(5000, 800, 'a2'))
+  const p3Grown = await js(`(async () => {
+    const api = window.api
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const end = performance.now() + 10000
+    while (performance.now() < end) {
+      const run = (await api.runs.query({ limit: 400 })).data.rows.find((r) => r.cliSessionId === ${JSON.stringify(p3Sid)} || String(r.id).includes(${JSON.stringify(p3Sid)}))
+      if (run && run.promptTokens === 6000) return { tokens: run.promptTokens + '/' + run.completionTokens }
+      await sleep(50)
+    }
+    return null
+  })()`)
+  const p3b = { ...(p3Grown ?? {}), grown: Boolean(p3Grown), ms: p3Ms(p3H2) }
+  p3b.quotasAfter = await js(`(async () => {
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const end = performance.now() + 5000
+    while (performance.now() < end) { if (window.__p3.quotas.length > ${p3M2.quotas}) return true; await sleep(60) }
+    return false
+  })()`)
+
+  // 2. Codex «fuera»: su sesión apunta un % nuevo del plan y cruza un umbral.
+  const p3Codex = path.join(CODEX_HOME, 'sessions', '2026', '09', '29', `rollout-2026-09-29T10-00-00-${CODEX_ID}.jsonl`)
+  const p3M3 = await p3Mark()
+  const p3H3 = process.hrtime.bigint()
+  fs.appendFileSync(
+    p3Codex,
+    JSON.stringify({
+      timestamp: new Date(Date.now() + 5000).toISOString(),
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: { input_tokens: 15000, cached_input_tokens: 4000, output_tokens: 1200, reasoning_output_tokens: 100, total_tokens: 16200 },
+          last_token_usage: { input_tokens: 6000, cached_input_tokens: 0, output_tokens: 500, reasoning_output_tokens: 0, total_tokens: 6500 }
+        },
+        rate_limits: { primary: { used_percent: 83, window_minutes: 300, resets_in_seconds: 3000 }, secondary: { used_percent: 14, window_minutes: 10080, resets_in_seconds: 399000 } }
+      }
+    }) + '\n'
+  )
+  // Sin pedir nada: el informe nuevo llega solo por su aviso.
+  const p3Pct = await js(`(async () => {
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const end = performance.now() + 15000
+    while (performance.now() < end) {
+      if (window.__p3.quotas.slice(${p3M3.quotas}).some((q) => q.r.quotas.some((x) => x.id === 'codex.primary' && x.usedPct === 83))) return 83
+      await sleep(50)
+    }
+    return window.__p3.quotas.slice(-1)[0]?.r.quotas.find((x) => x.id === 'codex.primary')?.usedPct ?? null
+  })()`)
+  const p3c = { pct: p3Pct, ms: p3Ms(p3H3) }
+  Object.assign(
+    p3c,
+    await js(`(async () => {
+      const api = window.api
+      const sleep = (n) => new Promise((r) => setTimeout(r, n))
+      const until = async (fn, ms = 5000) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await fn(); if (v) return v; await sleep(60) } return null }
+      const alert = await until(() => window.__p3.alerts.slice(${p3M3.alerts}).find((a) => a.a.quotaId === 'codex.primary'))
+      const run = (await api.runs.query({ limit: 400 })).data.rows.find((r) => String(r.id) === 'codex-${CODEX_ID}')
+      // Y la sección de cupos del Panel pinta ese 83 %.
+      const panel = Boolean(await until(() => /83\\s?%/.test(document.querySelector('[data-page="dashboard"]')?.innerText ?? '')))
+      return { alert: alert ? alert.a.level : null, tokens: run ? run.promptTokens + '/' + run.completionTokens : null, panel }
+    })()`)
+  )
+
+  // 3. El saldo de OpenRouter: se gasta «fuera» y, al terminar una ejecución de la app con él, se vuelve a preguntar solo.
+  const p3HitsBefore = p3Or.hits
+  const p3d = await js(`(async () => {
+    const api = window.api
+    const of = (r) => r?.quotas.find((x) => x.id === 'openrouter.key')
+    const out = { before: of((await api.quotas.get()).data)?.used }
+    out.prevBase = (await api.providers.status()).data.find((p) => p.id === 'openrouter')?.baseUrl ?? ''
+    await api.providers.setBaseUrl('openrouter', 'http://127.0.0.1:${API_PORT}/v1')
+    out.mark = window.__p3.quotas.length
+    return out
+  })()`)
+  p3Or.usage = 4.5
+  const p3H4 = process.hrtime.bigint()
+  Object.assign(
+    p3d,
+    await js(`(async () => {
+      const api = window.api
+      const sleep = (n) => new Promise((r) => setTimeout(r, n))
+      const of = (r) => r?.quotas.find((x) => x.id === 'openrouter.key')
+      const run = (await api.run.prompt({ providerId: 'openrouter', model: 'modelo-de-prueba', prompt: 'hola p3' }, 'run-p3-or')).data
+      const end = performance.now() + 15000
+      let after = null
+      while (performance.now() < end) {
+        if (window.__p3.quotas.slice(${p3d.mark}).some((q) => of(q.r)?.used === 4.5)) { after = 4.5; break }
+        await sleep(80)
+      }
+      return { run: run?.status, after: after ?? of(window.__p3.quotas.slice(-1)[0]?.r)?.used }
+    })()`)
+  )
+  p3d.ms = p3Ms(p3H4)
+  await js(`(async () => {
+    await window.api.providers.setBaseUrl('openrouter', ${JSON.stringify(p3d.prevBase ?? '')})
+    await window.api.runs.remove('run-p3-or')
+  })()`)
+  const p3HitsAfter = p3Or.hits
+
+  // 4. Una herramienta que aparece con la app abierta también se vigila: se comprobó arriba
+  //    (la carpeta de Claude Code no existía). Limpieza.
+  await js(`(async () => {
+    const api = window.api
+    for (const off of window.__p3.off) off()
+    await api.providers.setKey('openrouter', '')
+    window.__accEngine.navigate('chat')
+  })()`)
+  // Primero la transcripción (si no, el vigilante la volvería a importar) y luego su ejecución.
+  fs.rmSync(p3File, { force: true })
+  await new Promise((r) => setTimeout(r, 1500))
+  await js(`(async () => {
+    const api = window.api
+    for (const r of (await api.runs.query({ limit: 400 })).data.rows) if (String(r.id).includes(${JSON.stringify(p3Sid)})) await api.runs.remove(r.id)
+  })()`)
+  p3Server.close()
+  p3Mock.close()
+  delete process.env.ACC_OPENROUTER_URL
+
+  log(
+    p3a.found && p3a.tokens === '1000/200' && p3a.source === 'terminal' && /tarea viva zq7/.test(p3a.prompt ?? '') && p3a.ms < 12000,
+    'P3: UNA SESIÓN DE CLAUDE CODE ABIERTA FUERA ENTRA SOLA AL HISTÓRICO, AUNQUE SU CARPETA APAREZCA CON LA APP YA ABIERTA',
+    JSON.stringify(p3a)
+  )
+  log(p3a.panel && p3a.live, 'el Panel, a la vista, la enseña sin tocar nada', `panel:${p3a.panel} aviso:${p3a.live}`)
+  log(
+    p3b.grown && p3b.tokens === '6000/1000' && p3b.ms < 3000 && p3b.quotasAfter,
+    'MIENTRAS ESA SESIÓN SIGUE GASTANDO, SUS TOKENS SUBEN EN MENOS DE 3 S Y LOS CUPOS SE RECALCULAN',
+    JSON.stringify(p3b)
+  )
+  log(
+    p3c.pct === 83 && p3c.ms < 4000 && p3c.tokens === '15000/1200',
+    'EL % DEL PLAN QUE CODEX APUNTA EN OTRA TERMINAL LLEGA SOLO A LOS CUPOS EN MENOS DE 4 S',
+    JSON.stringify(p3c)
+  )
+  log(p3c.alert >= 50 && p3c.panel, 'al cruzar un umbral salta su aviso y el Panel pinta el porcentaje nuevo', `aviso al ${p3c.alert} % · panel:${p3c.panel}`)
+  log(
+    p3d.before === 1.25 && p3d.run === 'ok' && p3d.after === 4.5 && p3d.ms < 6000 && p3HitsAfter > p3HitsBefore,
+    'EL SALDO DE OPENROUTER SE VUELVE A PREGUNTAR SOLO AL GASTAR CON ÉL DESDE LA APP: SE VE LO GASTADO FUERA',
+    JSON.stringify(p3d) + ` · consultas: ${p3HitsBefore}→${p3HitsAfter}`
+  )
+  log(
+    p3Or.auth.every((a) => a === 'Bearer sk-or-v1-clave-p3-0000'),
+    'la clave sólo viaja al propio OpenRouter (aquí, su doble de pruebas)',
+    `${p3Or.auth.length} consultas`
   )
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

@@ -271,7 +271,9 @@ app.whenReady().then(async () => {
   if (!SELFTEST) {
     startQuotas(
       (r) => emit(mainWindow, 'quotas:updated', r),
-      (a) => emit(mainWindow, 'quotas:alert', a)
+      (a) => emit(mainWindow, 'quotas:alert', a),
+      // Con la ventana a la vista los saldos de fuera se preguntan cada minuto.
+      () => Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized())
     )
   }
 

@@ -37,7 +37,8 @@ import { writeFileAtomic } from '../atomic'
 import { onLiveChange } from '../live'
 import { notifyQuota } from '../notify'
 import { readClaudePlan, watchClaudePlan, stopWatchingClaudePlan, type ClaudePlanWindow } from './claudeStatusLine'
-import { remoteQuotas, onRemoteChange, adminKey } from './remote'
+import { remoteQuotas, onRemoteChange, adminKey, remoteSpent, setRemoteAttention } from './remote'
+import { allRuns } from '../runs'
 import { budgetQuotas } from './budgets'
 import { project } from './projection'
 import type { CliLimit, GeminiPlan, Quota, QuotaAlert, QuotaGap, QuotaReport, UsageWindow } from '@shared/types'
@@ -535,11 +536,51 @@ export function quotaReport(force = false): QuotaReport {
   return current
 }
 
-export function startQuotas(send: (r: QuotaReport) => void, alert: (a: QuotaAlert) => void): void {
+/** Hasta dónde del histórico se ha mirado ya quién gastó. */
+let spentSeen = Date.now()
+let settle: NodeJS.Timeout | null = null
+
+/**
+ * Lo que se acaba de gastar por API desde la app: el saldo de ese proveedor se
+ * vuelve a preguntar ya, y otra vez un poco después, que es cuando el
+ * proveedor termina de apuntar el cobro.
+ */
+function refreshSpent(): void {
+  const since = spentSeen
+  spentSeen = Date.now()
+  const providers = new Set<string>()
+  const runs = allRuns()
+  for (let i = runs.length - 1; i >= 0 && i >= runs.length - 40; i--) {
+    const r = runs[i]
+    if (r.kind === 'cli' || (r.source && r.source !== 'app')) continue
+    if (r.createdAt + (r.totalMs ?? 0) < since - 2000) continue
+    providers.add(r.providerId)
+  }
+  let any = false
+  for (const p of providers) any = remoteSpent(p) || any
+  if (!any) return
+  if (settle) clearTimeout(settle)
+  settle = setTimeout(() => {
+    settle = null
+    for (const p of providers) remoteSpent(p)
+    pokeQuotas()
+  }, 12_000)
+  settle.unref?.()
+}
+
+export function startQuotas(
+  send: (r: QuotaReport) => void,
+  alert: (a: QuotaAlert) => void,
+  attention: () => boolean = () => false
+): void {
   sendReport = send
   sendAlert = alert
+  setRemoteAttention(attention)
   onRemoteChange(pokeQuotas)
-  onLiveChange(pokeQuotas)
+  onLiveChange((topics) => {
+    if (topics.includes('runs')) refreshSpent()
+    pokeQuotas()
+  })
   watchClaudePlan(pokeQuotas)
   ticker = setInterval(() => recompute(), MIN)
   setTimeout(() => recompute(), 3000)
@@ -548,6 +589,7 @@ export function startQuotas(send: (r: QuotaReport) => void, alert: (a: QuotaAler
 export function stopQuotas(): void {
   if (ticker) clearInterval(ticker)
   if (timer) clearTimeout(timer)
-  ticker = timer = null
+  if (settle) clearTimeout(settle)
+  ticker = timer = settle = null
   stopWatchingClaudePlan()
 }

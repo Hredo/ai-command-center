@@ -1134,5 +1134,6 @@ export const enV08: Record<string, string> = {
   "Sin sesión.": "Signed out.",
   "git usa ya la sesión de gh para github.com": "git now uses the gh session for github.com",
   "gh auth setup-git falló": "gh auth setup-git failed",
-  "Sin sesión. Pulsa «Iniciar sesión» y autoriza en el navegador.": "Signed out. Press \"Sign in\" and authorize in the browser."
+  "Sin sesión. Pulsa «Iniciar sesión» y autoriza en el navegador.": "Signed out. Press \"Sign in\" and authorize in the browser.",
+  "Se pregunta cada minuto con la app a la vista (cada 10–15 con la ventana escondida) y al terminar cada ejecución con este proveedor: lo que gastes fuera se ve enseguida.": "Checked every minute while the app is visible (every 10–15 with the window hidden) and after each run with this provider: what you spend elsewhere shows up right away."
 }

@@ -26,6 +26,7 @@ import { getConfig } from './config'
 import { forgetGhPath, ghPath, ghStatus } from './github'
 import { IS_WIN, findInPath, killTree } from './platform'
 import { setKey } from './secrets'
+import { openRouterOrigin } from './testSeams'
 import type { AccountStatus, AccountsEvent } from '@shared/types'
 
 type Emit = (e: AccountsEvent) => void
@@ -297,11 +298,7 @@ export async function githubSetupGit(): Promise<{ ok: boolean; detail: string }>
 const OPENROUTER = 'https://openrouter.ai'
 const b64url = (b: Buffer): string => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
-/** En las pruebas, un OpenRouter falso en esta misma máquina; nunca otro sitio. */
-function openRouterBase(): string {
-  const override = process.env['ACC_OPENROUTER_URL']
-  return override && /^http:\/\/127\.0\.0\.1:\d+$/.test(override) ? override : OPENROUTER
-}
+const openRouterBase = openRouterOrigin
 
 let orFlow: { server: Server; cancel: (why: string) => void } | null = null
 

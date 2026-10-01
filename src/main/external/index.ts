@@ -23,7 +23,7 @@ const POLL_MS = 5000
 /** Juntar los avisos de una ráfaga de escrituras. */
 const SETTLE_MS = 400
 
-let watchers: FSWatcher[] = []
+const watched = new Map<string, FSWatcher>()
 let poll: NodeJS.Timeout | null = null
 let pending: NodeJS.Timeout | null = null
 let busy = false
@@ -97,28 +97,41 @@ function soon(): void {
 }
 
 function tryWatch(dir: string, recursive: boolean): void {
-  if (!existsSync(dir)) return
+  if (watched.has(dir) || !existsSync(dir)) return
   try {
-    watchers.push(watch(dir, { recursive }, () => soon()))
+    const w = watch(dir, { recursive }, () => soon())
+    w.on('error', () => {
+      w.close()
+      watched.delete(dir)
+    })
+    watched.set(dir, w)
   } catch {
     // Sin vigilancia recursiva en este sistema: queda el repaso periódico.
   }
+}
+
+/** Una herramienta instalada con la app ya abierta: su carpeta aparece después. */
+function watchAll(): void {
+  tryWatch(codexRoot(), true)
+  tryWatch(geminiRoot(), true)
+  // OpenCode escribe en su base de datos y en el diario (-wal) de al lado.
+  tryWatch(dirname(opencodeDbPath()), false)
 }
 
 export function watchExternal(cb: (p: { imported: number }) => void): void {
   onUpdate = cb
   loadState()
   void refreshExternal()
-  tryWatch(codexRoot(), true)
-  tryWatch(geminiRoot(), true)
-  // OpenCode escribe en su base de datos y en el diario (-wal) de al lado.
-  tryWatch(dirname(opencodeDbPath()), false)
-  poll = setInterval(() => void refreshExternal(), POLL_MS)
+  watchAll()
+  poll = setInterval(() => {
+    watchAll()
+    void refreshExternal()
+  }, POLL_MS)
 }
 
 export function stopWatchingExternal(): void {
-  for (const w of watchers) w.close()
-  watchers = []
+  for (const w of watched.values()) w.close()
+  watched.clear()
   if (poll) clearInterval(poll)
   if (pending) clearTimeout(pending)
   poll = pending = null
