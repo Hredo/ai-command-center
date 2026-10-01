@@ -127,7 +127,9 @@ export function showQuick(): void {
     win.setAlwaysOnTop(true, 'floating')
     // En X11 el gestor de ventanas lo quita al mostrarla, aunque se haya puesto
     // antes o justo después: hay que volver a ponerlo cuando ya la ha enseñado.
-    if (IS_LINUX) setTimeout(() => !win.isDestroyed() && win.setAlwaysOnTop(true, 'floating'), 120)
+    if (IS_LINUX) {
+      for (const ms of [60, 180, 450]) setTimeout(() => !win.isDestroyed() && win.isVisible() && win.setAlwaysOnTop(true, 'floating'), ms)
+    }
     win.focus()
     emit(win, 'quick:shown', {})
   }

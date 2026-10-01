@@ -47,23 +47,7 @@ function setupRepo() {
 }
 
 /** Un CLI falso que habla como Claude Code y hace pasos, para tener detalle que podar. */
-const CLAUDE_FIXTURE = `
-const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
-const args = process.argv.slice(2)
-const resumed = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : ''
-const forked = args.includes('--fork-session')
-let prompt = ''
-process.stdin.on('data', (c) => (prompt += c))
-process.stdin.on('end', () => {
-  const sid = forked || !resumed ? 'sesion-' + Math.random().toString(16).slice(2, 10) : resumed
-  out({ type: 'system', subtype: 'init', session_id: sid, model: 'claude-falso', cwd: process.cwd() })
-  out({ type: 'assistant', session_id: sid, message: { model: 'claude-falso', content: [
-    { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'app.js' } },
-    { type: 'text', text: 'resume=' + (resumed || 'no') + ' fork=' + forked + ' prompt=' + prompt.slice(0, 200) }
-  ], usage: { input_tokens: 100, output_tokens: 20 } } })
-  out({ type: 'result', session_id: sid, total_cost_usd: 0.01, duration_ms: 50, num_turns: 1,
-    result: 'resume=' + (resumed || 'no') + ' fork=' + forked + ' prompt=' + prompt.slice(0, 400) })
-})
+const CLAUDE_FIXTURE = `require(${JSON.stringify(path.join(__dirname, 'fake-claude.cjs'))}).run()
 `
 
 /**
@@ -90,6 +74,7 @@ out({ type: 'turn.completed', usage: { input_tokens: 500, cached_input_tokens: 1
 
 /** Gemini CLI falso con stream-json. */
 const GEMINI_FIXTURE = `
+if (process.argv.includes('--experimental-acp')) return require(${JSON.stringify(path.join(__dirname, 'fake-acp.cjs'))}).run('gemini')
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
 const args = process.argv.slice(2)
 const r = args.indexOf('--resume')
@@ -104,6 +89,7 @@ out({ type: 'result', status: 'success', stats: { total_tokens: 300, input_token
 
 /** OpenCode falso: cada evento lleva sessionID. */
 const OPENCODE_FIXTURE = `
+if (process.argv.includes('acp')) return require(${JSON.stringify(path.join(__dirname, 'fake-acp.cjs'))}).run('opencode')
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
 const args = process.argv.slice(2)
 const r = args.indexOf('--session')
@@ -616,13 +602,13 @@ app.whenReady().then(async () => {
 
   const g = a1.gemini
   log(g.first?.model === 'gemini-falso' && Boolean(g.first?.cliSessionId), 'Gemini: modelo y sesión del init', `${g.first?.model} ${g.first?.cliSessionId}`)
-  log(g.second?.response === 'resume=' + g.first?.cliSessionId, 'GEMINI RETOMA CON --resume', g.second?.response)
+  log(g.second?.response === 'resume=' + g.first?.cliSessionId, 'GEMINI RETOMA SU SESIÓN (ACP, CARGÁNDOLA)', g.second?.response)
   log(g.first?.promptTokens === 250 && g.first?.completionTokens === 50, 'Gemini: tokens del resultado', `${g.first?.promptTokens}/${g.first?.completionTokens}`)
   log(g.first?.steps?.some((s) => s.tool === 'read_file' && s.status === 'ok'), 'Gemini: la herramienta se abre y se cierra')
 
   const o = a1.opencode
   log(Boolean(o.first?.cliSessionId?.startsWith('ses_')), 'OpenCode: la sesión sale de sessionID', String(o.first?.cliSessionId))
-  log((o.second?.response ?? '').includes('session=' + o.first?.cliSessionId), 'OPENCODE RETOMA CON --session', o.second?.response)
+  log((o.second?.response ?? '').includes('session=' + o.first?.cliSessionId), 'OPENCODE RETOMA SU SESIÓN (ACP)', o.second?.response)
 
   const p = a1.plain
   log(
@@ -1672,7 +1658,7 @@ app.whenReady().then(async () => {
     'copiar no pisa, ni vale una ruta cualquiera, ni se escribe en lo que baja claude.ai',
     [d3.again, d3.fake, d3.synced].join(' | ').slice(0, 160)
   )
-  log(d3.editorLoaded && d3.saved && d3.projectSkillRow, 'EL EDITOR DE INSTRUCCIONES GUARDA EN DISCO, Y SALEN LAS SKILLS DEL PROYECTO', d3.error ?? '')
+  log(d3.editorLoaded && d3.saved && d3.projectSkillRow, 'EL EDITOR DE INSTRUCCIONES GUARDA EN DISCO, Y SALEN LAS SKILLS DEL PROYECTO', d3.error ?? JSON.stringify({ cargado: d3.editorLoaded, guardado: d3.saved, skill: d3.projectSkillRow }))
   await js(`(async () => {
     const api = window.api
     await api.providers.setBaseUrl('vllm', ${JSON.stringify(d3.prevBase ?? '')})
@@ -2104,8 +2090,12 @@ app.whenReady().then(async () => {
       "const resumed = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : ''",
       "const s = args.indexOf('--settings')",
       "let prompt = ''",
-      "process.stdin.on('data', (c) => (prompt += c))",
-      "process.stdin.on('end', () => {",
+      // Como el de verdad: con --input-format stream-json el turno empieza con el primer mensaje.
+      "const streaming = args.includes('--input-format')",
+      'let started = false',
+      "process.stdin.on('data', (c) => { prompt += c; if (streaming && !started && prompt.includes(String.fromCharCode(10))) { started = true; turn() } })",
+      "process.stdin.on('end', () => { if (!streaming) turn(); else process.exit(0) })",
+      'function turn() {',
       "  const sid = resumed || 'perm-' + Math.random().toString(16).slice(2, 8)",
       "  out({ type: 'system', subtype: 'init', session_id: sid, model: 'claude-falso', cwd: process.cwd() })",
       '  if (s !== -1) {',
@@ -2118,7 +2108,7 @@ app.whenReady().then(async () => {
       "  out({ type: 'assistant', session_id: sid, message: { model: 'claude-falso', content: [{ type: 'text', text: 'No he podido.' }], usage: { input_tokens: 10, output_tokens: 5 } } })",
       "  out({ type: 'result', session_id: sid, total_cost_usd: 0, duration_ms: 5, num_turns: 1, result: 'No he podido.',",
       "    permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm test' } }, { tool_name: 'Write', tool_input: { file_path: process.cwd() + '/nuevo.txt' } }] })",
-      '})'
+      '}'
     ].join('\n')
   )
   const permBin = (() => {
@@ -2977,15 +2967,19 @@ app.whenReady().then(async () => {
       'const args = process.argv.slice(2)',
       "const s = args.indexOf('--settings')",
       "let prompt = ''",
-      "process.stdin.on('data', (c) => (prompt += c))",
-      "process.stdin.on('end', () => {",
+      // Como el de verdad: con --input-format stream-json el turno empieza con el primer mensaje.
+      "const streaming = args.includes('--input-format')",
+      'let started = false',
+      "process.stdin.on('data', (c) => { prompt += c; if (streaming && !started && prompt.includes(String.fromCharCode(10))) { started = true; const m = JSON.parse(prompt.split(String.fromCharCode(10))[0]); prompt = m.message.content.map((b) => b.text).join(''); turn() } })",
+      "process.stdin.on('end', () => { if (!streaming) turn(); else process.exit(0) })",
+      'function turn() {',
       "  const sid = 'e4-' + Math.random().toString(16).slice(2, 8)",
       "  out({ type: 'system', subtype: 'init', session_id: sid, model: 'claude-falso', cwd: process.cwd() })",
       "  const settings = s !== -1 ? fs.readFileSync(args[s + 1], 'utf8') : 'ninguno'",
       "  const text = 'ajustes=' + settings + ' prompt=' + prompt",
       "  out({ type: 'assistant', session_id: sid, message: { model: 'claude-falso', content: [{ type: 'text', text }], usage: { input_tokens: 10, output_tokens: 5 } } })",
       "  out({ type: 'result', session_id: sid, total_cost_usd: 0, duration_ms: 5, num_turns: 1, result: text })",
-      '})'
+      '}'
     ].join('\n')
   )
   let e4Bin
@@ -3874,7 +3868,7 @@ app.whenReady().then(async () => {
   const qwin = await untilG3(() => BWG3.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.getURL().includes('#quick')))
   const qjs = (code) => qwin.webContents.executeJavaScript(code)
   await untilG3(async () => !qwin.webContents.isLoading() && (await qjs(`Boolean(document.querySelector('[data-quick-input]'))`)))
-  await sleepG3(300)
+  await sleepG3(700)
   g3.visible = qwin.isVisible()
   g3.onTop = qwin.isAlwaysOnTop()
   const ask = (text) =>
@@ -4195,6 +4189,153 @@ app.whenReady().then(async () => {
     `${JSON.stringify(g5.form)} · ${g5.formNext}`
   )
   log(g5.login?.supported === false && g5.login.reason === 'dev', 'abrir al iniciar sesión sólo se ofrece en la app instalada', JSON.stringify(g5.login))
+  /* -------------------------------------------------------------- *
+   * P2 · Cada CLI como en su terminal: OpenCode por ACP y Claude    *
+   *      Code preguntan sus permisos aquí                          *
+   * -------------------------------------------------------------- */
+  const OUTSIDE_P2 = fs.mkdtempSync(path.join(os.tmpdir(), 'acc-fuera-'))
+  fs.writeFileSync(path.join(OUTSIDE_P2, 'secreto.txt'), 'la palabra es mandarina\n')
+  const secretP2 = path.join(OUTSIDE_P2, 'secreto.txt')
+  const p2 = await js(`(async () => {
+    const { repo } = ${ctx}
+    const bins = ${JSON.stringify(BINS)}
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    await api.projects.save({ id: 'proyecto-p2', name: 'Repo p2', path: repo, color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'opencode-p2', name: 'OpenCode p2', type: 'cli', command: bins.opencode, args: ['run', '--format', 'json', '{{prompt}}'], parser: 'opencode-json', color: '#fff', createdAt: Date.now() })
+    await api.agents.saveCli({ id: 'claude-p2', name: 'Claude p2', type: 'cli', command: bins.claude, args: ['-p', '--output-format', 'stream-json', '--verbose'], parser: 'claude-stream-json', color: '#fff', createdAt: Date.now() })
+    await sleep(300)
+    const pendingOf = (sid) => {
+      const chat = engine.peekChat(sid)
+      const turn = chat?.turns?.[chat.turns.length - 1]
+      const step = (turn?.steps ?? []).find((s) => s.approval === 'pending' && s.status === 'running')
+      return step ? { step, runId: chat.runningRunId ?? turn.runId } : null
+    }
+    const made = []
+    const session = async (agent, extra = {}) => {
+      const sid = await engine.newSession('cli', { cliAgentId: agent, projectId: 'proyecto-p2', ...extra })
+      made.push(sid)
+      return sid
+    }
+
+    // 1. OpenCode pide entrar en una carpeta de fuera: la pregunta sale aquí, con «Permitir una vez».
+    let sid = await session('opencode-p2')
+    let running = engine.sendCli(sid, { prompt: 'pide permiso fuera: ${secretP2}', agentId: 'opencode-p2', projectPath: repo, projectId: 'proyecto-p2' })
+    let pend = await until(() => pendingOf(sid))
+    out.ask = pend ? { kind: pend.step.ask?.kind, target: pend.step.ask?.target, always: pend.step.always?.scope, tool: pend.step.tool } : null
+    // Por la interfaz: en la Consola salen los tres botones.
+    engine.focusChat(sid)
+    const buttons = await until(() => { const b = [...document.querySelectorAll('[data-approve]')].map((x) => x.getAttribute('data-approve')); return b.length >= 3 ? b : null })
+    out.buttons = buttons ? buttons.join(',') : null
+    out.text = [...document.querySelectorAll('[data-approve="once"]')][0]?.closest('div')?.parentElement?.textContent ?? ''
+    document.querySelector('[data-approve="once"]')?.click()
+    let run = await running
+    out.once = { response: run?.response, status: run?.status, session: run?.cliSessionId, step: (run?.steps ?? []).find((s) => s.ask)?.approval }
+
+    // 2. «Siempre» elige la opción de siempre del propio OpenCode.
+    sid = await session('opencode-p2')
+    running = engine.sendCli(sid, { prompt: 'pide permiso fuera: ${secretP2}', agentId: 'opencode-p2', projectPath: repo, projectId: 'proyecto-p2' })
+    pend = await until(() => pendingOf(sid))
+    if (pend) engine.approveStep(pend.runId, pend.step.id, true, true)
+    run = await running
+    out.always = run?.response
+
+    // 3. Rechazar: el agente se entera y sigue sin ello.
+    sid = await session('opencode-p2')
+    running = engine.sendCli(sid, { prompt: 'pide permiso fuera: ${secretP2}', agentId: 'opencode-p2', projectPath: repo, projectId: 'proyecto-p2' })
+    pend = await until(() => pendingOf(sid))
+    if (pend) engine.approveStep(pend.runId, pend.step.id, false)
+    run = await running
+    out.deny = { response: run?.response, denied: (run?.steps ?? []).some((s) => s.denied && s.approval === 'denied') }
+
+    // 4. Un turno normal: su línea de tiempo, tokens, contexto, coste; y el segundo turno retoma.
+    sid = await session('opencode-p2')
+    const first = await engine.sendCli(sid, { prompt: 'hola', agentId: 'opencode-p2', projectPath: repo, projectId: 'proyecto-p2', model: 'opencode/gpt-5.1-codex' })
+    out.turn = {
+      thinking: (first?.steps ?? []).some((s) => s.kind === 'thinking' && s.detail === 'Pienso un poco.'),
+      tool: (first?.steps ?? []).some((s) => s.tool === 'bash' && s.target === 'ls' && s.status === 'ok'),
+      todos: (first?.todos ?? []).map((t) => t.text + (t.done ? '✓' : t.active ? '…' : '')).join(','),
+      tokens: first?.promptTokens + '/' + first?.completionTokens + '/' + first?.cachedTokens,
+      context: first?.contextUsed + '/' + first?.contextLimit,
+      cost: first?.costTotal,
+      model: first?.model,
+      response: first?.response
+    }
+    engine.patchSessionConfig(sid, { permissionMode: 'plan' })
+    const second = await engine.sendCli(sid, { prompt: 'otra', agentId: 'opencode-p2', projectPath: repo, projectId: 'proyecto-p2', permissionMode: 'plan' })
+    out.second = second?.response
+
+    // 5. Claude Code pregunta antes de escribir; «Siempre en este proyecto» le pasa su regla.
+    sid = await session('claude-p2')
+    running = engine.sendCli(sid, { prompt: 'pide permiso', agentId: 'claude-p2', projectPath: repo, projectId: 'proyecto-p2', permissionMode: 'manual' })
+    pend = await until(() => pendingOf(sid))
+    out.claudeAsk = pend ? { kind: pend.step.ask?.kind, target: pend.step.ask?.target, always: pend.step.always?.scope, what: pend.step.always?.what, tool: pend.step.tool } : null
+    if (pend) engine.approveStep(pend.runId, pend.step.id, true, true)
+    run = await running
+    out.claudeAllow = { response: run?.response, status: run?.status }
+
+    // 6. Y si se le niega, se entera.
+    sid = await session('claude-p2')
+    running = engine.sendCli(sid, { prompt: 'pide permiso', agentId: 'claude-p2', projectPath: repo, projectId: 'proyecto-p2', permissionMode: 'manual' })
+    pend = await until(() => pendingOf(sid))
+    if (pend) engine.approveStep(pend.runId, pend.step.id, false)
+    run = await running
+    out.claudeDeny = { response: run?.response, denied: (run?.steps ?? []).some((s) => s.denied) }
+
+    // 7. Detenerlo mientras espera: no se queda colgado.
+    sid = await session('opencode-p2')
+    running = engine.sendCli(sid, { prompt: 'pide permiso fuera: ${secretP2}', agentId: 'opencode-p2', projectPath: repo, projectId: 'proyecto-p2' })
+    pend = await until(() => pendingOf(sid))
+    const t0 = Date.now()
+    engine.stopSession(sid)
+    run = await Promise.race([running, sleep(8000).then(() => 'colgado')])
+    out.stop = run === 'colgado' ? 'colgado' : { status: run?.status, ms: Date.now() - t0 }
+
+    for (const id of made) await engine.deleteSession(id)
+    for (const r of (await api.runs.query({ projectId: 'proyecto-p2' })).data.rows) await api.runs.remove(r.id)
+    await api.agents.removeCli('opencode-p2')
+    await api.agents.removeCli('claude-p2')
+    await api.projects.remove('proyecto-p2')
+    return out
+  })()`)
+  const permisoP2 = fs.existsSync(path.join(REPO, 'permiso.txt'))
+  fs.rmSync(path.join(REPO, 'permiso.txt'), { force: true })
+  fs.rmSync(OUTSIDE_P2, { recursive: true, force: true })
+
+  log(
+    p2.ask?.kind === 'outside' && p2.ask.target === OUTSIDE_P2 && p2.ask.always === 'session' && p2.buttons === 'once,always,deny' && /fuera del proyecto/.test(p2.text),
+    'P2: OPENCODE (ACP) PIDE ENTRAR EN UNA CARPETA DE FUERA Y LA PREGUNTA SALE EN LA CONSOLA CON SUS BOTONES',
+    JSON.stringify(p2.ask) + ' · ' + p2.buttons
+  )
+  log(
+    /leído: la palabra es mandarina \(opción=once\)/.test(p2.once?.response ?? '') && p2.once.status === 'ok' && p2.once.step === 'approved' && /^ses_/.test(p2.once.session ?? ''),
+    'PERMITIR UNA VEZ: EL AGENTE LO LEE Y SIGUE',
+    p2.once?.response
+  )
+  log(/opción=always/.test(p2.always ?? ''), '«Siempre» usa la opción de siempre del propio OpenCode', p2.always)
+  log(/no me dejaron \(reject\)/.test(p2.deny?.response ?? '') && p2.deny.denied, 'rechazar le llega al agente y la fila queda negada', p2.deny?.response)
+  log(
+    p2.turn?.thinking && p2.turn.tool && p2.turn.todos === 'leer✓,contestar…' && p2.turn.tokens === '80/10/5' && p2.turn.context === '1234/32000' && p2.turn.cost === 0.02,
+    'POR ACP LLEGAN SU PENSAMIENTO, SUS HERRAMIENTAS, SU PLAN, TOKENS, CONTEXTO Y COSTE',
+    JSON.stringify(p2.turn)
+  )
+  log(
+    /model=opencode\/gpt-5\.1-codex/.test(p2.turn?.response ?? '') && p2.turn.model === 'opencode/gpt-5.1-codex',
+    'el modelo elegido se le pone a la sesión',
+    p2.turn?.model
+  )
+  log(/session=ses_\S+ fork=false model=\S+ effort=\S+ mode=plan/.test(p2.second ?? ''), 'el segundo turno retoma su sesión y «Sólo plan» es su modo plan', (p2.second ?? '').slice(0, 90))
+  log(
+    p2.claudeAsk?.kind === 'edit' && p2.claudeAsk.target === 'permiso.txt' && p2.claudeAsk.always === 'project' && p2.claudeAsk.what === 'Write(permiso.txt)' &&
+      /escrito siempre=true/.test(p2.claudeAllow?.response ?? '') && permisoP2,
+    'CLAUDE CODE PREGUNTA ANTES DE ESCRIBIR Y «SIEMPRE EN ESTE PROYECTO» LE PASA SU REGLA',
+    JSON.stringify(p2.claudeAsk) + ' · ' + p2.claudeAllow?.response
+  )
+  log(/no me dejaron/.test(p2.claudeDeny?.response ?? '') && p2.claudeDeny.denied, 'si se le niega a Claude Code, se entera', p2.claudeDeny?.response)
+  log(p2.stop !== 'colgado' && p2.stop?.ms < 5000, 'detenerlo mientras espera un permiso no lo deja colgado', JSON.stringify(p2.stop))
   /* -------------------------------------------------------------- *
    * Cierre                                                         *
    * -------------------------------------------------------------- */

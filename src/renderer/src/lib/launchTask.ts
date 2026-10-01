@@ -4,7 +4,8 @@
  * tarea») y las tareas programadas, que así funcionan exactamente igual.
  */
 import { newSession, patchSessionConfig, sendTurn } from './engine'
-import { PERMISSION_MODES, API_PERMISSION_MODES, type AppConfig, type RunRecord } from '@shared/types'
+import { API_PERMISSION_MODES, type AppConfig, type RunRecord } from '@shared/types'
+import { cliPermissionModes } from '@shared/cliCaps'
 
 export interface TaskSpec {
   projectId: string
@@ -33,13 +34,13 @@ const nothing = Promise.resolve({})
 type Translate = (key: string, vars?: Record<string, string | number>) => string
 
 /**
- * Los modos de permiso que entiende cada agente: los de Claude Code para él,
- * ninguno para los demás CLI y los de la app para lo que va por API.
+ * Los modos de permiso que entiende cada agente: los de su CLI (Claude Code,
+ * OpenCode, Gemini CLI), ninguno para los demás y los de la app por API.
  */
 export function permissionModesFor(agent: string, config: AppConfig): readonly { id: string; label: string; hint: string }[] | null {
   if (agent.startsWith('cli:')) {
     const a = config.cliAgents.find((x) => x.id === agent.slice(4))
-    return a?.command.toLowerCase() === 'claude' ? PERMISSION_MODES : null
+    return a ? (cliPermissionModes(a.command)?.modes ?? null) : null
   }
   return API_PERMISSION_MODES
 }

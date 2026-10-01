@@ -17,7 +17,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   Eye, Pencil, FilePlus2, TerminalSquare, Search, Globe, Bot, ListTodo, Wrench,
-  Sparkles, Info, ChevronRight, Check, X, Loader2, Ban, Hand
+  Sparkles, Info, ChevronRight, Check, CheckCheck, X, Loader2, Ban, Hand
 } from 'lucide-react'
 import { Button, cx } from './ui'
 import { ms as fmtMs } from '../lib/format'
@@ -61,6 +61,26 @@ function isPending(step: AgentStep): boolean {
 
 /** Qué se está pidiendo permiso para hacer, en una frase. */
 function pendingText(step: AgentStep, t: ReturnType<typeof useT>): string {
+  // Un CLI que pregunta dice él mismo qué quiere.
+  if (step.ask) {
+    const target = step.ask.target
+    switch (step.ask.kind) {
+      case 'outside':
+        return target
+          ? t('Quiere entrar en una carpeta fuera del proyecto: {dir}', { dir: target })
+          : t('Quiere entrar en una carpeta fuera del proyecto.')
+      case 'run':
+        return t('Quiere ejecutar este comando.')
+      case 'edit':
+        return t('Quiere modificar este archivo.')
+      case 'read':
+        return t('Quiere leer esto.')
+      case 'fetch':
+        return t('Quiere consultar esta dirección.')
+      default:
+        return t('Quiere usar {tool}.', { tool: step.tool ?? target ?? '' })
+    }
+  }
   const tool = (step.tool ?? '').toLowerCase()
   if (tool === 'web_fetch') {
     let host = ''
@@ -78,6 +98,15 @@ function pendingText(step: AgentStep, t: ReturnType<typeof useT>): string {
   return t('Quiere modificar este archivo.')
 }
 
+/** «Siempre en esta sesión», «Siempre en este proyecto»… */
+export function alwaysLabel(a: NonNullable<AgentStep['always']>, t: ReturnType<typeof useT>): string {
+  return a.scope === 'project'
+    ? t('Siempre en este proyecto')
+    : a.scope === 'user'
+      ? t('Siempre, en todos tus proyectos')
+      : t('Siempre en esta sesión')
+}
+
 /* ------------------------------------------------------------------ *
  * Una fila                                                           *
  * ------------------------------------------------------------------ */
@@ -89,7 +118,7 @@ function Row({
 }: {
   step: AgentStep
   live: boolean
-  onApprove?: (stepId: string, allow: boolean) => void
+  onApprove?: (stepId: string, allow: boolean, always?: boolean) => void
 }): React.JSX.Element {
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -175,10 +204,21 @@ function Row({
           </span>
           {onApprove ? (
             <span className="ml-auto flex items-center gap-1.5">
-              <Button size="sm" variant="primary" onClick={() => onApprove(step.id, true)}>
+              <Button size="sm" variant="primary" onClick={() => onApprove(step.id, true)} data-approve="once">
                 <Check size={12} /> {t('Permitir')}
               </Button>
-              <Button size="sm" variant="danger" onClick={() => onApprove(step.id, false)}>
+              {step.always ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onApprove(step.id, true, true)}
+                  title={step.always.what ? t('No vuelve a preguntar por: {what}', { what: step.always.what }) : undefined}
+                  data-approve="always"
+                >
+                  <CheckCheck size={12} /> {alwaysLabel(step.always, t)}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="danger" onClick={() => onApprove(step.id, false)} data-approve="deny">
                 <X size={12} /> {t('Rechazar')}
               </Button>
             </span>
@@ -217,7 +257,7 @@ export function AgentActivity({
   /** Mientras corre se queda abierta sola. */
   running?: boolean
   /** Contesta a una petición de permiso. Sin esto no se pintan los botones. */
-  onApprove?: (stepId: string, allow: boolean) => void
+  onApprove?: (stepId: string, allow: boolean, always?: boolean) => void
 }): React.JSX.Element | null {
   const t = useT()
   const [open, setOpen] = useState(Boolean(running))

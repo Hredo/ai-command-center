@@ -19,6 +19,7 @@ import {
 import { Button, Badge, Select, Textarea, Empty, cx } from '../components/ui'
 import { DiffReview } from '../components/DiffReview'
 import { TaskForm, SchedulesStrip } from '../components/TaskForm'
+import { alwaysLabel } from '../components/AgentActivity'
 import { samePath } from '../components/WorktreeBox'
 import { useStore } from '../lib/store'
 import { useT } from '../lib/i18n'
@@ -283,6 +284,16 @@ function Card({
               <Button size="sm" onClick={() => approveStep(card.pending!.runId, card.pending!.step.id, true)}>
                 <Check size={12} /> {t('Permitir')}
               </Button>
+              {card.pending.step.always ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => approveStep(card.pending!.runId, card.pending!.step.id, true, true)}
+                  title={card.pending.step.always.what}
+                >
+                  {alwaysLabel(card.pending.step.always, t)}
+                </Button>
+              ) : null}
               <Button size="sm" variant="ghost" onClick={() => approveStep(card.pending!.runId, card.pending!.step.id, false)}>
                 <X size={12} /> {t('Rechazar')}
               </Button>

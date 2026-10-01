@@ -29,9 +29,10 @@ import {
   sendCli, sendChat, approveStep, stopSession, patchSessionConfig, useRunsVersion
 } from '../lib/engine'
 import {
-  API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type Project, type ProjectInfo,
+  API_PERMISSION_MODES, PERMISSION_MODES, ACP_PERMISSION_MODES, type Attachment, type Effort, type Project, type ProjectInfo,
   type RunRecord
 } from '@shared/types'
+import { cliPermissionModes } from '@shared/cliCaps'
 import { Pane } from '../components/Resizable'
 import { lastNavTarget, onNavigate, type NavTarget } from '../lib/nav'
 
@@ -48,6 +49,9 @@ const EFFORT_CLIS = new Set(['claude', 'codex', 'aider'])
 
 /** Los que admiten elegir modelo y modo de permisos desde aquí. */
 const CLAUDE_LIKE = new Set(['claude'])
+
+/** OpenCode y Gemini CLI tienen sus propios modos: uno de Claude se lee como «Pregunta». */
+const acpModeOf = (mode: string): string => (ACP_PERMISSION_MODES.some((m) => m.id === mode) ? mode : 'manual')
 
 /** En el selector de agente, un modelo local de Ollama va con este prefijo delante. */
 const LOCAL_PREFIX = 'ollama:'
@@ -1033,6 +1037,23 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                             {PERMISSION_MODES.map((m) => (
                               <option key={m.id} value={m.id}>
                                 {m.label}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      ) : null}
+                      {selectedCli && !CLAUDE_LIKE.has((selectedCli.command ?? '').toLowerCase()) && cliPermissionModes(selectedCli.command) ? (
+                        <>
+                          <span className="text-[11px] text-dim">{t('Permisos')}</span>
+                          <select
+                            value={acpModeOf(cliPermission)}
+                            onChange={(e) => setCliPermission(e.target.value)}
+                            title={t(ACP_PERMISSION_MODES.find((m) => m.id === acpModeOf(cliPermission))?.hint ?? '')}
+                            className="bg-raised border border-line rounded-md px-1.5 py-1 text-[11px] outline-none"
+                          >
+                            {ACP_PERMISSION_MODES.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {t(m.label)}
                               </option>
                             ))}
                           </select>

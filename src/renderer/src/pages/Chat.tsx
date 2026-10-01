@@ -42,10 +42,10 @@ import { WorktreeBox } from '../components/WorktreeBox'
 import { DiffReview } from '../components/DiffReview'
 import { pickRelayAgent } from '@shared/quotaPick'
 import {
-  API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession, type RunCheckpoint
+  API_PERMISSION_MODES, type Attachment, type Effort, type StoredSession, type RunCheckpoint
 } from '@shared/types'
 import { Pane } from '../components/Resizable'
-import { resumeCaps } from '@shared/cliCaps'
+import { cliPermissionModes, resumeCaps } from '@shared/cliCaps'
 import { RelayModal, endedByLimit } from '../components/RelayModal'
 import { Recommender } from '../components/Recommender'
 
@@ -379,7 +379,7 @@ function TurnView({
             <AgentActivity
               steps={turn.steps}
               running={turn.streaming}
-              onApprove={turn.runId ? (stepId, allow) => approveStep(turn.runId!, stepId, allow) : undefined}
+              onApprove={turn.runId ? (stepId, allow, always) => approveStep(turn.runId!, stepId, allow, always) : undefined}
             />
 
             {turn.content ? (
@@ -565,6 +565,13 @@ export default function Chat(): React.JSX.Element {
   const project = config?.projects.find((p) => p.id === session?.projectId)
   const apiAgent = config?.agents.find((a) => a.id === session?.agentId)
   const cliAgent = config?.cliAgents.find((a) => a.id === session?.cliAgentId)
+  // Qué modos de permiso entiende su CLI, y el que tiene ahora (o el suyo de partida).
+  const cliModes = cliAgent ? cliPermissionModes(cliAgent.command) : null
+  const cliMode =
+    cliModes?.modes.find((m) => m.id === session?.permissionMode)?.id ??
+    cliModes?.modes.find((m) => m.id === cliAgent?.permissionMode)?.id ??
+    cliModes?.initial ??
+    ''
 
   // Rama y estado del repositorio del proyecto de la sesión.
   // Con worktree, el agente trabaja allí: la carpeta, la rama y el estado de git son los suyos.
@@ -1269,20 +1276,21 @@ export default function Chat(): React.JSX.Element {
               {cliAgent ? <CliContinuity session={session} command={cliAgent.command} /> : null}
 
               {/* ----------------------------- Hasta dónde puede llegar */}
-              {cliAgent && cliAgent.command.toLowerCase() === 'claude' ? (
+              {cliModes ? (
                 <Field label={t('Permisos')}>
                   <Select
-                    value={session.permissionMode ?? 'acceptEdits'}
+                    value={cliMode}
                     onChange={(e) => patchSessionConfig(session.id, { permissionMode: e.target.value })}
+                    data-cli-permission
                   >
-                    {PERMISSION_MODES.map((m) => (
+                    {cliModes.modes.map((m) => (
                       <option key={m.id} value={m.id}>
                         {t(m.label)}
                       </option>
                     ))}
                   </Select>
                   <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
-                    {t(PERMISSION_MODES.find((m) => m.id === (session.permissionMode ?? 'acceptEdits'))?.hint ?? '')}
+                    {t(cliModes.modes.find((m) => m.id === cliMode)?.hint ?? '')}
                   </p>
                 </Field>
               ) : null}

@@ -18,6 +18,11 @@ import { projectForPath } from '../projectMatch'
 import { resumeArgs, resumeCaps } from '@shared/cliCaps'
 import { budgetBlock } from '../quotas/budgets'
 import { createCheckpoint, type Checkpoint } from '../checkpoints'
+import { opencodeTurnUsage } from '../external/opencode'
+import {
+  AcpConnection, acpAsk, acpDiffCounts, acpResultText, acpStatus, acpTarget, acpToolName, acpTouchKind,
+  type AcpPermissionOption, type AcpPermissionOutcome, type AcpToolCall
+} from './acp'
 import type {
   AgentStep, AgentTodo, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
@@ -38,7 +43,43 @@ export type CliEventFn = (e: {
 
 const running = new Map<string, ChildProcess>()
 
+/**
+ * Permisos que un CLI está esperando: `${runId}:${stepId}` → quien espera la
+ * respuesta. OpenCode y Gemini (por ACP) y Claude Code (por su protocolo de
+ * control) preguntan aquí igual que en su terminal.
+ */
+interface CliApproval {
+  allow: boolean
+  always: boolean
+  /** Se paró el agente o él mismo retiró la pregunta. */
+  cancelled?: boolean
+}
+const approvals = new Map<string, (a: CliApproval) => void>()
+
+function waitCliApproval(runId: string, stepId: string): Promise<CliApproval> {
+  return new Promise((resolve) => approvals.set(`${runId}:${stepId}`, resolve))
+}
+
+/** La respuesta de la ventana. Devuelve false si esa pregunta ya no está. */
+export function answerCliApproval(runId: string, stepId: string, allow: boolean, always = false): boolean {
+  const key = `${runId}:${stepId}`
+  const resolve = approvals.get(key)
+  if (!resolve) return false
+  approvals.delete(key)
+  resolve({ allow, always })
+  return true
+}
+
+function cancelApprovals(runId: string): void {
+  for (const [key, resolve] of approvals) {
+    if (!key.startsWith(runId + ':')) continue
+    approvals.delete(key)
+    resolve({ allow: false, always: false, cancelled: true })
+  }
+}
+
 export function killCli(runId: string): boolean {
+  cancelApprovals(runId)
   const child = running.get(runId)
   if (!child) return false
   // Hay que matar el árbol: en Windows el .cmd lanza un node hijo, y en
@@ -988,6 +1029,68 @@ function isOpencode(command: string): boolean {
   return /(^|[\\/])opencode(\.(cmd|exe))?$/i.test(command.trim())
 }
 
+const CLAUDE_BIN = /(^|[\\/])claude(\.(cmd|exe|ps1))?$/i
+const GEMINI_BIN = /(^|[\\/])gemini(\.(cmd|exe|ps1))?$/i
+
+/**
+ * Claude Code que no entendió los permisos por la entrada estándar (una
+ * versión muy vieja): mientras la app siga abierta se lanza como antes.
+ */
+let claudeStdioOff = false
+
+/**
+ * Cómo se habla con cada CLI para que pueda preguntar:
+ * - acp: OpenCode (`opencode acp`) y Gemini CLI (`--experimental-acp`).
+ * - claude: Claude Code con entrada y salida stream-json y los permisos por
+ *   la entrada estándar, que es lo que hace su propio SDK.
+ * - null: el resto, de una vez y sin preguntas, como hasta ahora.
+ */
+function interactiveMode(agent: CliAgent, usesArgPrompt: boolean): 'acp' | 'claude' | null {
+  const cmd = agent.command.trim()
+  if (isOpencode(cmd) || GEMINI_BIN.test(cmd)) return 'acp'
+  if (agent.parser === 'claude-stream-json' && CLAUDE_BIN.test(cmd) && !usesArgPrompt && !claudeStdioOff) return 'claude'
+  return null
+}
+
+/** Lo que pide Claude Code, en los términos de la app. */
+function claudeAsk(tool: string, input: any, req: any): NonNullable<AgentStep['ask']> {
+  if (typeof req?.blocked_path === 'string' && req.blocked_path) return { kind: 'outside', target: req.blocked_path }
+  const t = tool.toLowerCase()
+  if (/^(bash|powershell|shell)/.test(t)) return { kind: 'run', target: String(input?.command ?? '') }
+  if (/^(write|edit|multiedit|notebookedit)/.test(t)) return { kind: 'edit', target: pathFromToolInput(input) }
+  if (/^(read|grep|glob|ls)/.test(t)) return { kind: 'read', target: pathFromToolInput(input) }
+  if (/^(webfetch|websearch)/.test(t)) return { kind: 'fetch', target: String(input?.url ?? input?.query ?? '') }
+  return { kind: 'other', target: toolLabel(tool) }
+}
+
+/**
+ * Lo que Claude Code propone para no volver a preguntar (lo mismo que su
+ * «Sí, y no vuelvas a preguntar» de la terminal) y hasta dónde llega.
+ */
+function claudeAlways(suggestions: any[]): AgentStep['always'] {
+  if (!suggestions.length) return undefined
+  const scopeOf = (d: string | undefined): 'session' | 'project' | 'user' =>
+    d === 'userSettings' ? 'user' : d === 'projectSettings' || d === 'localSettings' ? 'project' : 'session'
+  let scope: 'session' | 'project' | 'user' = 'session'
+  const what: string[] = []
+  for (const s of suggestions) {
+    const sc = scopeOf(s?.destination)
+    if (sc === 'user' || (sc === 'project' && scope === 'session')) scope = sc
+    if (s?.type === 'setMode' && s.mode) what.push(String(s.mode))
+    else if (s?.type === 'addRules' || s?.type === 'replaceRules') {
+      for (const r of s.rules ?? []) what.push(r?.ruleContent ? `${r.toolName}(${r.ruleContent})` : String(r?.toolName ?? ''))
+    } else if (s?.type === 'addDirectories') what.push(...(s.directories ?? []).map(String))
+  }
+  return { scope, what: what.filter(Boolean).join(', ') || undefined }
+}
+
+/** Argumentos para hablar ACP con el agente. */
+function acpArgs(agent: CliAgent, cwd: string, modelArgs: string[] | null): string[] {
+  if (isOpencode(agent.command)) return ['acp', '--cwd', cwd]
+  // Gemini CLI: el modelo va en la línea de órdenes; los permisos, por ACP.
+  return ['--experimental-acp', ...(modelArgs ?? [])]
+}
+
 function startCliAgent(
   opts: CliRunOptions,
   onEvent: CliEventFn,
@@ -1123,11 +1226,24 @@ function startCliAgent(
     // directorio del usuario en vez de fallar por un cwd que no existe.
     const cwd = opts.projectPath && existsSync(opts.projectPath) ? opts.projectPath : homedir()
 
+    // Los que saben preguntar se lanzan en su modo interactivo (ver interactiveMode).
+    const mode = interactiveMode(agent, usesArgPrompt)
+    const permMode = opts.permissionMode ?? agent.permissionMode
+    let spawnArgs = args
+    if (mode === 'acp') {
+      spawnArgs = acpArgs(agent, cwd, prep ? null : modelArgs)
+    } else if (mode === 'claude') {
+      spawnArgs = [...args]
+      if (!spawnArgs.includes('--input-format')) spawnArgs.push('--input-format', 'stream-json')
+      if (!spawnArgs.includes('--permission-prompt-tool')) spawnArgs.push('--permission-prompt-tool', 'stdio')
+      if (!spawnArgs.includes('--verbose')) spawnArgs.push('--verbose')
+    }
+
     let child: ChildProcess
     try {
       if (process.platform === 'win32') {
         // Los CLIs de npm son .cmd: Node exige pasar por el shell para ejecutarlos.
-        const launch = windowsLaunch(agent.command, args)
+        const launch = windowsLaunch(agent.command, spawnArgs)
         child = spawn(launch.file, launch.argv, {
           cwd,
           windowsHide: true,
@@ -1135,7 +1251,7 @@ function startCliAgent(
           stdio: ['pipe', 'pipe', 'pipe']
         })
       } else {
-        child = spawn(agent.command, args, {
+        child = spawn(agent.command, spawnArgs, {
           cwd,
           // Su propio grupo de procesos, para poder pararlo entero.
           detached: true,
@@ -1154,7 +1270,20 @@ function startCliAgent(
 
     running.set(runId, child)
 
-    if (!usesArgPrompt) {
+    if (mode === 'claude') {
+      // El prompt va como un mensaje; la entrada se queda abierta para
+      // contestar sus preguntas de permiso y se cierra al llegar el resultado.
+      child.stdin?.write(
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'text', text: prompt }] },
+          parent_tool_use_id: null,
+          session_id: ''
+        }) + '\n'
+      )
+    } else if (mode === 'acp') {
+      // Lo lleva la conversación ACP de más abajo.
+    } else if (!usesArgPrompt) {
       child.stdin?.write(prompt)
       child.stdin?.end()
     } else {
@@ -1210,7 +1339,9 @@ function startCliAgent(
       at: Date.now(),
       kind: 'note',
       status: 'ok',
-      detail: `$ ${agent.command} ${args.join(' ')}`
+      detail:
+        `$ ${agent.command} ${spawnArgs.join(' ')}` +
+        (mode === 'acp' ? ' · por ACP: pregunta aquí lo que necesite' : mode === 'claude' ? ' · pregunta aquí sus permisos' : '')
     })
     if (resume) {
       onStep({
@@ -1303,6 +1434,309 @@ function startCliAgent(
 
     const sink: ParseSink = { onText, onThink, onTouch, onUsage, onStep, onLimit, onSession, onTodos }
 
+    const writeIn = (s: string): void => {
+      if (child.stdin && !child.stdin.destroyed && child.stdin.writable) child.stdin.write(s)
+    }
+
+    /* ---------------- Claude Code: permisos por la entrada estándar ---------------- */
+    let claudeEnded = false
+    const claudeReqs = new Map<string, string>()
+    const handleClaudeControl = (line: string): boolean => {
+      let msg: any
+      try {
+        msg = JSON.parse(line)
+      } catch {
+        return false
+      }
+      if (msg?.type === 'control_cancel_request') {
+        const stepId = claudeReqs.get(String(msg.request_id))
+        if (stepId) {
+          const resolve = approvals.get(`${runId}:${stepId}`)
+          approvals.delete(`${runId}:${stepId}`)
+          resolve?.({ allow: false, always: false, cancelled: true })
+        }
+        return true
+      }
+      if (msg?.type !== 'control_request') return false
+      const requestId = String(msg.request_id)
+      const req = msg.request ?? {}
+      const respond = (response: unknown): void =>
+        writeIn(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } }) + '\n')
+      if (req.subtype !== 'can_use_tool') {
+        writeIn(JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: requestId, error: `No soportado: ${req.subtype}` } }) + '\n')
+        return true
+      }
+      void (async () => {
+        const tool = String(req.tool_name ?? '')
+        const input = req.input ?? {}
+        const open = req.tool_use_id ? claudeCtx.pending.get(String(req.tool_use_id)) : undefined
+        const base: AgentStep = open?.step ?? {
+          id: 'perm-' + requestId,
+          at: Date.now(),
+          kind: 'tool',
+          tool: toolLabel(tool),
+          target: describeTool(tool, input, claudeCtx.cwd),
+          status: 'running'
+        }
+        const suggestions: any[] = Array.isArray(req.permission_suggestions) ? req.permission_suggestions : []
+        const ask = claudeAsk(tool, input, req)
+        const settle = (st: AgentStep): void => {
+          if (open) open.step = st
+          onStep(st)
+        }
+        if (opts.kind === 'arena') {
+          settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'en la Arena nadie puede contestar: se le dijo que no' })
+          respond({ behavior: 'deny', message: 'Nadie puede dar permisos en esta ejecución.' })
+          return
+        }
+        claudeReqs.set(requestId, base.id)
+        const answer = waitCliApproval(runId, base.id)
+        onStep({ ...base, status: 'running', approval: 'pending', ask, always: claudeAlways(suggestions) })
+        const a = await answer
+        claudeReqs.delete(requestId)
+        if (a.cancelled) {
+          settle({ ...base, approval: undefined })
+          return
+        }
+        if (!a.allow) {
+          settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'no lo has permitido' })
+          respond({ behavior: 'deny', message: 'El usuario no lo ha permitido.' })
+          return
+        }
+        settle({ ...base, status: 'running', approval: 'approved', ask })
+        respond({ behavior: 'allow', updatedInput: input, ...(a.always && suggestions.length ? { updatedPermissions: suggestions } : {}) })
+      })()
+      return true
+    }
+
+    /* ---------------- ACP: OpenCode y Gemini CLI ---------------- */
+    let acpDone = false
+    let acpFailure: string | undefined
+    let replaying = false
+    let acpSessionCost: number | undefined
+    const acpCalls = new Map<string, { step: AgentStep; call: AcpToolCall; started: number }>()
+    let thinkStep: AgentStep | null = null
+    let thinkCount = 0
+    const acpUpdate = (u: any): void => {
+      if (replaying || !u) return
+      const kind = String(u.sessionUpdate ?? '')
+      if (kind === 'agent_message_chunk') {
+        thinkStep = null
+        const t = u.content?.type === 'text' ? String(u.content.text ?? '') : ''
+        if (t) {
+          onText(t)
+          onEvent({ type: 'stdout', data: t })
+        }
+      } else if (kind === 'agent_thought_chunk') {
+        const t = u.content?.type === 'text' ? String(u.content.text ?? '') : ''
+        if (!t) return
+        onThink(t)
+        thinkStep = thinkStep
+          ? { ...thinkStep, detail: (thinkStep.detail ?? '') + t }
+          : { id: `th-acp-${++thinkCount}`, at: Date.now(), kind: 'thinking', detail: t, status: 'ok' }
+        onStep(thinkStep)
+      } else if (kind === 'tool_call' || kind === 'tool_call_update') {
+        thinkStep = null
+        const id = String(u.toolCallId ?? '')
+        if (!id) return
+        const prev = acpCalls.get(id)
+        const call: AcpToolCall = {
+          ...(prev?.call ?? {}),
+          ...u,
+          rawInput: u.rawInput && Object.keys(u.rawInput).length ? u.rawInput : prev?.call.rawInput,
+          locations: u.locations?.length ? u.locations : prev?.call.locations,
+          kind: u.kind ?? prev?.call.kind
+        }
+        const status = acpStatus(call.status)
+        const base: AgentStep = prev?.step ?? { id: 'acp-' + id, at: Date.now(), kind: 'tool', status: 'running' }
+        const tool = prev?.step.tool && !/^(Tool|Other)$/.test(prev.step.tool) ? prev.step.tool : acpToolName(call)
+        const step: AgentStep = { ...base, tool, target: acpTarget(call) || base.target, status }
+        if (status !== 'running') {
+          step.durationMs = Date.now() - (prev?.started ?? step.at)
+          const counts = acpDiffCounts(call.content)
+          if (counts) {
+            step.added = counts.added || undefined
+            step.removed = counts.removed || undefined
+          }
+          step.detail = acpResultText(call, call.kind) ?? step.detail
+          // Si ya se había negado el permiso, la fila se queda como negada.
+          if (base.denied) step.status = 'error'
+        }
+        acpCalls.set(id, { step, call, started: prev?.started ?? Date.now() })
+        const touch = acpTouchKind(call.kind)
+        if (touch) for (const l of call.locations ?? []) if (l?.path) onTouch(String(l.path), touch)
+        const todos = todosFrom(String(call.title ?? ''), call.rawInput)
+        if (todos) onTodos(todos)
+        onStep(step)
+      } else if (kind === 'plan') {
+        const entries = Array.isArray(u.entries) ? u.entries : []
+        onTodos(entries.map((e: any) => ({ text: String(e?.content ?? ''), done: e?.status === 'completed', active: e?.status === 'in_progress' })))
+      } else if (kind === 'usage_update') {
+        if (typeof u.used === 'number') meta.contextUsed = u.used
+        if (typeof u.size === 'number') meta.contextLimit = u.size
+        if (typeof u.cost?.amount === 'number') acpSessionCost = u.cost.amount
+        onUsage()
+      }
+    }
+    const acpPermission = async (req: { toolCall?: AcpToolCall; options?: AcpPermissionOption[] }): Promise<AcpPermissionOutcome> => {
+      const tc = req.toolCall ?? {}
+      const options = req.options ?? []
+      const pick = (...kinds: string[]): AcpPermissionOption | undefined => options.find((o) => kinds.includes(String(o.kind)))
+      const once = pick('allow_once') ?? pick('allow_always')
+      const alwaysOpt = pick('allow_always')
+      const reject = pick('reject_once') ?? pick('reject_always')
+      const select = (o?: AcpPermissionOption): AcpPermissionOutcome => (o ? { outcome: 'selected', optionId: o.optionId } : { outcome: 'cancelled' })
+      const prev = tc.toolCallId ? acpCalls.get(String(tc.toolCallId)) : undefined
+      const base: AgentStep = prev?.step ?? {
+        id: 'acp-perm-' + randomUUID(),
+        at: Date.now(),
+        kind: 'tool',
+        tool: acpToolName(tc),
+        target: acpTarget(tc),
+        status: 'running'
+      }
+      const ask = acpAsk(tc)
+      const settle = (st: AgentStep): void => {
+        if (prev) prev.step = st
+        onStep(st)
+      }
+      if (permMode === 'bypassPermissions') {
+        settle({ ...base, approval: 'approved', ask })
+        return select(once)
+      }
+      if (opts.kind === 'arena') {
+        settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'en la Arena nadie puede contestar: se le dijo que no' })
+        return select(reject)
+      }
+      const answer = waitCliApproval(runId, base.id)
+      onStep({ ...base, status: 'running', approval: 'pending', ask, always: alwaysOpt ? { scope: 'session' } : undefined })
+      const a = await answer
+      if (a.cancelled) return { outcome: 'cancelled' }
+      if (!a.allow) {
+        settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'no lo has permitido' })
+        return select(reject)
+      }
+      settle({ ...base, status: 'running', approval: 'approved', ask })
+      return select(a.always && alwaysOpt ? alwaysOpt : once)
+    }
+    const acp = mode === 'acp' ? new AcpConnection(writeIn, { onUpdate: acpUpdate, onPermission: acpPermission }) : null
+
+    // La conversación ACP de este turno: abrir (o retomar) la sesión, poner
+    // modelo, esfuerzo y modo, mandar el prompt y, al acabar, cerrar.
+    if (acp) {
+      const argAfter = (list: string[], flag: string): string | undefined => {
+        const i = list.indexOf(flag)
+        return i >= 0 ? list[i + 1] : undefined
+      }
+      const acpModel = prep ? argAfter(prep.args, '-m') : undefined
+      const acpEffort = prep ? argAfter(prep.args, '--variant') : undefined
+      // «Sólo plan» es su agente plan; si el agente de la app lleva --agent, ese.
+      const acpAgentMode = permMode === 'plan' ? 'plan' : argAfter(agent.args, '--agent')
+      if (acpModel) meta.model = acpModel
+      const known = new Set<string>()
+      const setOption = async (sid: string, configId: string, value: string): Promise<void> => {
+        if (known.size && !known.has(configId)) return
+        try {
+          const r = await acp.request('session/set_config_option', { sessionId: sid, configId, value })
+          for (const o of r?.configOptions ?? []) known.add(String(o.id))
+        } catch (e) {
+          onStep({
+            id: `acp-opt-${configId}`,
+            at: Date.now(),
+            kind: 'note',
+            status: 'ok',
+            detail: `No aceptó ${configId} = ${value}: ${(e as Error).message}`
+          })
+        }
+      }
+      const turnStart = Date.now()
+      const want = opts.rewound ? undefined : opts.resumeSessionId
+      void (async () => {
+        const init = await acp.request('initialize', {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }
+        })
+        const caps = init?.agentCapabilities ?? {}
+        const sessionCaps = caps.sessionCapabilities ?? {}
+        let sid: string | undefined
+        if (want) {
+          try {
+            if (opts.fork && sessionCaps.fork) {
+              const r = await acp.request('session/fork', { sessionId: want, cwd, mcpServers: [] })
+              sid = r?.sessionId ? String(r.sessionId) : undefined
+            } else if (sessionCaps.resume) {
+              await acp.request('session/resume', { sessionId: want, cwd, mcpServers: [] })
+              sid = want
+            } else if (caps.loadSession) {
+              // Al cargar repite la conversación entera: eso no es de este turno.
+              replaying = true
+              await acp.request('session/load', { sessionId: want, cwd, mcpServers: [] })
+              sid = want
+            }
+          } catch (e) {
+            onStep({
+              id: 'resume-failed',
+              at: Date.now(),
+              kind: 'note',
+              status: 'ok',
+              detail: `No se pudo retomar la sesión ${want.slice(0, 12)} (${(e as Error).message}): empieza una nueva`
+            })
+          } finally {
+            replaying = false
+          }
+        }
+        if (!sid) {
+          const r = await acp.request('session/new', { cwd, mcpServers: [] })
+          sid = r?.sessionId ? String(r.sessionId) : undefined
+          for (const o of r?.configOptions ?? []) known.add(String(o.id))
+          // Sin modelo pedido, el que dice que tiene puesto.
+          const current = (r?.configOptions ?? []).find((o: any) => o?.id === 'model')?.currentValue
+          if (!meta.model && current) meta.model = String(current)
+        }
+        if (!sid) throw new Error('El agente no abrió ninguna sesión')
+        claudeCtx.sessionId = sid
+        onSession(sid)
+        if (acpModel) await setOption(sid, 'model', acpModel)
+        if (acpEffort) await setOption(sid, 'effort', acpEffort)
+        if (acpAgentMode) await setOption(sid, 'mode', acpAgentMode)
+
+        const res = await acp.request('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text: prompt }] })
+        meta.finishReason = res?.stopReason ? String(res.stopReason) : undefined
+        const u = res?.usage
+        if (u) {
+          if (typeof u.inputTokens === 'number') meta.inputTokens = u.inputTokens
+          if (typeof u.outputTokens === 'number') meta.outputTokens = u.outputTokens
+          if (typeof u.cachedReadTokens === 'number') meta.cachedTokens = u.cachedReadTokens
+          if (typeof u.thoughtTokens === 'number') meta.reasoningTokens = u.thoughtTokens
+        }
+        // El coste exacto del turno lo apunta OpenCode mensaje a mensaje. Si no
+        // se puede leer, el total que da ACP sólo vale en una sesión nueva.
+        const turn = isOpencode(agent.command) ? opencodeTurnUsage(sid, turnStart) : null
+        if (turn) {
+          meta.costUsd = turn.cost
+          if (turn.model) meta.model = turn.model
+          if (!u) {
+            meta.inputTokens = turn.input
+            meta.outputTokens = turn.output
+            meta.cachedTokens = turn.cacheRead
+          }
+        } else if (acpSessionCost != null && !want) {
+          meta.costUsd = acpSessionCost
+        }
+        acpDone = true
+      })()
+        .catch((e: unknown) => {
+          acpFailure = e instanceof Error ? e.message : String(e)
+        })
+        .finally(() => {
+          child.stdin?.end()
+          // Se le deja un momento para irse solo; si no, se le cierra.
+          setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) killTree(child)
+          }, 1500).unref?.()
+        })
+    }
+
     // Mientras trabaja se va mirando qué archivos cambian, para que no haya
     // que esperar al final para ver dónde está tocando.
     let polling = false
@@ -1331,13 +1765,22 @@ function startCliAgent(
         while ((nl = stdoutBuf.indexOf('\n')) !== -1) {
           const line = stdoutBuf.slice(0, nl).trim()
           stdoutBuf = stdoutBuf.slice(nl + 1)
-          if (line) {
+          if (line && acp) {
+            acp.feed(line)
+          } else if (line && mode === 'claude' && line.includes('"control_') && handleClaudeControl(line)) {
+            // Una pregunta de permiso (o su retirada): contestada arriba.
+          } else if (line) {
             const before = text.length
             if (agent.parser === 'claude-stream-json') parseClaudeLine(line, meta, sink, claudeCtx)
             else if (agent.parser === 'codex-json') parseCodexLine(line, meta, sink, claudeCtx)
             else if (agent.parser === 'gemini-stream-json') parseGeminiLine(line, meta, sink, claudeCtx)
             else parseOpencodeLine(line, meta, sink, claudeCtx)
             if (text.length > before) onEvent({ type: 'stdout', data: text.slice(before) })
+            // Con la entrada abierta Claude Code espera otro mensaje: al llegar el resultado se cierra.
+            if (mode === 'claude' && !claudeEnded && meta.result !== undefined) {
+              claudeEnded = true
+              child.stdin?.end()
+            }
           }
         }
       } else {
@@ -1365,6 +1808,8 @@ function startCliAgent(
 
     child.on('close', (code) => {
       stopWatch()
+      acp?.failAll(new Error('el agente se cerró'))
+      cancelApprovals(runId)
       if (allowFile) {
         try {
           unlinkSync(allowFile)
@@ -1375,8 +1820,21 @@ function startCliAgent(
       const totalMs = Date.now() - startedAt
       const finalText = meta.result ?? text ?? rawOut
       // Si el agente avisó de un error y no dio respuesta, es un fallo aunque
-      // salga con 0.
-      const failed = code !== 0 || (meta.error != null && !finalText.trim())
+      // salga con 0. Por ACP lo cerramos nosotros al acabar el turno: manda
+      // cómo acabó la conversación, no el código de salida.
+      const failed =
+        mode === 'acp'
+          ? !acpDone || meta.finishReason === 'refusal'
+          : code !== 0 || (meta.error != null && !finalText.trim())
+      if (mode === 'acp' && !acpDone && !meta.error) meta.error = acpFailure
+      // Un Claude Code que no entiende los permisos por la entrada estándar: se
+      // explica y la próxima vez va como antes, sin preguntas.
+      if (mode === 'claude' && failed && /unknown option|input-format|permission-prompt-tool/i.test(errOut)) {
+        claudeStdioOff = true
+        meta.error =
+          'Tu versión de Claude Code no deja contestar sus permisos desde aquí (actualízala con «claude update»). ' +
+          'Vuelve a lanzarlo: irá como antes, sin poder preguntarte.'
+      }
       const inTok = meta.inputTokens ?? estimateTokens(opts.prompt)
       const outTok = meta.outputTokens ?? estimateTokens(finalText)
       if (meta.ttftMs != null) ttftMs = meta.ttftMs

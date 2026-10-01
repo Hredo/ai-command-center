@@ -1134,8 +1134,15 @@ export interface AgentStep {
   denied?: boolean
   /** La regla de permiso que lo habría dejado (Claude Code): «Bash(npm test)». */
   rule?: string
-  /** Agente por API: el paso espera tu permiso, o ya lo tuvo, o se le negó. */
+  /** El paso espera tu permiso, o ya lo tuvo, o se le negó (agentes por API y CLIs que preguntan). */
   approval?: 'pending' | 'approved' | 'denied'
+  /** Qué pide exactamente, dicho por el propio agente (una carpeta fuera del proyecto, un comando…). */
+  ask?: { kind: 'outside' | 'edit' | 'run' | 'read' | 'fetch' | 'other'; target?: string }
+  /**
+   * El agente ofrece «permitir siempre» y hasta dónde llega: esta sesión,
+   * este proyecto o todo tu usuario, y qué regla o modo quedaría.
+   */
+  always?: { scope: 'session' | 'project' | 'user'; what?: string }
 }
 
 /** Una tarea de la lista que lleva el propio agente (TodoWrite y compañía). */
@@ -1255,7 +1262,7 @@ export const PERMISSION_MODES = [
   { id: 'acceptEdits', label: 'Edita solo', hint: 'crea y modifica archivos sin preguntar; para lo demás pide permiso' },
   { id: 'auto', label: 'Automático', hint: 'decide él qué necesita aprobación, como en la app de Claude' },
   { id: 'plan', label: 'Sólo plan', hint: 'mira y propone, pero no toca nada' },
-  { id: 'manual', label: 'Pregunta', hint: 'se detiene y te dice qué necesitaba; aquí no puede preguntarte' },
+  { id: 'manual', label: 'Pregunta', hint: 'te pregunta aquí antes de cada cosa, como en su terminal' },
   { id: 'bypassPermissions', label: 'Sin límites', hint: 'hace cualquier cosa sin pedir nada: ojo con lo que le mandas' }
 ] as const
 
@@ -1269,6 +1276,16 @@ export const API_PERMISSION_MODES = [
   { id: 'manual', label: 'Pregunta', hint: 'cada edición y cada comando esperan a que los permitas aquí' },
   { id: 'plan', label: 'Sólo plan', hint: 'lee y busca, pero no puede tocar nada' },
   { id: 'bypassPermissions', label: 'Sin límites', hint: 'edita y ejecuta comandos sin preguntar: ojo con lo que le pides' }
+] as const
+
+/**
+ * OpenCode y Gemini CLI hablan ACP: lo que su configuración tiene en «ask»
+ * llega aquí como una pregunta con sus botones, como en su terminal.
+ */
+export const ACP_PERMISSION_MODES = [
+  { id: 'manual', label: 'Pregunta', hint: 'lo que su configuración pide confirmar te lo pregunta aquí, como en su terminal' },
+  { id: 'plan', label: 'Sólo plan', hint: 'su modo plan: mira y propone, pero no edita nada' },
+  { id: 'bypassPermissions', label: 'Sin límites', hint: 'dice que sí a todo lo que pregunte (lo que tengas denegado sigue denegado)' }
 ] as const
 
 export const EFFORTS: Effort[] = ['auto', 'minimal', 'low', 'medium', 'high', 'max']

@@ -234,7 +234,7 @@ export interface IpcContract {
   'relay:build': { args: [src: RelaySource]; result: RelayPackage }
   'relay:prompt': { args: [pkg: RelayPackage, opts?: { includeDiff?: boolean; note?: string }]; result: string }
   'run:abort': { args: [runId: string]; result: boolean }
-  'run:approve': { args: [runId: string, stepId: string, allow: boolean]; result: boolean }
+  'run:approve': { args: [runId: string, stepId: string, allow: boolean, always?: boolean]; result: boolean }
   'run:prompt': { args: [opts: RunOptions, runId: string]; result: RunRecord }
   'runs:arena': { args: []; result: { arenaId: string; createdAt: number; prompt: string; runs: RunRecord[] }[] }
   'runs:buckets': { args: [field: string, days?: number]; result: StatsBucket[] }

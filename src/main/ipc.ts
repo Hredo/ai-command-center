@@ -5,7 +5,7 @@ import { setKey, getStoredKey, listKeyStatus, mask, resolveKey, strongEncryption
 import { PROVIDERS } from './providers/catalog'
 import { fetchProviderModels, refreshCatalog, getCatalog, searchCatalog, priceFor, enrich } from './providers/models'
 import { runPrompt, abortRun, testProvider, answerApproval } from './providers/run'
-import { runCliAgent, killCli } from './agents/cli'
+import { runCliAgent, killCli, answerCliApproval } from './agents/cli'
 import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
 import { refreshTray, setBusy, type Busy } from './tray'
@@ -186,8 +186,12 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     return { ok: run.status !== 'error', data: run, error: run.error }
   })
   handle('run:abort', (runId: string) => abortRun(runId))
-  handle('run:approve', (runId: string, stepId: string, allow: boolean) =>
-    answerApproval(String(runId), String(stepId), allow === true)
+  // La misma respuesta vale para un agente por API y para un CLI que pregunta.
+  handle(
+    'run:approve',
+    (runId: string, stepId: string, allow: boolean, always?: boolean) =>
+      answerApproval(String(runId), String(stepId), allow === true) ||
+      answerCliApproval(String(runId), String(stepId), allow === true, always === true)
   )
 
   ipcMain.handle('cli:run', async (_e, opts: CliRunOptions, runId: string) => {

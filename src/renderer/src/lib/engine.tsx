@@ -1263,9 +1263,9 @@ export async function sendChat(
  * Contesta a un agente por API que espera permiso. El paso se marca ya en
  * pantalla, para que los botones desaparezcan sin esperar al proceso principal.
  */
-export function approveStep(runId: string, stepId: string, allow: boolean): void {
+export function approveStep(runId: string, stepId: string, allow: boolean, always = false): void {
   applyStep(runId, { id: stepId, approval: allow ? 'approved' : 'denied' } as AgentStep)
-  void window.api.run.approve(runId, stepId, allow)
+  void window.api.run.approve(runId, stepId, allow, always)
 }
 
 /** Lanza un agente de línea de comandos dentro de una sesión. */

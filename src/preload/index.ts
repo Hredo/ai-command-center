@@ -69,7 +69,7 @@ const api = {
     prompt: (opts: RunOptions, runId: string) => call('run:prompt', opts, runId),
     abort: (runId: string) => call('run:abort', runId),
     /** Contesta a un agente por API que pide permiso para un paso. */
-    approve: (runId: string, stepId: string, allow: boolean) => call('run:approve', runId, stepId, allow),
+    approve: (runId: string, stepId: string, allow: boolean, always?: boolean) => call('run:approve', runId, stepId, allow, always),
     /** Devuelve la función para desuscribirse. */
     onDelta: (cb: (d: IpcEvents['run:delta']) => void) => on('run:delta', cb)
   },

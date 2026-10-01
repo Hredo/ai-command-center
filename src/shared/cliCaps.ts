@@ -7,6 +7,8 @@
  * original como estaba. Las opciones son las documentadas por cada CLI.
  */
 
+import { ACP_PERMISSION_MODES, PERMISSION_MODES } from './types'
+
 /** Nombre del ejecutable sin ruta ni extensión. */
 export function baseCommand(command: string): string {
   return (command.split(/[\\/]/).pop() ?? command).replace(/\.(exe|cmd|bat|ps1)$/i, '').toLowerCase()
@@ -73,4 +75,19 @@ export function resumeArgs(
     default:
       return null
   }
+}
+
+/**
+ * Los modos de permiso que entiende cada CLI desde aquí, y con cuál empieza:
+ * Claude Code los suyos (y pregunta por la entrada estándar); OpenCode y
+ * Gemini CLI, por ACP, preguntar, sólo plan o decir que sí a todo. El resto
+ * no deja elegir.
+ */
+export function cliPermissionModes(
+  command: string
+): { modes: readonly { id: string; label: string; hint: string }[]; initial: string } | null {
+  const cmd = baseCommand(command)
+  if (cmd === 'claude') return { modes: PERMISSION_MODES, initial: 'acceptEdits' }
+  if (cmd === 'opencode' || cmd === 'gemini') return { modes: ACP_PERMISSION_MODES, initial: 'manual' }
+  return null
 }

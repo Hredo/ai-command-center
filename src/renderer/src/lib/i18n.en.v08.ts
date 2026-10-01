@@ -1074,5 +1074,19 @@ export const enV08: Record<string, string> = {
   "Esa tarea ya no existe": "That task no longer exists",
   "Ya está en marcha": "It's already running",
   "La ventana principal no está lista": "The main window isn't ready",
-  "La app se cerró mientras corría": "The app closed while it was running"
+  "La app se cerró mientras corría": "The app closed while it was running",
+  "Quiere entrar en una carpeta fuera del proyecto: {dir}": "It wants to access a folder outside the project: {dir}",
+  "Quiere entrar en una carpeta fuera del proyecto.": "It wants to access a folder outside the project.",
+  "Quiere ejecutar este comando.": "It wants to run this command.",
+  "Quiere leer esto.": "It wants to read this.",
+  "Quiere consultar esta dirección.": "It wants to fetch this address.",
+  "Quiere usar {tool}.": "It wants to use {tool}.",
+  "Siempre en este proyecto": "Always in this project",
+  "Siempre, en todos tus proyectos": "Always, in all your projects",
+  "Siempre en esta sesión": "Always in this session",
+  "No vuelve a preguntar por: {what}": "It won't ask again for: {what}",
+  "te pregunta aquí antes de cada cosa, como en su terminal": "asks you here before each action, like in its terminal",
+  "lo que su configuración pide confirmar te lo pregunta aquí, como en su terminal": "whatever its config sets to ask is asked here, like in its terminal",
+  "su modo plan: mira y propone, pero no edita nada": "its plan mode: looks and proposes, but edits nothing",
+  "dice que sí a todo lo que pregunte (lo que tengas denegado sigue denegado)": "says yes to everything it asks (what you have denied stays denied)"
 }
