@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   Radar, KeyRound, Cpu, Cloud, Check, X, ExternalLink, FolderOpen,
-  ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare, AppWindow, Zap
+  ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare, AppWindow, Zap, LogIn
 } from 'lucide-react'
 import { ModelPicker } from '../components/ModelPicker'
 import { formatAccelerator, toAccelerator } from '../lib/hotkeys'
 import { UpdatesPanel } from '../components/UpdatesPanel'
 import { OllamaPanel } from '../components/OllamaPanel'
 import { QuotasSettings } from '../components/QuotasSettings'
+import { AccountsPanel } from '../components/AccountsPanel'
+import { startOpenRouterLogin } from '../lib/accounts'
 import { lastNavTarget, onNavigate } from '../lib/nav'
 import { Panel, PanelHeader, Button, Badge, Input, Field, Select, Toggle, cx, Dot, Tabs, Empty } from '../components/ui'
 import { AppearanceTab, EditorTab, SecurityTab } from './Appearance'
@@ -235,6 +237,19 @@ function ProviderRow({
     }
   }
 
+  const [connecting, setConnecting] = useState(false)
+  const connect = async (): Promise<void> => {
+    setConnecting(true)
+    const r = await startOpenRouterLogin()
+    setConnecting(false)
+    if (r.ok) {
+      toast('ok', t('OpenRouter conectado: la clave ha quedado guardada'))
+      onChanged()
+    } else if (r.error && r.error !== 'cancelado') {
+      toast('error', t('No se pudo conectar con OpenRouter:') + ' ' + r.error)
+    }
+  }
+
   const saveUrl = async (): Promise<void> => {
     await window.api.providers.setBaseUrl(p.id, baseUrl.trim())
     setEditingUrl(false)
@@ -285,8 +300,19 @@ function ProviderRow({
           <Button size="icon" variant="ghost" title={t('Cambiar endpoint')} onClick={() => setEditingUrl((v) => !v)}>
             <Pencil size={13} />
           </Button>
+          {p.id === 'openrouter' ? (
+            <Button
+              size="sm"
+              variant={p.keySource === 'none' ? 'primary' : 'ghost'}
+              loading={connecting}
+              title={t('Autorizas en openrouter.ai y te crea una clave para esta app, que se guarda cifrada aquí.')}
+              onClick={() => void connect()}
+            >
+              <LogIn size={12} /> {t('Iniciar sesión')}
+            </Button>
+          ) : null}
           {!p.local ? (
-            <Button size="sm" variant={p.keySource === 'none' ? 'primary' : 'outline'} onClick={() => setEditing((v) => !v)}>
+            <Button size="sm" variant={p.keySource === 'none' && p.id !== 'openrouter' ? 'primary' : 'outline'} onClick={() => setEditing((v) => !v)}>
               <KeyRound size={12} /> {p.keySource === 'none' ? t('Añadir key') : 'Cambiar'}
             </Button>
           ) : null}
@@ -345,7 +371,7 @@ function ProviderRow({
   )
 }
 
-const TABS = ['providers', 'local', 'quotas', 'detection', 'appearance', 'editor', 'security', 'prefs'] as const
+const TABS = ['providers', 'accounts', 'local', 'quotas', 'detection', 'appearance', 'editor', 'security', 'prefs'] as const
 type SettingsTab = (typeof TABS)[number]
 const isTab = (v: unknown): v is SettingsTab => TABS.includes(v as SettingsTab)
 
@@ -434,7 +460,7 @@ export default function Settings(): React.JSX.Element {
   return (
     <div className="h-full overflow-y-auto">
       <div className="px-6 py-5 max-w-[1080px] mx-auto space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-x-4 gap-y-3 flex-wrap">
           <div>
             <h1 className="text-[19px] font-semibold tracking-tight">{t('settings.title')}</h1>
             <p className="text-[12.5px] text-dim mt-0.5">{t('settings.subtitle')}</p>
@@ -445,6 +471,7 @@ export default function Settings(): React.JSX.Element {
               onChange={setTab}
               items={[
                 { id: 'providers', label: t('settings.tab.providers'), count: status.length },
+                { id: 'accounts', label: t('Cuentas') },
                 { id: 'local', label: t('settings.tab.local') },
                 { id: 'quotas', label: t('Cupos') },
                 { id: 'detection', label: t('settings.tab.detection') },
@@ -500,6 +527,9 @@ export default function Settings(): React.JSX.Element {
             </Panel>
           </>
         ) : null}
+
+        {/* ------------------------------------------------ Cuentas */}
+        {tab === 'accounts' ? <AccountsPanel onProviders={() => setTab('providers')} /> : null}
 
         {/* ------------------------------------------------ Local */}
         {tab === 'local' ? <OllamaPanel /> : null}

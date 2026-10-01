@@ -6,6 +6,7 @@ import { StoreProvider, useStore } from './lib/store'
 import { PrefsProvider, usePrefs, usePaneSize } from './lib/prefs'
 import { I18nProvider, useT } from './lib/i18n'
 import { PageActiveProvider, useDocumentVisible } from './lib/pageActive'
+import { GithubLoginModal } from './components/AccountsPanel'
 import { EngineProvider, useBusyCount, useInFlight, useRunsVersion, useAttentionCount } from './lib/engine'
 import { cx } from './components/ui'
 import { Pane } from './components/Resizable'
@@ -479,6 +480,7 @@ function Shell(): React.JSX.Element {
       <Toasts />
       <SearchModal />
       <CommandPalette />
+      <GithubLoginModal />
     </div>
   )
 }

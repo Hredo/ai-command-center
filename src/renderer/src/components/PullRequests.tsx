@@ -17,6 +17,7 @@ import { useT } from '../lib/i18n'
 import { usePrefs } from '../lib/prefs'
 import { useStore } from '../lib/store'
 import { useIsPageActive } from '../lib/pageActive'
+import { startGithubLogin, useAccounts } from '../lib/accounts'
 import { relTime, shortModel, cost } from '../lib/format'
 import type { Pick } from './ModelPicker'
 import type { PullCheck, PullSummary, PullsReport } from '@shared/types'
@@ -152,9 +153,11 @@ export function PullRequests({
     else setReport({ gh: 'ok', github: true, open: [], runs: [], error: r.error ?? t('No se pudo leer GitHub') })
   }, [path, t])
 
+  // Al abrirse o cerrarse la sesión de GitHub se vuelve a leer, sin tocar nada.
+  const { signedInTick } = useAccounts()
   useEffect(() => {
     void load()
-  }, [load, version])
+  }, [load, version, signedInTick])
 
   // En vivo mientras lo ves: más a menudo si hay CI en marcha.
   useEffect(() => {
@@ -198,7 +201,14 @@ export function PullRequests({
     if (report.gh === 'missing')
       return <div className="px-3 py-3 text-[12px] text-dim">{t('Para ver y abrir pull requests hace falta GitHub CLI (gh). En el panel de GitHub de Proyectos está cómo instalarlo.')}</div>
     if (report.gh === 'noauth')
-      return <div className="px-3 py-3 text-[12px] text-dim">{t('gh no tiene sesión. Inicia sesión desde el panel de GitHub de Proyectos: se autoriza en el navegador y la app nunca ve el token.')}</div>
+      return (
+        <div className="px-3 py-3 text-[12px] text-dim space-y-2">
+          <div>{t('gh no tiene sesión. Se autoriza en el navegador y la app nunca ve el token.')}</div>
+          <Button size="sm" variant="primary" data-pulls-signin onClick={() => void startGithubLogin()}>
+            {t('Iniciar sesión en GitHub')}
+          </Button>
+        </div>
+      )
     if (!report.github) return <div className="px-3 py-3 text-[12px] text-dim">{t('Este repositorio no tiene un remoto de GitHub.')}</div>
     if (report.error) return <div className="px-3 py-3 text-[12px] text-bad break-words">{report.error}</div>
     const onBase = report.branch === report.base

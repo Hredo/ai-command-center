@@ -15,6 +15,7 @@ import { relTime } from '../lib/format'
 import type { GhRepo, GhStatus } from '@shared/types'
 
 import { useT } from '../lib/i18n'
+import { startGithubLogin, useAccounts } from '../lib/accounts'
 export function GithubPanel({
   onToast,
   onOpenTerminal,
@@ -49,6 +50,12 @@ export function GithubPanel({
   useEffect(() => {
     void check()
   }, [check])
+
+  // Una sesión que se abre o se cierra (aquí o en una terminal) se refleja sola.
+  const { signedInTick } = useAccounts()
+  useEffect(() => {
+    if (signedInTick) void check(true)
+  }, [signedInTick, check])
 
   useEffect(() => {
     if (status?.authed) void load()
@@ -110,10 +117,8 @@ export function GithubPanel({
             <Button
               size="sm"
               variant="primary"
-              onClick={async () => {
-                const cmd = await window.api.github.loginCommand()
-                onOpenTerminal?.(cmd.data ?? 'gh auth login --web')
-              }}
+              data-github-signin
+              onClick={() => void startGithubLogin()}
             >
               <LogIn size={12} /> {t('Iniciar sesión')}
             </Button>

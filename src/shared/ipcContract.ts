@@ -15,7 +15,7 @@ import type {
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
-  ProjectInfo, ProjectScripts, UpdateInfo, ScheduledTask, ScheduledTaskView, ScheduleRun, LoginItemStatus, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
+  ProjectInfo, ProjectScripts, UpdateInfo, AccountStatus, AccountsEvent, ScheduledTask, ScheduledTaskView, ScheduleRun, LoginItemStatus, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
   RunOptions, RunRecord, Settings, SkillsReport, StatsBucket, StoredSession, StreamDelta, TermEvent, TermInfo,
   UsageSnapshot, WorktreeInfo, WorktreeSetup
 } from './types'
@@ -89,6 +89,13 @@ export interface IpcContract {
   'schedules:finished': { args: [runId: string, ok: boolean, error?: string]; result: void }
   'app:loginItem': { args: []; result: LoginItemStatus }
   'app:setLoginItem': { args: [enabled: boolean]; result: LoginItemStatus }
+  'accounts:status': { args: []; result: AccountStatus[] }
+  'accounts:githubLogin': { args: []; result: { ok: boolean; error?: string } }
+  'accounts:githubCancel': { args: []; result: boolean }
+  'accounts:githubGit': { args: []; result: boolean }
+  'accounts:githubSetupGit': { args: []; result: { ok: boolean; detail: string } }
+  'accounts:openrouterLogin': { args: []; result: { ok: boolean; error?: string } }
+  'accounts:openrouterCancel': { args: []; result: boolean }
   'updates:get': { args: []; result: UpdateInfo | null }
   'updates:check': { args: []; result: UpdateInfo }
   'updates:skip': { args: [version: string | null]; result: UpdateInfo | null }
@@ -322,6 +329,8 @@ export interface IpcEvents {
   'schedules:run': ScheduleRun
   /** Lo último que se sabe de las versiones publicadas (al mirar, solo o a mano). */
   'updates:status': UpdateInfo
+  /** Un inicio de sesión lanzado desde la app: el código de gh, la dirección, el final. */
+  'accounts:event': AccountsEvent
   /** Prompt rápido: a la ventana principal, que lo lanza en la Consola. */
   'quick:run': QuickRun
   /** Prompt rápido: abrir en la Consola la conversación que salió de él. */

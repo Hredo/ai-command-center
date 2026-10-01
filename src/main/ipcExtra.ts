@@ -30,6 +30,10 @@ import { claudeWindows, refreshClaude } from './claudeSessions'
 import { pickAttachments, describeFile, savePastedImage, imageThumb, imageMime } from './attach'
 import { listDir, readProjectFile, writeProjectFile, createEntry, trashEntry, revealEntry, searchFiles, forgetWalk } from './files'
 import { ghStatus, ghRepos, ghClone, ghLoginCommand, ghLogoutCommand, forgetGhPath } from './github'
+import {
+  accountsStatus, initAccounts, startGithubLogin, cancelGithubLogin, githubGitHelper, githubSetupGit,
+  startOpenRouterLogin, cancelOpenRouterLogin
+} from './accounts'
 import { notifyArena, notifyCommand, notifyPull } from './notify'
 import { allRuns } from './runs'
 import { buildRelay, relayPrompt } from './relay'
@@ -272,6 +276,21 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   handle('github:clone', (repo: string, parentDir: string) => ghClone(repo, parentDir))
   handle('github:loginCommand', () => ghLoginCommand())
   handle('github:logoutCommand', () => ghLogoutCommand())
+
+  /* --------------------------------- Cuentas ---------------------------------- */
+
+  initAccounts((e) => {
+    send('accounts:event', e)
+    // Con sesión nueva de GitHub cambia su cupo de Copilot; con clave nueva, el saldo.
+    if (e.phase === 'done' && e.ok) pokeQuotas()
+  })
+  handle('accounts:status', () => accountsStatus())
+  handle('accounts:githubLogin', () => startGithubLogin())
+  handle('accounts:githubCancel', () => cancelGithubLogin())
+  handle('accounts:githubGit', () => githubGitHelper())
+  handle('accounts:githubSetupGit', () => githubSetupGit())
+  handle('accounts:openrouterLogin', () => startOpenRouterLogin())
+  handle('accounts:openrouterCancel', () => cancelOpenRouterLogin())
 
   /* --------------------------------- Adjuntos --------------------------------- */
 

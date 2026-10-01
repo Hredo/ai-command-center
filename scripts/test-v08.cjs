@@ -4148,7 +4148,9 @@ app.whenReady().then(async () => {
     set(document.querySelector('[data-task-prompt]'), 'desde el formulario zq5')
     set(document.querySelector('[data-schedule-name]'), 'Formulario zq5')
     set(document.querySelector('[data-schedule-time]'), '22:45')
-    await sleep(150)
+    // Hasta que el formulario refleja lo escrito no se envía.
+    await until(() => /22:45/.test(document.querySelector('[data-form-next]')?.textContent ?? ''), 4000)
+    await sleep(250)
     out.formNext = document.querySelector('[data-form-next]')?.textContent ?? ''
     document.querySelector('[data-task-submit]')?.click()
     const saved = await until(async () => (await api.config.get()).data.schedules?.find((s) => s.name === 'Formulario zq5'))
@@ -4540,6 +4542,324 @@ app.whenReady().then(async () => {
     cx.native?.title === 'Codex p2' && cx.native.cwd === REPO && cx.native.typed && cx.native.ran && cx.native.shown,
     '«ABRIR EN SU TERMINAL» LANZA EL CLI ORIGINAL, EN EL PROYECTO Y RETOMANDO LA SESIÓN DE LA CONVERSACIÓN',
     JSON.stringify(cx.native)
+  )
+  /* -------------------------------------------------------------- *
+   * P4 · Cuentas: iniciar sesión con GitHub, con cada CLI y con     *
+   *      OpenRouter                                                *
+   * -------------------------------------------------------------- */
+  const p4Dir = path.join(FIXTURES, 'cuentas')
+  const p4State = path.join(p4Dir, 'estado')
+  const p4Home = path.join(TMP, 'home-cuentas')
+  const p4GhLog = path.join(p4Dir, 'gh.jsonl')
+  fs.mkdirSync(p4State, { recursive: true })
+  fs.mkdirSync(p4Home, { recursive: true })
+  // gh, claude, codex, gemini y opencode falsos, con memoria: recuerdan si hay sesión.
+  fs.writeFileSync(
+    path.join(p4Dir, 'cuenta.js'),
+    [
+      "const fs = require('node:fs')",
+      "const path = require('node:path')",
+      "const { execFileSync } = require('node:child_process')",
+      'const [tool, ...args] = process.argv.slice(2)',
+      "const dir = process.env.FAKE_ACCOUNTS",
+      "const has = (n) => fs.existsSync(path.join(dir, n))",
+      "const put = (n) => fs.writeFileSync(path.join(dir, n), '1')",
+      "const del = (n) => fs.rmSync(path.join(dir, n), { force: true })",
+      "const cmd = args.slice(0, 2).join(' ')",
+      "const NL = String.fromCharCode(10)",
+      "if (tool === 'gh') {",
+      "  fs.appendFileSync(path.join(dir, '..', 'gh.jsonl'), JSON.stringify(args) + NL)",
+      "  if (args[0] === '--version') process.stdout.write('gh version 2.100.0 (falso)')",
+      "  else if (args[0] === 'api') {",
+      "    if (has('gh')) process.stdout.write(JSON.stringify({ login: 'hugo-cuentas', name: 'Hugo', url: 'https://github.com/hugo-cuentas' }))",
+      "    else { process.stderr.write('To get started with GitHub CLI, please run:  gh auth login'); process.exit(4) }",
+      "  } else if (cmd === 'auth status') process.stderr.write('  - Token scopes: gist, read:org, repo')",
+      "  else if (cmd === 'auth login') {",
+      "    if (has('gh-falla')) { process.stderr.write('error: device code expired' + NL); process.exit(1) }",
+      "    process.stderr.write(NL + '! First copy your one-time code: AB12-CD34' + NL + 'Open this URL to continue in your web browser: https://github.com/login/device' + NL)",
+      "    const end = Date.now() + 30000",
+      "    const timer = setInterval(() => {",
+      "      if (has('gh-autorizado')) { clearInterval(timer); del('gh-autorizado'); put('gh'); process.stderr.write('✓ Authentication complete.' + NL); process.exit(0) }",
+      "      if (Date.now() > end) process.exit(1)",
+      "    }, 100)",
+      "  } else if (cmd === 'auth setup-git') execFileSync('git', ['config', '--global', 'credential.https://github.com.helper', '!gh auth git-credential'])",
+      "  else { process.stderr.write('orden desconocida: ' + args.join(' ')); process.exit(1) }",
+      "} else if (tool === 'claude') {",
+      "  if (cmd === 'auth status') {",
+      "    if (has('claude')) console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', email: 'hugo@example.com', subscriptionType: 'pro' }, null, 2))",
+      "    else { console.log(JSON.stringify({ loggedIn: false, authMethod: 'none' })); process.exit(1) }",
+      "  } else if (cmd === 'auth login') { put('claude'); console.log('Login successful') }",
+      "  else if (cmd === 'auth logout') { del('claude'); console.log('Logged out') }",
+      "} else if (tool === 'codex') {",
+      "  if (cmd === 'login status') process.stderr.write(has('codex') ? 'Logged in using ChatGPT' + NL : 'Not logged in' + NL)",
+      "  else if (args[0] === 'login') { put('codex'); console.log('Successfully logged in') }",
+      "} else if (tool === 'opencode') {",
+      "  if (cmd === 'auth list') {",
+      "    const ESC = String.fromCharCode(27)",
+      "    const rows = has('opencode') ? ['●  OpenCode Zen ' + ESC + '[90mapi' + ESC + '[0m', '│', '●  Anthropic oauth', '│'] : []",
+      "    console.log(['', '┌  Credentials ~/.local/share/opencode/auth.json', '│', ...rows, '└  ' + rows.length / 2 + ' credentials', '', '┌  Environment', '│', '●  OPENAI_API_KEY OPENAI_API_KEY', '│', '└  1 environment variable', ''].join(NL))",
+      '  }',
+      '}'
+    ].join('\n')
+  )
+  for (const tool of ['gh', 'claude', 'codex', 'gemini', 'opencode']) {
+    const file = path.join(p4Dir, tool)
+    fs.writeFileSync(file, `#!/bin/sh\nexec node "${path.join(p4Dir, 'cuenta.js')}" ${tool} "$@"\n`)
+    fs.chmodSync(file, 0o755)
+    if (process.platform === 'win32') fs.writeFileSync(file + '.cmd', `@node "${path.join(p4Dir, 'cuenta.js')}" ${tool} %*\r\n`)
+  }
+  const p4Env = { PATH: process.env.PATH, HOME: process.env.HOME, FAKE_ACCOUNTS: process.env.FAKE_ACCOUNTS, GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_API_KEY: process.env.GOOGLE_API_KEY }
+  process.env.PATH = p4Dir + path.delimiter + process.env.PATH
+  process.env.HOME = p4Home
+  process.env.FAKE_ACCOUNTS = p4State
+  delete process.env.GEMINI_API_KEY
+  delete process.env.GOOGLE_API_KEY
+
+  // Un OpenRouter falso: sólo da la clave si el código es bueno y el verificador casa con el reto.
+  const orSeen = { challenge: '', bodies: [] }
+  const orServer = await new Promise((resolve) => {
+    const s = http.createServer((req, res) => {
+      let raw = ''
+      req.on('data', (c) => (raw += c))
+      req.on('end', () => {
+        const body = raw ? JSON.parse(raw) : {}
+        orSeen.bodies.push({ method: req.method, url: req.url, method2: body.code_challenge_method })
+        const hash = require('node:crypto').createHash('sha256').update(String(body.code_verifier ?? '')).digest('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+        res.setHeader('content-type', 'application/json')
+        if (req.method === 'POST' && req.url === '/api/v1/auth/keys' && body.code === 'codigo-bueno' && hash === orSeen.challenge) {
+          res.end(JSON.stringify({ key: 'sk-or-v1-clave-de-prueba-oauth-1234' }))
+        } else {
+          res.statusCode = 403
+          res.end(JSON.stringify({ error: { message: 'Invalid code or code_verifier' } }))
+        }
+      })
+    })
+    s.listen(0, '127.0.0.1', () => resolve(s))
+  })
+  const orBase = `http://127.0.0.1:${orServer.address().port}`
+  process.env.ACC_OPENROUTER_URL = orBase
+  const waitFor = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, 100)) } return null }
+
+  // 1. El estado de partida y el inicio de sesión de GitHub que falla, se cancela y, por fin, entra.
+  const p4a = await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    window.__p4Events = []
+    window.__p4Off = api.accounts.onEvent((e) => window.__p4Events.push(e))
+    await api.github.refresh()
+    const first = (await api.accounts.status()).data
+    out.first = first.map((a) => a.id + ':' + a.installed + ':' + a.signedIn).join(' ')
+    engine.navigate({ page: 'settings', tab: 'accounts' })
+    const row = (id) => document.querySelector('[data-accounts] [data-account="' + id + '"]')
+    out.rows = Boolean(await until(() => row('github') && row('claude') && row('codex') && row('gemini') && row('opencode') && row('openrouter')))
+    out.githubRow = row('github')?.getAttribute('data-signed')
+    return out
+  })()`)
+  fs.writeFileSync(path.join(p4State, 'gh-falla'), '1')
+  const p4b = await js(`(async () => {
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    // Falla: se dice por qué, sin cerrar el diálogo.
+    document.querySelector('[data-account-login="github"]')?.click()
+    out.error = (await until(() => document.querySelector('[data-github-error]')))?.textContent
+    return out
+  })()`)
+  fs.rmSync(path.join(p4State, 'gh-falla'), { force: true })
+  const p4c = await js(`(async () => {
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    // «Reintentar» pide otro código; cerrar el diálogo cancela a gh.
+    ;[...document.querySelectorAll('[data-github-login] button')].find((b) => /Reintentar/.test(b.textContent))?.click()
+    out.code = (await until(() => document.querySelector('[data-github-code]')))?.textContent
+    out.text = document.querySelector('[data-github-login]')?.textContent ?? ''
+    const before = window.__p4Events.length
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    out.closed = Boolean(await until(() => !document.querySelector('[data-github-login]'), 3000))
+    if (!out.closed) { await window.api.accounts.githubCancel(); }
+    const cancelled = await until(() => window.__p4Events.slice(before).find((e) => e.id === 'github' && e.phase === 'done'), 5000)
+    out.cancelled = cancelled ? cancelled.ok + ':' + cancelled.error : null
+    await sleep(200)
+    // Y ahora de verdad.
+    document.querySelector('[data-account-login="github"]')?.click()
+    out.code2 = (await until(() => document.querySelector('[data-github-code]')))?.textContent
+    return out
+  })()`)
+  fs.writeFileSync(path.join(p4State, 'gh-autorizado'), '1')
+  const p4d = await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 12000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    const row = (id) => document.querySelector('[data-accounts] [data-account="' + id + '"]')
+    // Al autorizar, el diálogo se cierra solo y la fila cambia sin tocar nada.
+    out.closed = Boolean(await until(() => !document.querySelector('[data-github-login]')))
+    out.signed = Boolean(await until(() => row('github')?.getAttribute('data-signed') === 'true'))
+    out.who = row('github')?.querySelector('[data-account-who]')?.textContent
+    out.toast = Boolean(await until(() => document.body.innerText.includes('GitHub: sesión iniciada'), 3000))
+    // Que git use esa sesión es un botón aparte.
+    const setup = await until(() => document.querySelector('[data-github-setup-git]'), 4000)
+    out.setupOffered = Boolean(setup)
+    setup?.click()
+    out.gitUses = Boolean(await until(async () => (await api.accounts.githubGit()).data === true, 6000))
+    out.badge = Boolean(await until(() => /git la usa/.test(row('github')?.textContent ?? ''), 4000))
+
+    // Un CLI: «Iniciar sesión» lanza su comando oficial en una terminal y la fila cambia sola.
+    const termsBefore = new Set(Object.keys(engine.peekTerms()))
+    document.querySelector('[data-account-login="claude"]')?.click()
+    const term = await until(() => Object.values(engine.peekTerms()).find((x) => !termsBefore.has(x.info.id)), 10000)
+    out.term = term ? { title: term.info.title, shown: Boolean(await until(() => document.querySelector('[data-page="terminal"]')?.hidden === false && document.querySelector('[data-term-tab="' + term.info.id + '"][data-active]'), 4000)) } : null
+    out.typed = term ? Boolean(await until(() => engine.termScrollback(term.info.id).includes('Login successful'), 15000)) : false
+    engine.navigate({ page: 'settings', tab: 'accounts' })
+    out.claude = Boolean(await until(() => row('claude')?.getAttribute('data-signed') === 'true', 20000))
+    out.claudeText = row('claude')?.textContent ?? ''
+    out.claudeToast = Boolean(await until(() => document.body.innerText.includes('Claude Code: sesión iniciada'), 4000))
+    if (term) await engine.closeTerm(term.info.id)
+    return out
+  })()`)
+  // Lo que cada herramienta dice cuando hay sesión.
+  fs.writeFileSync(path.join(p4State, 'codex'), '1')
+  fs.writeFileSync(path.join(p4State, 'opencode'), '1')
+  fs.mkdirSync(path.join(p4Home, '.gemini'), { recursive: true })
+  fs.writeFileSync(path.join(p4Home, '.gemini', 'oauth_creds.json'), '{"refresh_token":"SECRETO-GEMINI"}')
+  const p4e = await js(`(async () => {
+    const api = window.api
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    const list = (await api.accounts.status()).data
+    const by = (id) => list.find((a) => a.id === id)
+    out.codex = by('codex')?.signedIn + ':' + by('codex')?.plan
+    out.opencode = by('opencode')?.signedIn + ':' + by('opencode')?.who
+    out.gemini = by('gemini')?.signedIn + ':' + by('gemini')?.plan
+    out.leak = JSON.stringify(list).includes('SECRETO-GEMINI')
+    // OpenRouter: empieza el OAuth y dice qué dirección hay que abrir.
+    const before = window.__p4Events.length
+    window.__p4Or = api.accounts.openrouterLogin()
+    const ev = await until(() => window.__p4Events.slice(before).find((e) => e.id === 'openrouter' && e.phase === 'browser'))
+    out.url = ev?.url
+    return out
+  })()`)
+  let orUrl = null
+  try {
+    orUrl = new URL(p4e.url)
+  } catch {}
+  orSeen.challenge = orUrl?.searchParams.get('code_challenge') ?? ''
+  const orCallback = orUrl?.searchParams.get('callback_url') ?? ''
+  // Hace de navegador: un código malo primero (no vale) y, en otro intento, el bueno.
+  const badPage = orCallback ? await fetch(orCallback + '?code=codigo-malo').then((r) => r.status).catch((e) => String(e)) : 'sin callback'
+  const p4f = await js(`(async () => {
+    const api = window.api
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    out.bad = (await window.__p4Or).data
+    out.keyAfterBad = (await api.providers.status()).data.find((p) => p.id === 'openrouter')?.keySource
+    // Segundo intento, por la interfaz.
+    const before = window.__p4Events.length
+    document.querySelector('[data-openrouter-login]')?.click()
+    const ev = await until(() => window.__p4Events.slice(before).find((e) => e.id === 'openrouter' && e.phase === 'browser'))
+    out.url = ev?.url
+    out.waiting = Boolean(await until(() => /Esperando a que autorices en el navegador/.test(document.querySelector('[data-account="openrouter"]')?.textContent ?? ''), 3000))
+    return out
+  })()`)
+  let orUrl2 = null
+  try {
+    orUrl2 = new URL(p4f.url)
+  } catch {}
+  orSeen.challenge = orUrl2?.searchParams.get('code_challenge') ?? ''
+  const orCallback2 = orUrl2?.searchParams.get('callback_url') ?? ''
+  const goodPage = orCallback2 ? await fetch(orCallback2 + '?code=codigo-bueno').then(async (r) => r.status + ' ' + (await r.text()).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).catch((e) => String(e)) : 'sin callback'
+  const reused = orCallback2 ? await fetch(orCallback2 + '?code=codigo-bueno').then((r) => r.status).catch(() => 'cerrado') : 'sin callback'
+  const p4g = await js(`(async () => {
+    const api = window.api
+    const engine = window.__accEngine
+    const sleep = (n) => new Promise((r) => setTimeout(r, n))
+    const until = async (fn, ms = 10000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(80) } return null }
+    const out = {}
+    out.stored = await until(async () => (await api.providers.status()).data.find((p) => p.id === 'openrouter')?.keySource === 'stored', 6000)
+    out.preview = (await api.providers.keyPreview('openrouter')).data
+    out.badge = Boolean(await until(() => /key guardada/.test(document.querySelector('[data-account="openrouter"]')?.textContent ?? ''), 4000))
+    out.toast = Boolean(await until(() => document.body.innerText.includes('OpenRouter conectado'), 3000))
+    out.events = JSON.stringify(window.__p4Events)
+    window.__p4Off?.()
+    await api.providers.setKey('openrouter', '')
+    engine.navigate('chat')
+    return out
+  })()`)
+  const p4Calls = fs.existsSync(p4GhLog) ? fs.readFileSync(p4GhLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []
+  const p4GitConfig = fs.existsSync(path.join(p4Home, '.gitconfig')) ? fs.readFileSync(path.join(p4Home, '.gitconfig'), 'utf8') : ''
+  orServer.close()
+  delete process.env.ACC_OPENROUTER_URL
+  for (const [k, v] of Object.entries(p4Env)) {
+    if (v === undefined) delete process.env[k]
+    else process.env[k] = v
+  }
+  await js(`window.api.github.refresh()`)
+
+  log(
+    p4a.first === 'github:true:false claude:true:false codex:true:false gemini:true:false opencode:true:false' && p4a.rows && p4a.githubRow === 'false',
+    'P4: AJUSTES › CUENTAS PREGUNTA A CADA HERRAMIENTA SI HAY SESIÓN (GITHUB, CLAUDE CODE, CODEX, GEMINI, OPENCODE)',
+    p4a.first
+  )
+  log(/device code expired/.test(p4b.error ?? ''), 'si gh falla, el diálogo dice por qué', p4b.error)
+  log(
+    p4c.code === 'AB12-CD34' && /caduca en 15 minutos/.test(p4c.text) && p4c.cancelled === 'false:cancelado' && p4c.code2 === 'AB12-CD34',
+    'GITHUB SE INICIA SIN SALIR DE LA APP: ENSEÑA EL CÓDIGO DE UN SOLO USO DE gh; CERRAR EL DIÁLOGO LO CANCELA',
+    JSON.stringify(p4c)
+  )
+  log(
+    p4d.closed && p4d.signed && p4d.who === 'hugo-cuentas' && p4d.toast,
+    'AL AUTORIZAR EN EL NAVEGADOR EL DIÁLOGO SE CIERRA SOLO Y LA FILA PASA A «CON SESIÓN»',
+    JSON.stringify({ closed: p4d.closed, signed: p4d.signed, who: p4d.who, toast: p4d.toast })
+  )
+  log(
+    p4d.setupOffered && p4d.gitUses && p4d.badge && /gh auth git-credential/.test(p4GitConfig),
+    'que git use esa sesión es un botón aparte (gh auth setup-git)',
+    p4GitConfig.replace(/\s+/g, ' ').trim()
+  )
+  log(
+    p4Calls.some((a) => a.join(' ') === 'auth login --hostname github.com --git-protocol https --web') && !p4Calls.some((a) => a.includes('token')),
+    'la app lanza el inicio de sesión de gh y nunca le pide el token',
+    `${p4Calls.length} llamadas`
+  )
+  log(
+    p4d.term?.title === 'Claude Code' && p4d.term.shown && p4d.typed && p4d.claude && /hugo@example\.com/.test(p4d.claudeText) && /pro/.test(p4d.claudeText) && p4d.claudeToast,
+    'UN CLI SE INICIA CON SU COMANDO OFICIAL EN UNA TERMINAL DE LA APP Y SU FILA CAMBIA SOLA AL TERMINAR',
+    JSON.stringify({ term: p4d.term, typed: p4d.typed, claude: p4d.claude })
+  )
+  log(
+    p4e.codex === 'true:ChatGPT' && p4e.opencode === 'true:OpenCode Zen, Anthropic' && p4e.gemini === 'true:Google' && !p4e.leak,
+    'Codex, OpenCode y Gemini CLI dicen su sesión sin que la app abra ningún fichero de credenciales',
+    `${p4e.codex} · ${p4e.opencode} · ${p4e.gemini}`
+  )
+  log(
+    orUrl?.origin === orBase && orUrl.pathname === '/auth' && /^http:\/\/localhost:\d+\/callback$/.test(orCallback) &&
+      orUrl.searchParams.get('code_challenge_method') === 'S256' && (orUrl.searchParams.get('code_challenge') ?? '').length >= 43,
+    'OPENROUTER: SU OAUTH CON PKCE ABRE SU PÁGINA CON UN RETO Y UN RETORNO QUE SÓLO VALE EN ESTA MÁQUINA',
+    p4e.url
+  )
+  log(
+    badPage === 502 && p4f.bad?.ok === false && /Invalid code/.test(p4f.bad?.error ?? '') && p4f.keyAfterBad === 'none',
+    'un código que no vale no deja ninguna clave y dice el motivo',
+    badPage + ' · ' + JSON.stringify(p4f.bad)
+  )
+  log(
+    /^200 /.test(goodPage) && /OpenRouter está conectado/.test(goodPage) && p4f.waiting && p4g.stored && p4g.badge && p4g.toast && reused !== 200 &&
+      orSeen.bodies.every((b) => b.method === 'POST' && b.url === '/api/v1/auth/keys' && b.method2 === 'S256'),
+    'CON EL CÓDIGO BUENO LA CLAVE QUEDA GUARDADA Y EL PROVEEDOR LISTO; EL ENLACE NO SIRVE DOS VECES',
+    goodPage + ' · reuso: ' + reused
+  )
+  log(
+    !p4g.events.includes('sk-or-v1-clave') && p4g.preview === 'sk-or...1234',
+    'la clave no pasa por la ventana: sólo se ve enmascarada',
+    String(p4g.preview)
   )
   /* -------------------------------------------------------------- *
    * Cierre                                                         *

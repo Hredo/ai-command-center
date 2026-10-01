@@ -1347,6 +1347,43 @@ export interface FileContent {
  * GitHub                                                             *
  * ------------------------------------------------------------------ */
 
+/**
+ * Una cuenta con la que se puede iniciar sesión: GitHub (por gh) o un CLI con
+ * su propio inicio de sesión. La app sólo pregunta a la herramienta si hay
+ * sesión; el secreto lo guarda ella.
+ */
+export interface AccountStatus {
+  id: string
+  name: string
+  kind: 'github' | 'cli'
+  installed: boolean
+  /** null: está instalada pero no dice desde fuera si hay sesión. */
+  signedIn: boolean | null
+  /** La cuenta, o los proveedores conectados. */
+  who?: string
+  /** El plan o el tipo de sesión (pro, plus, API…). */
+  plan?: string
+  detail?: string
+  /** El comando oficial que inicia sesión, para lanzarlo en una terminal. */
+  loginCommand?: string
+  logoutCommand?: string
+  installCommand?: string
+  installUrl?: string
+  /** El inicio de sesión se hace sin salir de la app (GitHub). */
+  inApp?: boolean
+}
+
+/** Lo que va pasando en un inicio de sesión lanzado desde la app. */
+export interface AccountsEvent {
+  id: 'github' | 'openrouter'
+  /** code: gh ha dado su código de un solo uso. browser: la dirección que hay que abrir. done: terminó. */
+  phase: 'code' | 'browser' | 'done'
+  code?: string
+  url?: string
+  ok?: boolean
+  error?: string
+}
+
 export interface GhStatus {
   installed: boolean
   authed: boolean

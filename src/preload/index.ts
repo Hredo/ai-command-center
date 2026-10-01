@@ -368,6 +368,20 @@ const api = {
     onRun: (cb: (r: IpcEvents['schedules:run']) => void) => on('schedules:run', cb)
   },
   /** Versiones nuevas publicadas en GitHub (sólo avisa: no descarga ni instala). */
+  /** Cuentas: con qué hay sesión iniciada y cómo entrar en lo que falta. */
+  accounts: {
+    status: () => call('accounts:status'),
+    /** `gh auth login --web` sin terminal: el código llega por onEvent. */
+    githubLogin: () => call('accounts:githubLogin'),
+    githubCancel: () => call('accounts:githubCancel'),
+    /** ¿Usa git la sesión de gh para github.com? */
+    githubGit: () => call('accounts:githubGit'),
+    githubSetupGit: () => call('accounts:githubSetupGit'),
+    /** OAuth de OpenRouter: la clave se guarda en main, aquí sólo llega si fue bien. */
+    openrouterLogin: () => call('accounts:openrouterLogin'),
+    openrouterCancel: () => call('accounts:openrouterCancel'),
+    onEvent: (cb: (e: IpcEvents['accounts:event']) => void) => on('accounts:event', cb)
+  },
   updates: {
     get: () => call('updates:get'),
     check: () => call('updates:check'),

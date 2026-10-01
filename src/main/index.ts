@@ -27,6 +27,7 @@ import { initTray, onWindowClose, markQuitting, showWindow, destroyTray, hasTray
 import { initQuick, unregisterQuickHotkey } from './quick'
 import { startUpdateChecks, stopUpdateChecks } from './updates'
 import { startScheduler, stopScheduler } from './schedules'
+import { stopAccounts } from './accounts'
 import { startedHidden } from './loginItem'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
@@ -334,6 +335,7 @@ app.on('before-quit', () => {
   stopQuotas()
   stopUpdateChecks()
   stopScheduler()
+  stopAccounts()
   closeAllTerms()
 })
 
