@@ -111,7 +111,7 @@ export function LiveMetrics({
           <span className="num">{it.label}</span>
         </span>
       ))}
-      <span className="text-[10px] text-[#3a4255]" title={t('Los tokens y la velocidad son estimados hasta que termina')}>
+      <span className="text-[10px] text-dim/60" title={t('Los tokens y la velocidad son estimados hasta que termina')}>
         {t('en vivo')}
       </span>
     </div>

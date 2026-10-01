@@ -203,7 +203,20 @@ app.whenReady().then(async () => {
     return { st, cmd }
   })()`)
 
-  log(gh.st?.installed === true, 'SE DETECTA GITHUB CLI', gh.st?.version ? 'gh ' + gh.st.version : (gh.st?.hint ?? ''))
+  // gh puede no estar en este equipo: lo que se comprueba es que la app acierta y, si falta, dice cómo ponerlo.
+  const ghHere = (() => {
+    try {
+      require('node:child_process').execFileSync(process.platform === 'win32' ? 'where' : 'which', ['gh'], { stdio: 'ignore' })
+      return true
+    } catch {
+      return false
+    }
+  })()
+  log(
+    ghHere ? gh.st?.installed === true : gh.st?.installed === false && Boolean(gh.st?.hint),
+    ghHere ? 'SE DETECTA GITHUB CLI' : 'SIN GITHUB CLI EN ESTE EQUIPO, LO DICE Y EXPLICA CÓMO INSTALARLO',
+    gh.st?.version ? 'gh ' + gh.st.version : (gh.st?.hint ?? '')
+  )
   log(
     typeof gh.st?.authed === 'boolean',
     'se sabe si hay sesión de GitHub',

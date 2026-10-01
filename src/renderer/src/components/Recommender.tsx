@@ -158,7 +158,7 @@ export function Recommender({
     title: string,
     why: string
   ): React.JSX.Element => (
-    <div className={cx('border rounded-xl p-3 flex flex-col gap-2 min-w-0', kind === 'sufficient' ? 'border-accent-dim bg-[#0b161b]' : 'border-line bg-raised')} data-pick={kind}>
+    <div className={cx('border rounded-xl p-3 flex flex-col gap-2 min-w-0', kind === 'sufficient' ? 'border-accent-dim bg-accent/5' : 'border-line bg-raised')} data-pick={kind}>
       <div className="flex items-center gap-1.5 text-[11.5px] uppercase tracking-wider text-dim">
         <Icon size={12} className={kind === 'sufficient' ? 'text-accent' : kind === 'best' ? 'text-warn' : 'text-violet'} /> {t(title)}
       </div>
@@ -228,7 +228,7 @@ export function Recommender({
               key={d}
               onClick={() => setManual((m) => ({ ...m, difficulty: d }))}
               title={t(DIFFICULTY_LABEL[d])}
-              className={cx('w-6 h-6 rounded-md border text-[11px] num', d <= profile.difficulty ? 'border-accent-dim bg-[#0b161b] text-accent' : 'border-line text-dim')}
+              className={cx('w-6 h-6 rounded-md border text-[11px] num', d <= profile.difficulty ? 'border-accent-dim bg-accent/5 text-accent' : 'border-line text-dim')}
             >
               {d}
             </button>

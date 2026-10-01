@@ -254,7 +254,7 @@ export default function Dashboard({ onNav }: { onNav: (p: PageId) => void }): Re
 
             <Panel>
               <PanelHeader title={t('Últimas ejecuciones')} icon={<Activity size={14} />} />
-              <div className="divide-y divide-[#171a26] max-h-[260px] overflow-y-auto">
+              <div className="divide-y divide-line-soft max-h-[260px] overflow-y-auto">
                 {recent.map((r) => (
                   <div key={r.id} className="px-4 py-2 flex items-center gap-2.5">
                     <Dot tone={r.status === 'ok' ? 'ok' : r.status === 'error' ? 'bad' : 'warn'} />

@@ -1,7 +1,8 @@
+import { app } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative, isAbsolute } from 'node:path'
+import { dirname, join, relative, isAbsolute, resolve } from 'node:path'
 import { paths } from '../paths'
 import { randomUUID } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
@@ -18,6 +19,14 @@ import { projectForPath } from '../projectMatch'
 import { resumeArgs, resumeCaps } from '@shared/cliCaps'
 import { budgetBlock } from '../quotas/budgets'
 import { createCheckpoint, type Checkpoint } from '../checkpoints'
+import { opencodeTurnUsage } from '../external/opencode'
+import {
+  AcpConnection, acpAsk, acpDiffCounts, acpResultText, acpStatus, acpTarget, acpToolName, acpTouchKind,
+  type AcpPermissionOption, type AcpPermissionOutcome, type AcpToolCall
+} from './acp'
+import {
+  CodexConnection, CodexUnsupported, codexAsk, codexConfigArgs, codexErrorText, codexItemView, codexPolicy, codexTodos
+} from './codexServer'
 import type {
   AgentStep, AgentTodo, CliAgent, CliLimit, CliRunOptions, FileChange, FileTouch, RunRecord
 } from '@shared/types'
@@ -38,7 +47,43 @@ export type CliEventFn = (e: {
 
 const running = new Map<string, ChildProcess>()
 
+/**
+ * Permisos que un CLI está esperando: `${runId}:${stepId}` → quien espera la
+ * respuesta. OpenCode y Gemini (por ACP) y Claude Code (por su protocolo de
+ * control) preguntan aquí igual que en su terminal.
+ */
+interface CliApproval {
+  allow: boolean
+  always: boolean
+  /** Se paró el agente o él mismo retiró la pregunta. */
+  cancelled?: boolean
+}
+const approvals = new Map<string, (a: CliApproval) => void>()
+
+function waitCliApproval(runId: string, stepId: string): Promise<CliApproval> {
+  return new Promise((resolve) => approvals.set(`${runId}:${stepId}`, resolve))
+}
+
+/** La respuesta de la ventana. Devuelve false si esa pregunta ya no está. */
+export function answerCliApproval(runId: string, stepId: string, allow: boolean, always = false): boolean {
+  const key = `${runId}:${stepId}`
+  const resolve = approvals.get(key)
+  if (!resolve) return false
+  approvals.delete(key)
+  resolve({ allow, always })
+  return true
+}
+
+function cancelApprovals(runId: string): void {
+  for (const [key, resolve] of approvals) {
+    if (!key.startsWith(runId + ':')) continue
+    approvals.delete(key)
+    resolve({ allow: false, always: false, cancelled: true })
+  }
+}
+
 export function killCli(runId: string): boolean {
+  cancelApprovals(runId)
   const child = running.get(runId)
   if (!child) return false
   // Hay que matar el árbol: en Windows el .cmd lanza un node hijo, y en
@@ -922,17 +967,34 @@ function injectArgs(template: string[], extra: string[]): string[] {
  * que evita cualquier problema de escapado con textos largos.
  */
 /** Las reglas se validan: texto corto, sin saltos de línea, como mucho veinte. */
-function allowSettingsFile(runId: string, rules?: unknown): string | null {
-  if (!Array.isArray(rules)) return null
-  const clean = rules
+function allowSettingsFile(runId: string, rules?: unknown, dirs: string[] = []): string | null {
+  const clean = (Array.isArray(rules) ? rules : [])
     .filter((r): r is string => typeof r === 'string' && r.length > 0 && r.length <= 400 && !/[\r\n]/.test(r))
     .slice(0, 20)
-  if (!clean.length) return null
+  if (!clean.length && !dirs.length) return null
   const dir = join(paths.dir, 'cli-settings')
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `${runId.replace(/[^\w-]/g, '_')}.json`)
-  writeFileSync(file, JSON.stringify({ permissions: { allow: clean } }))
+  // Las carpetas de los adjuntos que están fuera del proyecto (una imagen
+  // pegada vive en la carpeta de datos de la app): sin esto, leerlas le pide
+  // un permiso que en modo -p nadie puede darle.
+  const permissions: Record<string, string[]> = {}
+  if (clean.length) permissions.allow = clean
+  if (dirs.length) permissions.additionalDirectories = dirs
+  writeFileSync(file, JSON.stringify({ permissions }))
   return file
+}
+
+/** Carpetas de los adjuntos que no están dentro de la del proyecto. */
+function outsideDirs(attachments: CliRunOptions['attachments'], cwd: string | undefined): string[] {
+  const root = cwd ? resolve(cwd) : ''
+  const out = new Set<string>()
+  for (const a of attachments ?? []) {
+    const d = dirname(resolve(a.path))
+    const rel = root ? relative(root, d) : '..'
+    if (rel.startsWith('..') || isAbsolute(rel)) out.add(d)
+  }
+  return [...out].slice(0, 10)
 }
 
 export async function runCliAgent(
@@ -969,6 +1031,74 @@ export async function runCliAgent(
 
 function isOpencode(command: string): boolean {
   return /(^|[\\/])opencode(\.(cmd|exe))?$/i.test(command.trim())
+}
+
+const CLAUDE_BIN = /(^|[\\/])claude(\.(cmd|exe|ps1))?$/i
+const GEMINI_BIN = /(^|[\\/])gemini(\.(cmd|exe|ps1))?$/i
+const CODEX_BIN = /(^|[\\/])codex(\.(cmd|exe|ps1))?$/i
+
+/**
+ * Claude Code que no entendió los permisos por la entrada estándar (una
+ * versión muy vieja): mientras la app siga abierta se lanza como antes.
+ */
+let claudeStdioOff = false
+
+/** Un Codex sin `app-server` (muy viejo): mientras la app siga abierta va con `codex exec`. */
+let codexServerOff = false
+
+/**
+ * Cómo se habla con cada CLI para que pueda preguntar:
+ * - acp: OpenCode (`opencode acp`) y Gemini CLI (`--experimental-acp`).
+ * - claude: Claude Code con entrada y salida stream-json y los permisos por
+ *   la entrada estándar, que es lo que hace su propio SDK.
+ * - codex: Codex por su `app-server`, el protocolo de su extensión de VS Code.
+ * - null: el resto, de una vez y sin preguntas, como hasta ahora.
+ */
+function interactiveMode(agent: CliAgent, usesArgPrompt: boolean): 'acp' | 'claude' | 'codex' | null {
+  const cmd = agent.command.trim()
+  if (isOpencode(cmd) || GEMINI_BIN.test(cmd)) return 'acp'
+  if (agent.parser === 'codex-json' && CODEX_BIN.test(cmd) && !codexServerOff) return 'codex'
+  if (agent.parser === 'claude-stream-json' && CLAUDE_BIN.test(cmd) && !usesArgPrompt && !claudeStdioOff) return 'claude'
+  return null
+}
+
+/** Lo que pide Claude Code, en los términos de la app. */
+function claudeAsk(tool: string, input: any, req: any): NonNullable<AgentStep['ask']> {
+  if (typeof req?.blocked_path === 'string' && req.blocked_path) return { kind: 'outside', target: req.blocked_path }
+  const t = tool.toLowerCase()
+  if (/^(bash|powershell|shell)/.test(t)) return { kind: 'run', target: String(input?.command ?? '') }
+  if (/^(write|edit|multiedit|notebookedit)/.test(t)) return { kind: 'edit', target: pathFromToolInput(input) }
+  if (/^(read|grep|glob|ls)/.test(t)) return { kind: 'read', target: pathFromToolInput(input) }
+  if (/^(webfetch|websearch)/.test(t)) return { kind: 'fetch', target: String(input?.url ?? input?.query ?? '') }
+  return { kind: 'other', target: toolLabel(tool) }
+}
+
+/**
+ * Lo que Claude Code propone para no volver a preguntar (lo mismo que su
+ * «Sí, y no vuelvas a preguntar» de la terminal) y hasta dónde llega.
+ */
+function claudeAlways(suggestions: any[]): AgentStep['always'] {
+  if (!suggestions.length) return undefined
+  const scopeOf = (d: string | undefined): 'session' | 'project' | 'user' =>
+    d === 'userSettings' ? 'user' : d === 'projectSettings' || d === 'localSettings' ? 'project' : 'session'
+  let scope: 'session' | 'project' | 'user' = 'session'
+  const what: string[] = []
+  for (const s of suggestions) {
+    const sc = scopeOf(s?.destination)
+    if (sc === 'user' || (sc === 'project' && scope === 'session')) scope = sc
+    if (s?.type === 'setMode' && s.mode) what.push(String(s.mode))
+    else if (s?.type === 'addRules' || s?.type === 'replaceRules') {
+      for (const r of s.rules ?? []) what.push(r?.ruleContent ? `${r.toolName}(${r.ruleContent})` : String(r?.toolName ?? ''))
+    } else if (s?.type === 'addDirectories') what.push(...(s.directories ?? []).map(String))
+  }
+  return { scope, what: what.filter(Boolean).join(', ') || undefined }
+}
+
+/** Argumentos para hablar ACP con el agente. */
+function acpArgs(agent: CliAgent, cwd: string, modelArgs: string[] | null): string[] {
+  if (isOpencode(agent.command)) return ['acp', '--cwd', cwd]
+  // Gemini CLI: el modelo va en la línea de órdenes; los permisos, por ACP.
+  return ['--experimental-acp', ...(modelArgs ?? [])]
 }
 
 function startCliAgent(
@@ -1065,9 +1195,15 @@ function startCliAgent(
     // Retomar la sesión del propio agente, para que recuerde el turno anterior.
     // Si su CLI no sabe, la conversación va dentro del prompt: nunca empieza
     // de cero sin decirlo.
+    const usesArgPrompt = agent.args.some((a) => a.includes('{{prompt}}'))
+    // Los que saben preguntar se lanzan en su modo interactivo (ver interactiveMode).
+    const mode = interactiveMode(agent, usesArgPrompt)
     const resume =
-      opts.resumeSessionId || (opts.history?.length && resumeCaps(agent.command).byFolder)
-        ? resumeArgs(agent.command, opts.resumeSessionId, opts.fork)
+      !opts.rewound && (opts.resumeSessionId || (opts.history?.length && resumeCaps(agent.command).byFolder))
+        ? mode === 'codex' && opts.resumeSessionId
+          ? // Retomar o bifurcar lo hace su servidor, no un argumento.
+            { args: [] as string[], beforePrompt: false }
+          : resumeArgs(agent.command, opts.resumeSessionId, opts.fork)
         : null
     const fallbackHistory = !resume && Boolean(opts.history?.length)
     const prompt = fallbackHistory ? withHistory(composed, opts.history) : composed
@@ -1081,7 +1217,8 @@ function startCliAgent(
     // Lo que le faltó en el turno anterior, sólo para esta ejecución. Va en un
     // fichero de ajustes aparte (`--settings`): un solo argumento, sin comillas
     // que escapar y sin tocar tu settings.json.
-    const allowFile = permissionArgs !== null ? allowSettingsFile(runId, opts.allowTools) : null
+    const allowFile =
+      permissionArgs !== null ? allowSettingsFile(runId, opts.allowTools, outsideDirs(opts.attachments, opts.projectPath)) : null
     const extra = [
       ...(resume && !resume.beforePrompt ? resume.args : []),
       ...(effortArgs ?? []),
@@ -1090,7 +1227,6 @@ function startCliAgent(
       ...(allowFile ? ['--settings', allowFile] : [])
     ]
 
-    const usesArgPrompt = agent.args.some((a) => a.includes('{{prompt}}'))
     let template = injectArgs(agent.args, extra)
     // Codex retoma con un subcomando (`exec … resume <id> "prompt"`) que va
     // detrás de las opciones y justo delante del prompt.
@@ -1105,11 +1241,24 @@ function startCliAgent(
     // directorio del usuario en vez de fallar por un cwd que no existe.
     const cwd = opts.projectPath && existsSync(opts.projectPath) ? opts.projectPath : homedir()
 
+    const permMode = opts.permissionMode ?? agent.permissionMode
+    let spawnArgs = args
+    if (mode === 'acp') {
+      spawnArgs = acpArgs(agent, cwd, prep ? null : modelArgs)
+    } else if (mode === 'codex') {
+      spawnArgs = ['app-server', ...codexConfigArgs(agent.args)]
+    } else if (mode === 'claude') {
+      spawnArgs = [...args]
+      if (!spawnArgs.includes('--input-format')) spawnArgs.push('--input-format', 'stream-json')
+      if (!spawnArgs.includes('--permission-prompt-tool')) spawnArgs.push('--permission-prompt-tool', 'stdio')
+      if (!spawnArgs.includes('--verbose')) spawnArgs.push('--verbose')
+    }
+
     let child: ChildProcess
     try {
       if (process.platform === 'win32') {
         // Los CLIs de npm son .cmd: Node exige pasar por el shell para ejecutarlos.
-        const launch = windowsLaunch(agent.command, args)
+        const launch = windowsLaunch(agent.command, spawnArgs)
         child = spawn(launch.file, launch.argv, {
           cwd,
           windowsHide: true,
@@ -1117,7 +1266,7 @@ function startCliAgent(
           stdio: ['pipe', 'pipe', 'pipe']
         })
       } else {
-        child = spawn(agent.command, args, {
+        child = spawn(agent.command, spawnArgs, {
           cwd,
           // Su propio grupo de procesos, para poder pararlo entero.
           detached: true,
@@ -1136,7 +1285,20 @@ function startCliAgent(
 
     running.set(runId, child)
 
-    if (!usesArgPrompt) {
+    if (mode === 'claude') {
+      // El prompt va como un mensaje; la entrada se queda abierta para
+      // contestar sus preguntas de permiso y se cierra al llegar el resultado.
+      child.stdin?.write(
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'text', text: prompt }] },
+          parent_tool_use_id: null,
+          session_id: ''
+        }) + '\n'
+      )
+    } else if (mode === 'acp' || mode === 'codex') {
+      // Lo lleva la conversación (ACP o con el servidor de Codex) de más abajo.
+    } else if (!usesArgPrompt) {
       child.stdin?.write(prompt)
       child.stdin?.end()
     } else {
@@ -1192,7 +1354,15 @@ function startCliAgent(
       at: Date.now(),
       kind: 'note',
       status: 'ok',
-      detail: `$ ${agent.command} ${args.join(' ')}`
+      detail:
+        `$ ${agent.command} ${spawnArgs.join(' ')}` +
+        (mode === 'acp'
+          ? ' · por ACP: pregunta aquí lo que necesite'
+          : mode === 'claude'
+            ? ' · pregunta aquí sus permisos'
+            : mode === 'codex'
+              ? ' · por su app-server: pregunta aquí sus aprobaciones'
+              : '')
     })
     if (resume) {
       onStep({
@@ -1285,6 +1455,620 @@ function startCliAgent(
 
     const sink: ParseSink = { onText, onThink, onTouch, onUsage, onStep, onLimit, onSession, onTodos }
 
+    const writeIn = (s: string): void => {
+      if (child.stdin && !child.stdin.destroyed && child.stdin.writable) child.stdin.write(s)
+    }
+
+    /* ---------------- Claude Code: permisos por la entrada estándar ---------------- */
+    let claudeEnded = false
+    const claudeReqs = new Map<string, string>()
+    const handleClaudeControl = (line: string): boolean => {
+      let msg: any
+      try {
+        msg = JSON.parse(line)
+      } catch {
+        return false
+      }
+      if (msg?.type === 'control_cancel_request') {
+        const stepId = claudeReqs.get(String(msg.request_id))
+        if (stepId) {
+          const resolve = approvals.get(`${runId}:${stepId}`)
+          approvals.delete(`${runId}:${stepId}`)
+          resolve?.({ allow: false, always: false, cancelled: true })
+        }
+        return true
+      }
+      if (msg?.type !== 'control_request') return false
+      const requestId = String(msg.request_id)
+      const req = msg.request ?? {}
+      const respond = (response: unknown): void =>
+        writeIn(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } }) + '\n')
+      if (req.subtype !== 'can_use_tool') {
+        writeIn(JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: requestId, error: `No soportado: ${req.subtype}` } }) + '\n')
+        return true
+      }
+      void (async () => {
+        const tool = String(req.tool_name ?? '')
+        const input = req.input ?? {}
+        const open = req.tool_use_id ? claudeCtx.pending.get(String(req.tool_use_id)) : undefined
+        const base: AgentStep = open?.step ?? {
+          id: 'perm-' + requestId,
+          at: Date.now(),
+          kind: 'tool',
+          tool: toolLabel(tool),
+          target: describeTool(tool, input, claudeCtx.cwd),
+          status: 'running'
+        }
+        const suggestions: any[] = Array.isArray(req.permission_suggestions) ? req.permission_suggestions : []
+        const ask = claudeAsk(tool, input, req)
+        const settle = (st: AgentStep): void => {
+          if (open) open.step = st
+          onStep(st)
+        }
+        if (opts.kind === 'arena') {
+          settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'en la Arena nadie puede contestar: se le dijo que no' })
+          respond({ behavior: 'deny', message: 'Nadie puede dar permisos en esta ejecución.' })
+          return
+        }
+        claudeReqs.set(requestId, base.id)
+        const answer = waitCliApproval(runId, base.id)
+        onStep({ ...base, status: 'running', approval: 'pending', ask, always: claudeAlways(suggestions) })
+        const a = await answer
+        claudeReqs.delete(requestId)
+        if (a.cancelled) {
+          settle({ ...base, approval: undefined })
+          return
+        }
+        if (!a.allow) {
+          settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'no lo has permitido' })
+          respond({ behavior: 'deny', message: 'El usuario no lo ha permitido.' })
+          return
+        }
+        settle({ ...base, status: 'running', approval: 'approved', ask })
+        respond({ behavior: 'allow', updatedInput: input, ...(a.always && suggestions.length ? { updatedPermissions: suggestions } : {}) })
+      })()
+      return true
+    }
+
+    /* ---------------- ACP: OpenCode y Gemini CLI ---------------- */
+    let acpDone = false
+    let acpFailure: string | undefined
+    let replaying = false
+    let acpSessionCost: number | undefined
+    const acpCalls = new Map<string, { step: AgentStep; call: AcpToolCall; started: number }>()
+    let thinkStep: AgentStep | null = null
+    let thinkCount = 0
+    const acpUpdate = (u: any): void => {
+      if (replaying || !u) return
+      const kind = String(u.sessionUpdate ?? '')
+      if (kind === 'agent_message_chunk') {
+        thinkStep = null
+        const t = u.content?.type === 'text' ? String(u.content.text ?? '') : ''
+        if (t) {
+          onText(t)
+          onEvent({ type: 'stdout', data: t })
+        }
+      } else if (kind === 'agent_thought_chunk') {
+        const t = u.content?.type === 'text' ? String(u.content.text ?? '') : ''
+        if (!t) return
+        onThink(t)
+        thinkStep = thinkStep
+          ? { ...thinkStep, detail: (thinkStep.detail ?? '') + t }
+          : { id: `th-acp-${++thinkCount}`, at: Date.now(), kind: 'thinking', detail: t, status: 'ok' }
+        onStep(thinkStep)
+      } else if (kind === 'tool_call' || kind === 'tool_call_update') {
+        thinkStep = null
+        const id = String(u.toolCallId ?? '')
+        if (!id) return
+        const prev = acpCalls.get(id)
+        const call: AcpToolCall = {
+          ...(prev?.call ?? {}),
+          ...u,
+          rawInput: u.rawInput && Object.keys(u.rawInput).length ? u.rawInput : prev?.call.rawInput,
+          locations: u.locations?.length ? u.locations : prev?.call.locations,
+          kind: u.kind ?? prev?.call.kind
+        }
+        const status = acpStatus(call.status)
+        const base: AgentStep = prev?.step ?? { id: 'acp-' + id, at: Date.now(), kind: 'tool', status: 'running' }
+        const tool = prev?.step.tool && !/^(Tool|Other)$/.test(prev.step.tool) ? prev.step.tool : acpToolName(call)
+        const step: AgentStep = { ...base, tool, target: acpTarget(call) || base.target, status }
+        if (status !== 'running') {
+          step.durationMs = Date.now() - (prev?.started ?? step.at)
+          const counts = acpDiffCounts(call.content)
+          if (counts) {
+            step.added = counts.added || undefined
+            step.removed = counts.removed || undefined
+          }
+          step.detail = acpResultText(call, call.kind) ?? step.detail
+          // Si ya se había negado el permiso, la fila se queda como negada.
+          if (base.denied) step.status = 'error'
+        }
+        acpCalls.set(id, { step, call, started: prev?.started ?? Date.now() })
+        const touch = acpTouchKind(call.kind)
+        if (touch) for (const l of call.locations ?? []) if (l?.path) onTouch(String(l.path), touch)
+        const todos = todosFrom(String(call.title ?? ''), call.rawInput)
+        if (todos) onTodos(todos)
+        onStep(step)
+      } else if (kind === 'plan') {
+        const entries = Array.isArray(u.entries) ? u.entries : []
+        onTodos(entries.map((e: any) => ({ text: String(e?.content ?? ''), done: e?.status === 'completed', active: e?.status === 'in_progress' })))
+      } else if (kind === 'usage_update') {
+        if (typeof u.used === 'number') meta.contextUsed = u.used
+        if (typeof u.size === 'number') meta.contextLimit = u.size
+        if (typeof u.cost?.amount === 'number') acpSessionCost = u.cost.amount
+        onUsage()
+      }
+    }
+    const acpPermission = async (req: { toolCall?: AcpToolCall; options?: AcpPermissionOption[] }): Promise<AcpPermissionOutcome> => {
+      const tc = req.toolCall ?? {}
+      const options = req.options ?? []
+      const pick = (...kinds: string[]): AcpPermissionOption | undefined => options.find((o) => kinds.includes(String(o.kind)))
+      const once = pick('allow_once') ?? pick('allow_always')
+      const alwaysOpt = pick('allow_always')
+      const reject = pick('reject_once') ?? pick('reject_always')
+      const select = (o?: AcpPermissionOption): AcpPermissionOutcome => (o ? { outcome: 'selected', optionId: o.optionId } : { outcome: 'cancelled' })
+      const prev = tc.toolCallId ? acpCalls.get(String(tc.toolCallId)) : undefined
+      const base: AgentStep = prev?.step ?? {
+        id: 'acp-perm-' + randomUUID(),
+        at: Date.now(),
+        kind: 'tool',
+        tool: acpToolName(tc),
+        target: acpTarget(tc),
+        status: 'running'
+      }
+      const ask = acpAsk(tc)
+      const settle = (st: AgentStep): void => {
+        if (prev) prev.step = st
+        onStep(st)
+      }
+      if (permMode === 'bypassPermissions') {
+        settle({ ...base, approval: 'approved', ask })
+        return select(once)
+      }
+      if (opts.kind === 'arena') {
+        settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'en la Arena nadie puede contestar: se le dijo que no' })
+        return select(reject)
+      }
+      const answer = waitCliApproval(runId, base.id)
+      onStep({ ...base, status: 'running', approval: 'pending', ask, always: alwaysOpt ? { scope: 'session' } : undefined })
+      const a = await answer
+      if (a.cancelled) return { outcome: 'cancelled' }
+      if (!a.allow) {
+        settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'no lo has permitido' })
+        return select(reject)
+      }
+      settle({ ...base, status: 'running', approval: 'approved', ask })
+      return select(a.always && alwaysOpt ? alwaysOpt : once)
+    }
+    const acp = mode === 'acp' ? new AcpConnection(writeIn, { onUpdate: acpUpdate, onPermission: acpPermission }) : null
+
+    // La conversación ACP de este turno: abrir (o retomar) la sesión, poner
+    // modelo, esfuerzo y modo, mandar el prompt y, al acabar, cerrar.
+    if (acp) {
+      const argAfter = (list: string[], flag: string): string | undefined => {
+        const i = list.indexOf(flag)
+        return i >= 0 ? list[i + 1] : undefined
+      }
+      const acpModel = prep ? argAfter(prep.args, '-m') : undefined
+      const acpEffort = prep ? argAfter(prep.args, '--variant') : undefined
+      // «Sólo plan» es su agente plan; si el agente de la app lleva --agent, ese.
+      const acpAgentMode = permMode === 'plan' ? 'plan' : argAfter(agent.args, '--agent')
+      if (acpModel) meta.model = acpModel
+      const known = new Set<string>()
+      const setOption = async (sid: string, configId: string, value: string): Promise<void> => {
+        if (known.size && !known.has(configId)) return
+        try {
+          const r = await acp.request('session/set_config_option', { sessionId: sid, configId, value })
+          for (const o of r?.configOptions ?? []) known.add(String(o.id))
+        } catch (e) {
+          onStep({
+            id: `acp-opt-${configId}`,
+            at: Date.now(),
+            kind: 'note',
+            status: 'ok',
+            detail: `No aceptó ${configId} = ${value}: ${(e as Error).message}`
+          })
+        }
+      }
+      const turnStart = Date.now()
+      const want = opts.rewound ? undefined : opts.resumeSessionId
+      void (async () => {
+        const init = await acp.request('initialize', {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }
+        })
+        const caps = init?.agentCapabilities ?? {}
+        const sessionCaps = caps.sessionCapabilities ?? {}
+        let sid: string | undefined
+        if (want) {
+          try {
+            if (opts.fork && sessionCaps.fork) {
+              const r = await acp.request('session/fork', { sessionId: want, cwd, mcpServers: [] })
+              sid = r?.sessionId ? String(r.sessionId) : undefined
+            } else if (sessionCaps.resume) {
+              await acp.request('session/resume', { sessionId: want, cwd, mcpServers: [] })
+              sid = want
+            } else if (caps.loadSession) {
+              // Al cargar repite la conversación entera: eso no es de este turno.
+              replaying = true
+              await acp.request('session/load', { sessionId: want, cwd, mcpServers: [] })
+              sid = want
+            }
+          } catch (e) {
+            onStep({
+              id: 'resume-failed',
+              at: Date.now(),
+              kind: 'note',
+              status: 'ok',
+              detail: `No se pudo retomar la sesión ${want.slice(0, 12)} (${(e as Error).message}): empieza una nueva`
+            })
+          } finally {
+            replaying = false
+          }
+        }
+        if (!sid) {
+          const r = await acp.request('session/new', { cwd, mcpServers: [] })
+          sid = r?.sessionId ? String(r.sessionId) : undefined
+          for (const o of r?.configOptions ?? []) known.add(String(o.id))
+          // Sin modelo pedido, el que dice que tiene puesto.
+          const current = (r?.configOptions ?? []).find((o: any) => o?.id === 'model')?.currentValue
+          if (!meta.model && current) meta.model = String(current)
+        }
+        if (!sid) throw new Error('El agente no abrió ninguna sesión')
+        claudeCtx.sessionId = sid
+        onSession(sid)
+        if (acpModel) await setOption(sid, 'model', acpModel)
+        if (acpEffort) await setOption(sid, 'effort', acpEffort)
+        if (acpAgentMode) await setOption(sid, 'mode', acpAgentMode)
+
+        const res = await acp.request('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text: prompt }] })
+        meta.finishReason = res?.stopReason ? String(res.stopReason) : undefined
+        const u = res?.usage
+        if (u) {
+          if (typeof u.inputTokens === 'number') meta.inputTokens = u.inputTokens
+          if (typeof u.outputTokens === 'number') meta.outputTokens = u.outputTokens
+          if (typeof u.cachedReadTokens === 'number') meta.cachedTokens = u.cachedReadTokens
+          if (typeof u.thoughtTokens === 'number') meta.reasoningTokens = u.thoughtTokens
+        }
+        // El coste exacto del turno lo apunta OpenCode mensaje a mensaje. Si no
+        // se puede leer, el total que da ACP sólo vale en una sesión nueva.
+        const turn = isOpencode(agent.command) ? opencodeTurnUsage(sid, turnStart) : null
+        if (turn) {
+          meta.costUsd = turn.cost
+          if (turn.model) meta.model = turn.model
+          if (!u) {
+            meta.inputTokens = turn.input
+            meta.outputTokens = turn.output
+            meta.cachedTokens = turn.cacheRead
+          }
+        } else if (acpSessionCost != null && !want) {
+          meta.costUsd = acpSessionCost
+        }
+        acpDone = true
+      })()
+        .catch((e: unknown) => {
+          acpFailure = e instanceof Error ? e.message : String(e)
+        })
+        .finally(() => {
+          child.stdin?.end()
+          // Se le deja un momento para irse solo; si no, se le cierra.
+          setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) killTree(child)
+          }, 1500).unref?.()
+        })
+    }
+
+    /* ---------------- Codex: su app-server ---------------- */
+    let codexDone = false
+    let codexFailure: string | undefined
+    let codexTurnStatus: string | undefined
+    let codexThread: string | undefined
+    let codexTurn: string | undefined
+    let codexRetry: string | undefined
+    let codexTurnEnd: (() => void) | null = null
+    let codexBase: { input: number; output: number; cached: number; reasoning: number } | null = null
+    let codexMessages = 0
+    const codexSaid = new Set<string>()
+    const codexThinking = new Map<string, AgentStep>()
+    const codexSteps = new Map<string, AgentStep>()
+    const codexTouched = new Set<string>()
+    const codexAsking = new Map<string, Promise<void>>()
+    const codexReqs = new Map<string, string>()
+
+    const codexSay = (itemId: string, chunk: string): void => {
+      if (!chunk) return
+      let t = chunk
+      if (!codexSaid.has(itemId)) {
+        codexSaid.add(itemId)
+        // Cada mensaje suyo es un párrafo aparte.
+        if (codexMessages++ > 0) t = '\n\n' + t
+      }
+      onText(t)
+      onEvent({ type: 'stdout', data: t })
+    }
+    const codexThink = (itemId: string, t: string): void => {
+      if (!t) return
+      onThink(t)
+      const prev = codexThinking.get(itemId)
+      const step: AgentStep = prev
+        ? { ...prev, detail: (prev.detail ?? '') + t }
+        : { id: 'cx-th-' + itemId, at: Date.now(), kind: 'thinking', detail: t, status: 'ok' }
+      codexThinking.set(itemId, step)
+      onStep(step)
+    }
+    const codexNotify = (method: string, p: any): void => {
+      // El servidor avisa también de otras conversaciones y de otros turnos.
+      if (p?.threadId && codexThread && p.threadId !== codexThread) return
+      if (p?.turnId && codexTurn && p.turnId !== codexTurn) return
+      switch (method) {
+        case 'item/agentMessage/delta':
+          codexSay(String(p.itemId), String(p.delta ?? ''))
+          return
+        case 'item/reasoning/summaryTextDelta':
+        case 'item/reasoning/textDelta':
+          codexThink(String(p.itemId), String(p.delta ?? ''))
+          return
+        case 'item/reasoning/summaryPartAdded':
+          if (codexThinking.has(String(p.itemId))) codexThink(String(p.itemId), '\n\n')
+          return
+        case 'item/started':
+        case 'item/completed': {
+          if (!codexTurnEnd) return
+          const item = p.item ?? {}
+          const id = String(item.id ?? '')
+          const done = method === 'item/completed'
+          if (item.type === 'agentMessage') {
+            if (done && typeof item.text === 'string' && !codexSaid.has(id)) codexSay(id, item.text)
+            return
+          }
+          if (item.type === 'reasoning') {
+            if (done && !codexThinking.has(id)) {
+              const parts = (Array.isArray(item.summary) && item.summary.length ? item.summary : item.content) ?? []
+              codexThink(id, parts.filter((x: unknown) => typeof x === 'string' && x.trim()).join('\n\n'))
+            }
+            return
+          }
+          const view = codexItemView(item, done, cwd)
+          if (!view.step) return
+          const prev = codexSteps.get(view.step.id)
+          // Lo que ya se decidió sobre su permiso no lo pisa el estado nuevo.
+          const step: AgentStep = {
+            ...view.step,
+            at: prev?.at ?? view.step.at,
+            approval: prev?.approval,
+            ask: prev?.ask,
+            denied: prev?.denied,
+            detail: view.step.detail ?? prev?.detail,
+            status: prev?.denied ? 'error' : view.step.status
+          }
+          codexSteps.set(step.id, step)
+          if (!codexTouched.has(step.id)) {
+            codexTouched.add(step.id)
+            for (const tch of view.touches ?? []) onTouch(tch.path, tch.kind)
+          }
+          onStep(step)
+          return
+        }
+        case 'turn/plan/updated':
+          onTodos(codexTodos(p.plan))
+          return
+        case 'thread/tokenUsage/updated': {
+          if (!codexTurn) return
+          const total = p.tokenUsage?.total ?? {}
+          const last = p.tokenUsage?.last ?? {}
+          const n = (v: unknown): number => (typeof v === 'number' ? v : 0)
+          // Los totales son de toda la conversación: lo de este turno es lo que ha crecido.
+          codexBase ??= {
+            input: n(total.inputTokens) - n(last.inputTokens),
+            output: n(total.outputTokens) - n(last.outputTokens),
+            cached: n(total.cachedInputTokens) - n(last.cachedInputTokens),
+            reasoning: n(total.reasoningOutputTokens) - n(last.reasoningOutputTokens)
+          }
+          meta.inputTokens = Math.max(0, n(total.inputTokens) - codexBase.input)
+          meta.outputTokens = Math.max(0, n(total.outputTokens) - codexBase.output)
+          meta.cachedTokens = Math.max(0, n(total.cachedInputTokens) - codexBase.cached)
+          meta.reasoningTokens = Math.max(0, n(total.reasoningOutputTokens) - codexBase.reasoning)
+          // La última petición lleva la conversación entera: es lo que ocupa.
+          meta.contextUsed = n(last.totalTokens) || n(last.inputTokens) + n(last.outputTokens)
+          if (typeof p.tokenUsage?.modelContextWindow === 'number') meta.contextLimit = p.tokenUsage.modelContextWindow
+          onUsage()
+          return
+        }
+        case 'model/rerouted':
+          if (p.toModel) meta.model = String(p.toModel)
+          return
+        case 'serverRequest/resolved': {
+          // La pregunta ya no hace falta (se paró el turno, la contestó otro cliente).
+          const stepId = codexReqs.get(String(p.requestId))
+          if (!stepId) return
+          const waiting = approvals.get(`${runId}:${stepId}`)
+          approvals.delete(`${runId}:${stepId}`)
+          waiting?.({ allow: false, always: false, cancelled: true })
+          return
+        }
+        case 'error': {
+          const why = codexErrorText(p.error)
+          // Las reconexiones también llegan como error: sólo cuenta el que no reintenta.
+          if (p.willRetry) {
+            codexRetry = why
+            return
+          }
+          meta.error = why
+          onStep({ id: 'cx-error-' + randomUUID(), at: Date.now(), kind: 'note', status: 'error', detail: why })
+          return
+        }
+        case 'turn/started':
+          if (p.turn?.id && codexTurnEnd) codexTurn = String(p.turn.id)
+          return
+        case 'turn/completed': {
+          const turn = p.turn ?? {}
+          if (!codexTurnEnd || (codexTurn && turn.id && turn.id !== codexTurn)) return
+          codexTurnStatus = String(turn.status ?? 'completed')
+          if (turn.error) meta.error = codexErrorText(turn.error)
+          else if (codexTurnStatus === 'failed' && !meta.error) meta.error = codexRetry
+          if (codexTurnStatus !== 'completed') meta.finishReason = codexTurnStatus
+          codexTurnEnd()
+          return
+        }
+        default:
+          return
+      }
+    }
+    const codexRequest = async (method: string, p: any, requestId: string): Promise<unknown> => {
+      const isCmd = method === 'item/commandExecution/requestApproval'
+      const isPatch = method === 'item/fileChange/requestApproval'
+      const isPerm = method === 'item/permissions/requestApproval'
+      if (method === 'item/tool/requestUserInput') {
+        const asked = (Array.isArray(p.questions) ? p.questions : []).map((q: any) => String(q?.question ?? '')).filter(Boolean).join(' · ')
+        onStep({
+          id: 'cx-q-' + randomUUID(),
+          at: Date.now(),
+          kind: 'note',
+          status: 'ok',
+          detail: 'Codex pregunta algo que desde aquí todavía no se puede contestar; sigue sin respuesta' + (asked ? `: ${asked}` : '')
+        })
+        return { answers: {} }
+      }
+      if (method === 'mcpServer/elicitation/request') return { action: 'decline', content: null, _meta: null }
+      if (!isCmd && !isPatch && !isPerm) throw new CodexUnsupported(`Método no soportado: ${method}`)
+
+      const stepId = 'cx-' + String(p.itemId ?? randomUUID())
+      // Un mismo elemento puede preguntar varias veces (cada subcomando): de una en una.
+      const before = codexAsking.get(stepId) ?? Promise.resolve()
+      let release: () => void = () => {}
+      codexAsking.set(stepId, new Promise<void>((r) => (release = r)))
+      await before
+      try {
+        const prev = codexSteps.get(stepId)
+        const base: AgentStep = prev ?? {
+          id: stepId,
+          at: Date.now(),
+          kind: 'tool',
+          tool: isCmd ? 'Bash' : isPatch ? 'Edit' : 'Permisos',
+          target: isCmd ? String(p.command ?? '') : undefined,
+          status: 'running'
+        }
+        const ask = codexAsk(method, p, prev)
+        const amendment: string[] | null =
+          isCmd && Array.isArray(p.proposedExecpolicyAmendment) && p.proposedExecpolicyAmendment.length
+            ? p.proposedExecpolicyAmendment.map(String)
+            : null
+        const settle = (st: AgentStep): void => {
+          codexSteps.set(stepId, st)
+          onStep(st)
+        }
+        const granted = {
+          ...(p.permissions?.network ? { network: p.permissions.network } : {}),
+          ...(p.permissions?.fileSystem ? { fileSystem: p.permissions.fileSystem } : {})
+        }
+        const yes = (always: boolean): unknown =>
+          isPerm
+            ? { permissions: granted, scope: always ? 'session' : 'turn' }
+            : {
+                decision: !always
+                  ? 'accept'
+                  : amendment
+                    ? { acceptWithExecpolicyAmendment: { execpolicy_amendment: amendment } }
+                    : 'acceptForSession'
+              }
+        const no = (): unknown => (isPerm ? { permissions: {}, scope: 'turn' } : { decision: 'decline' })
+        if (permMode === 'bypassPermissions') {
+          settle({ ...base, approval: 'approved', ask })
+          return yes(false)
+        }
+        if (opts.kind === 'arena') {
+          settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'en la Arena nadie puede contestar: se le dijo que no' })
+          return no()
+        }
+        codexReqs.set(requestId, stepId)
+        const answer = waitCliApproval(runId, stepId)
+        onStep({
+          ...base,
+          status: 'running',
+          approval: 'pending',
+          ask,
+          // «Sí, y no vuelvas a preguntar»: con regla propuesta se guarda en sus reglas; si no, vale para la sesión.
+          always: amendment ? { scope: 'user', what: amendment.join(' ') } : { scope: 'session' },
+          detail: typeof p.reason === 'string' && p.reason ? p.reason : base.detail
+        })
+        const a = await answer
+        codexReqs.delete(requestId)
+        if (a.cancelled) {
+          settle({ ...base, approval: undefined })
+          return isPerm ? no() : { decision: 'cancel' }
+        }
+        if (!a.allow) {
+          settle({ ...base, status: 'error', approval: 'denied', denied: true, ask, detail: 'no lo has permitido' })
+          return no()
+        }
+        settle({ ...base, status: 'running', approval: 'approved', ask })
+        return yes(a.always)
+      } finally {
+        release()
+      }
+    }
+    const codex = mode === 'codex' ? new CodexConnection(writeIn, { onNotification: codexNotify, onRequest: codexRequest }) : null
+
+    // La conversación con su servidor: saludo, abrir (o retomar, o bifurcar) el
+    // hilo con modelo y permisos, lanzar el turno y esperar a que acabe.
+    if (codex) {
+      const policy = codexPolicy(permMode)
+      const model = (opts.model ?? agent.model ?? '').trim()
+      const effort = (effortArgs ?? []).find((a) => a.startsWith('model_reasoning_effort='))?.split('=')[1]
+      const want = opts.rewound ? undefined : opts.resumeSessionId
+      void (async () => {
+        await codex.request('initialize', {
+          clientInfo: { name: 'ai-command-center', title: 'AI Command Center', version: app.getVersion() },
+          capabilities: null
+        })
+        codex.notify('initialized')
+        const common = {
+          cwd,
+          ...(model ? { model } : {}),
+          ...(policy ? { approvalPolicy: policy.approvalPolicy, sandbox: policy.sandbox } : {})
+        }
+        let opened: any
+        if (want) {
+          try {
+            opened = await codex.request(opts.fork ? 'thread/fork' : 'thread/resume', { threadId: want, ...common, excludeTurns: true })
+          } catch (e) {
+            onStep({
+              id: 'resume-failed',
+              at: Date.now(),
+              kind: 'note',
+              status: 'ok',
+              detail: `No se pudo retomar la sesión ${want.slice(0, 12)} (${(e as Error).message}): empieza una nueva`
+            })
+          }
+        }
+        if (!opened?.thread?.id) opened = await codex.request('thread/start', common)
+        const threadId = opened?.thread?.id ? String(opened.thread.id) : undefined
+        if (!threadId) throw new Error('Codex no abrió ninguna conversación')
+        codexThread = threadId
+        claudeCtx.sessionId = threadId
+        onSession(threadId)
+        if (opened.model) meta.model = String(opened.model)
+        const ended = new Promise<void>((r) => (codexTurnEnd = r))
+        const started = await codex.request('turn/start', {
+          threadId,
+          input: [{ type: 'text', text: prompt, text_elements: [] }],
+          ...(effort ? { effort } : {})
+        })
+        if (started?.turn?.id) codexTurn = String(started.turn.id)
+        await ended
+        codexDone = true
+      })()
+        .catch((e: unknown) => {
+          codexFailure = e instanceof Error ? e.message : String(e)
+        })
+        .finally(() => {
+          child.stdin?.end()
+          setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) killTree(child)
+          }, 1500).unref?.()
+        })
+    }
+
     // Mientras trabaja se va mirando qué archivos cambian, para que no haya
     // que esperar al final para ver dónde está tocando.
     let polling = false
@@ -1313,13 +2097,24 @@ function startCliAgent(
         while ((nl = stdoutBuf.indexOf('\n')) !== -1) {
           const line = stdoutBuf.slice(0, nl).trim()
           stdoutBuf = stdoutBuf.slice(nl + 1)
-          if (line) {
+          if (line && acp) {
+            acp.feed(line)
+          } else if (line && codex) {
+            codex.feed(line)
+          } else if (line && mode === 'claude' && line.includes('"control_') && handleClaudeControl(line)) {
+            // Una pregunta de permiso (o su retirada): contestada arriba.
+          } else if (line) {
             const before = text.length
             if (agent.parser === 'claude-stream-json') parseClaudeLine(line, meta, sink, claudeCtx)
             else if (agent.parser === 'codex-json') parseCodexLine(line, meta, sink, claudeCtx)
             else if (agent.parser === 'gemini-stream-json') parseGeminiLine(line, meta, sink, claudeCtx)
             else parseOpencodeLine(line, meta, sink, claudeCtx)
             if (text.length > before) onEvent({ type: 'stdout', data: text.slice(before) })
+            // Con la entrada abierta Claude Code espera otro mensaje: al llegar el resultado se cierra.
+            if (mode === 'claude' && !claudeEnded && meta.result !== undefined) {
+              claudeEnded = true
+              child.stdin?.end()
+            }
           }
         }
       } else {
@@ -1347,6 +2142,9 @@ function startCliAgent(
 
     child.on('close', (code) => {
       stopWatch()
+      acp?.failAll(new Error('el agente se cerró'))
+      codex?.failAll(new Error('Codex se cerró'))
+      cancelApprovals(runId)
       if (allowFile) {
         try {
           unlinkSync(allowFile)
@@ -1357,8 +2155,31 @@ function startCliAgent(
       const totalMs = Date.now() - startedAt
       const finalText = meta.result ?? text ?? rawOut
       // Si el agente avisó de un error y no dio respuesta, es un fallo aunque
-      // salga con 0.
-      const failed = code !== 0 || (meta.error != null && !finalText.trim())
+      // salga con 0. Por ACP lo cerramos nosotros al acabar el turno: manda
+      // cómo acabó la conversación, no el código de salida.
+      const failed =
+        mode === 'acp'
+          ? !acpDone || meta.finishReason === 'refusal'
+          : mode === 'codex'
+            ? !codexDone || codexTurnStatus === 'failed'
+            : code !== 0 || (meta.error != null && !finalText.trim())
+      if (mode === 'acp' && !acpDone && !meta.error) meta.error = acpFailure
+      if (mode === 'codex' && !codexDone && !meta.error) meta.error = codexFailure
+      // Un Codex sin app-server: se explica y la próxima vez va con `codex exec`.
+      if (mode === 'codex' && !codexDone && /unrecognized subcommand|unexpected argument|no such (sub)?command|invalid (sub)?command/i.test(errOut)) {
+        codexServerOff = true
+        meta.error =
+          'Tu versión de Codex no trae el servidor con el que puede pedirte permiso desde aquí (actualízala con «codex update»). ' +
+          'Vuelve a lanzarlo: irá con «codex exec», sin poder preguntarte.'
+      }
+      // Un Claude Code que no entiende los permisos por la entrada estándar: se
+      // explica y la próxima vez va como antes, sin preguntas.
+      if (mode === 'claude' && failed && /unknown option|input-format|permission-prompt-tool/i.test(errOut)) {
+        claudeStdioOff = true
+        meta.error =
+          'Tu versión de Claude Code no deja contestar sus permisos desde aquí (actualízala con «claude update»). ' +
+          'Vuelve a lanzarlo: irá como antes, sin poder preguntarte.'
+      }
       const inTok = meta.inputTokens ?? estimateTokens(opts.prompt)
       const outTok = meta.outputTokens ?? estimateTokens(finalText)
       if (meta.ttftMs != null) ttftMs = meta.ttftMs

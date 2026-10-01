@@ -31,6 +31,7 @@ Everything on your own machine: no account, no server, no telemetry.
 
 - [What it is](#what-it-is)
 - [A quick look](#a-quick-look)
+- [What's new in 0.8](#whats-new-in-08)
 - [**Installation**](#installation) — [which file](#which-file-do-i-download) · [Windows](#windows) · [macOS](#macos) · [Linux](#linux) · [build it](#build-it-yourself)
 - [Verifying your download](#verifying-your-download)
 - [First steps](#first-steps)
@@ -59,6 +60,8 @@ three things normally scattered across half a dozen tabs and terminals:
   speed, error rate and a model ranking. Including sessions you started outside the app.
 - **Your projects** — files, a syntax-highlighting editor, full git with a commit graph,
   GitHub, real terminals and agents running inside each folder.
+- **A workbench** — several sections at once in panes you split, drag and save; a task
+  board for your agents and live quotas for all your AIs.
 
 Everything runs locally. Keys are encrypted with your system's own credential store
 (DPAPI on Windows, the Keychain on macOS, GNOME Keyring or KWallet on Linux) and the
@@ -103,6 +106,117 @@ history lives in your own files. There is no server, no account to create, no te
 
 ---
 
+## What's new in 0.8
+
+0.8 is the big one: the app stops being just a place to launch AIs and becomes the place
+where you work with them.
+
+**A workbench that fits you**
+
+- **Several sections at once.** The window splits into up to four panes: the Console
+  beside the Terminal, a project with its Tasks below. Split from the layout button in the
+  title bar, with Ctrl+click in the menu, or by dragging a section and dropping it on the
+  edge of a pane. Handles share out the space, layouts are saved by name and the app
+  remembers how you left it. Changing the layout remounts nothing: whatever you were
+  typing is still there.
+- **Each section adapts to its pane.** When it is short on width, its side lists fold into
+  a tab that opens on top and grids drop columns.
+- **A new look.** The "Mesa" theme (warm charcoal, higher-contrast text) and its light
+  version, on top of the twelve that were already there. Typefaces ship inside the app —
+  Atkinson Hyperlegible for reading, Bricolage Grotesque for titles — so it looks the same
+  on Windows, macOS and Linux.
+- **The menu, your way.** Sections are reordered by dragging and hidden with a right-click;
+  the Ctrl+1…9 shortcuts follow your order.
+- **Welcome tour and help.** The first time, a short tour points out, on the interface
+  itself, where everything is and lets you choose the look. The **?** button (or F1) opens
+  the full documentation, searchable, in Spanish and English.
+
+**Agents, as in their own terminal**
+
+- **They ask for permission in the app.** Claude Code (through its control protocol),
+  OpenCode and Gemini CLI (through ACP) and Codex (through its `app-server`, the same
+  protocol its VS Code extension uses) ask here just as they do in their terminal:
+  **Allow**, **Always…** or **Deny**, in the conversation or from the Tasks card. Each
+  with its own modes (Claude Code's; Codex's Auto, Read Only and Full Access; OpenCode's
+  plan and build).
+- **They resume their session.** Each turn continues in the agent's own session, or forks it.
+- **"Open in its terminal"** starts the original CLI, on that same session, in an app
+  terminal, for whatever only exists there.
+- **Codex and Gemini CLI** are no longer plain text: steps, tokens, plan and session.
+- **MCP in API agents**, plus `web_fetch`. AGENTS.md and CLAUDE.md are read and edited
+  from the project.
+
+**Never left stranded**
+
+- **Quotas for all your AIs**, in one place and saying where each figure comes from: the
+  official % of your Claude and ChatGPT/Codex plan, Copilot requests, balances at
+  OpenRouter, DeepSeek and Moonshot, what is measured for Gemini CLI and OpenCode Go, and
+  your own budgets. With a projection ("at this pace you hit the limit at 17:40") and
+  alerts at 50, 80 and 95 %.
+- **Everything live, including what happens elsewhere.** A Claude Code, Codex, Gemini CLI
+  or OpenCode session open in another terminal — or in Claude's desktop app — enters
+  history and quotas while it happens: in the tests, under half a second for a growing
+  Claude Code session and just over a second for Codex's %. API balances are checked every
+  minute while the window is in view, and right after a run with that provider.
+- **Hand-off between AIs.** "Continue with…" packs the goal, the latest messages, the
+  to-dos, the touched files and the diff, and launches it on another agent. The app
+  suggests it by itself when one runs out of quota.
+- **Budgets that work**: per month, day, project, provider or agent, with alerts and, if
+  you want, a block before launching.
+- **Per-turn checkpoints**: "Undo this turn" puts the files back as they were, without
+  touching your stash or your branches.
+
+**Agents in parallel**
+
+- **Tasks**: a board with what your agents are working on (running, needs your answer, to
+  review, done), from which you answer a permission or review the diff without opening the
+  conversation.
+- **A worktree per task**, so each agent works on its own copy and doesn't step on your folder.
+- **Code Arena**: the same task to several agents, each in its worktree, with its tests,
+  and you merge the winner.
+- **Scheduled tasks**: daily, on weekdays, weekly or every few hours; the app in the tray
+  is enough.
+- **Diff review with comments** that go back to the agent, and **AI review** before the
+  commit or the pull request.
+
+**Choosing well**
+
+- Benchmarks and capabilities on each model's card, a comparer and favourites.
+- **Recommender**: describe the task and it proposes three options with estimated cost and time.
+- **Personal Elo** from your Arena winners, repeatable **prompt batteries** and a **local judge**.
+
+**Accounts**
+
+- **Settings › Accounts** shows what you are signed in to (GitHub, Claude Code, Codex,
+  Gemini CLI, OpenCode) and lets you sign in to the rest. GitHub sign-in happens without
+  leaving the app: `gh` issues its single-use code and the app shows it; the token is kept
+  by `gh`. Each CLI signs in with its official command. OpenRouter, through its OAuth with
+  PKCE. Other providers don't offer sign-in to third-party apps: you use their key, and
+  the app says so.
+
+**And also**
+
+- **Command palette** (Ctrl+K) and **search** across conversations and history.
+- **System tray**: closing the window doesn't stop what is running.
+- **Quick prompt**: a global shortcut opens a small window on top of any app.
+- **New-version notice**, with the download for your system (it doesn't update itself).
+- **Git and GitHub with AI**: generated commit message, pull requests with their CI.
+- **Console**: edit and resend, regenerate, fork from any message, a prompt library with
+  variables, pasted images, export and import.
+- **File explorer** that searches the whole project.
+- **Linux and macOS**: on a Linux desktop without an icon tray, closing the window no
+  longer hides it where it can't be recovered; quitting with work in progress (⌘Q, the
+  Dock) asks first; `--quick` opens the quick prompt from a desktop shortcut (Wayland).
+
+**What can't be done, said plainly.** The OpenCode Zen balance and Cursor usage are only
+on their websites. What you chat on claude.ai or chatgpt.com leaves no trace on your
+machine. Codex, through its server, has been checked against the real Codex up to opening
+a conversation and a turn; its approvals follow its published schema and are tested with a
+stand-in, not with a ChatGPT account. macOS is checked in CI and by reading the code, not
+by hand.
+
+---
+
 ## Installation
 
 **[Windows](#windows)** · **[macOS](#macos)** · **[Linux](#linux)** · [build it yourself](#build-it-yourself)
@@ -114,12 +228,12 @@ under **Assets**. Pick the line for your system:
 
 | Your system | Download | What it is |
 |---|---|---|
-| **Windows** 10 or 11 | `AI-Command-Center-Setup-0.7.0.exe` | Installer (recommended) |
-| | `AI-Command-Center-0.7.0-x64.zip` | Portable, nothing to install |
-| **macOS** with an Apple chip (M1, M2, M3, M4…) | `AI-Command-Center-0.7.0-mac-arm64.dmg` | Disk image |
-| **macOS** with an Intel processor | `AI-Command-Center-0.7.0-mac-x64.dmg` | Disk image |
-| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.7.0-linux-amd64.deb` | Package, installed with `apt` |
-| **Any other Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.7.0-linux-x86_64.AppImage` | Single file, nothing to install |
+| **Windows** 10 or 11 | `AI-Command-Center-Setup-0.8.0.exe` | Installer (recommended) |
+| | `AI-Command-Center-0.8.0-x64.zip` | Portable, nothing to install |
+| **macOS** with an Apple chip (M1, M2, M3, M4…) | `AI-Command-Center-0.8.0-mac-arm64.dmg` | Disk image |
+| **macOS** with an Intel processor | `AI-Command-Center-0.8.0-mac-x64.dmg` | Disk image |
+| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.8.0-linux-amd64.deb` | Package, installed with `apt` |
+| **Any other Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.8.0-linux-x86_64.AppImage` | Single file, nothing to install |
 | Linux on **ARM** (Raspberry Pi 5, Ampere…) | `…-linux-arm64.deb` or `…-linux-arm64.AppImage` | Same as above, for ARM64 |
 
 > **Not sure which Mac you have?** Apple menu → **About This Mac**. If it says *Chip Apple
@@ -163,7 +277,7 @@ application works exactly the same. Nothing breaks because something is missing.
 
 #### Option A — Installer (recommended)
 
-1. Download `AI-Command-Center-Setup-0.7.0.exe`.
+1. Download `AI-Command-Center-Setup-0.8.0.exe`.
 2. Double-click it. **Windows will show you a blue warning**; that is expected and is
    explained [below](#windows-will-warn-you-why-and-what-to-do): click **More info**, then
    **Run anyway**.
@@ -177,7 +291,7 @@ It never asks for administrator rights and touches nothing outside your user pro
 Useful if you would rather not install anything, if you want to carry it on a USB stick,
 or if the installer is being blocked for you.
 
-1. Download `AI-Command-Center-0.7.0-x64.zip`.
+1. Download `AI-Command-Center-0.8.0-x64.zip`.
 2. **Before extracting**, right-click the `.zip`, open **Properties**, tick **Unblock** at
    the bottom and click **OK**.
 
@@ -269,7 +383,7 @@ Things that are specific to the Mac, and already taken care of:
 From the folder where you downloaded it:
 
 ```bash
-sudo apt install ./AI-Command-Center-0.7.0-linux-amd64.deb
+sudo apt install ./AI-Command-Center-0.8.0-linux-amd64.deb
 ```
 
 (The `./` matters: without it `apt` looks for a package with that name online.) It shows
@@ -280,11 +394,11 @@ the AppArmor profile Ubuntu 24.04 and later require.
 #### Option B — AppImage (any distribution)
 
 ```bash
-chmod +x AI-Command-Center-0.7.0-linux-x86_64.AppImage
+chmod +x AI-Command-Center-0.8.0-linux-x86_64.AppImage
 ```
 
 ```bash
-./AI-Command-Center-0.7.0-linux-x86_64.AppImage
+./AI-Command-Center-0.8.0-linux-x86_64.AppImage
 ```
 
 Or give it execute permission from your file manager (*Properties → Permissions → Allow
@@ -368,8 +482,8 @@ downloaded it:
 
 | System | Command |
 |---|---|
-| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.7.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.7.0-mac-arm64.dmg` |
+| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.8.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.8.0-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 The value must match, character for character, the matching line in `SHA256SUMS.txt` (on
@@ -380,9 +494,13 @@ it**: delete it and download it again.
 
 ## First steps
 
+The first time, a **welcome tour** shows you where everything is and lets you choose the
+look. After that, the **?** button in the top bar (or **F1**) opens the full, searchable
+help.
+
 The application **starts empty on purpose**: it ships no keys, creates no account and
 connects to nothing on its own. To make it do something you need at least one of these
-three.
+three. **Settings › Accounts** gathers the sign-ins: GitHub, each agent and OpenRouter.
 
 ### 1. An API key
 
@@ -406,7 +524,10 @@ If you already use Claude Code, Codex, Aider, OpenCode or Gemini CLI, you need n
 all: the app finds them on your `PATH` and runs them with your existing session.
 
 1. Open **Agents**. Whatever you have installed shows up detected, with its version.
-2. Pick one in the Console and start typing.
+2. If one isn't signed in, **Settings › Accounts › Sign in** runs its official command in
+   an app terminal.
+3. Pick one in the Console and start typing. When it needs permission for something, it
+   asks you right there.
 
 ### 3. Local models, paying nobody
 
@@ -427,8 +548,9 @@ all: the app finds them on your `PATH` and runs them with your existing session.
 | Linux `.deb` | `sudo apt install ./` followed by the new `.deb`'s name | `sudo apt remove ai-command-center` |
 | Linux AppImage | Replace the file with the new one | Delete the file |
 
-Updating keeps your settings, your keys and the whole history. To hear about new versions,
-use *Watch → Custom → Releases* at the top of this repository.
+Updating keeps your settings, your keys and the whole history. The app itself tells you
+when there is a new version and shows the download for your system (**Settings ›
+Preferences**); it doesn't update itself, because it isn't signed.
 
 **Your data is not deleted when you uninstall**, so reinstalling doesn't put you back at
 zero. It stays in the [data folder](#where-your-data-lives); to really remove it, delete
@@ -452,7 +574,9 @@ that folder by hand.
 | All | The app opens but everything is empty | That's normal at the start | Add a key or an agent: see [First steps](#first-steps) |
 | All | The terminal opens and hangs | The native console binaries are missing | Download again; if you built it, run `pnpm install` then `pnpm dist` |
 | All | The git panel says git is missing | `git` is not on your `PATH` | Install it ([table](#requirements)) and restart the app |
-| All | The GitHub panel asks you to sign in | GitHub's CLI isn't installed | Install it ([table](#requirements)), then `gh auth login --web` |
+| All | The GitHub panel asks you to sign in | GitHub's CLI or its session is missing | Install it ([table](#requirements)); then **Settings › Accounts › Sign in** |
+| Linux | Closing the window quits the app instead of keeping it in the tray | Your desktop has no icon tray (GNOME without the AppIndicator extension) | That is correct: without a tray there would be no way back to it |
+| Linux | The quick prompt's global shortcut doesn't respond | On Wayland global shortcuts don't arrive | Bind the command shown in **Settings › Preferences** (`… --quick`) in your desktop's shortcuts |
 | All | Ollama doesn't show up | The server isn't running | Start it, or use the button in **Settings → Local** |
 | All | A provider returns 401 | Wrong or expired key | Paste it again in **Settings → Providers** |
 
@@ -518,11 +642,11 @@ spend and the reset time, and it stops there.
   running so you can see it hasn't hung; when it finishes it folds away and leaves the
   answer clean. What the agent doesn't report isn't drawn: if a tool doesn't say how many
   lines it touched, no counter appears.
-- **Model and permissions for the console agent**, where its CLI supports them. On Claude
-  Code you pick the model (Fable, Opus, Sonnet, Haiku) and how much latitude it gets:
-  edit on its own, do everything without asking, stay in plan mode, or ask. Denied
-  permissions show up in the timeline as exactly what they are — a step that wasn't
-  allowed.
+- **Model and permissions for the console agent.** Each CLI asks here what it would ask
+  in its terminal — editing a file, running a command, leaving the project — with
+  **Allow**, **Always…** and **Deny**, and with its own modes: Claude Code's, Codex's
+  (Auto, Read Only, Full Access) and OpenCode's and Gemini CLI's. The answer goes back to
+  the CLI itself through its protocol, not through a shortcut of the app.
 
 **Arena** — the same prompt against two, three or four contenders at once, in columns,
 streaming simultaneously. A contender can be an API model or a command-line agent; both
@@ -576,11 +700,17 @@ Finder. Every path is resolved
   what it wants to do and the main process assembles the git call, so a branch name can't
   smuggle in a flag. Git runs with no editor and no questions (`GIT_EDITOR=true`), so
   nothing sits waiting for a keyboard that isn't there.
-- **GitHub** — you sign in with its official CLI (`gh auth login --web`): the browser
-  opens and you authorize it yourself. The application never sees or stores your password
-  or your token; it only asks `gh` which account it is on. From there you browse and
+- **GitHub** — you sign in with its official CLI without leaving the app: `gh` issues a
+  single-use code, the app shows it and you authorize in the browser. The application
+  never sees or stores your password or your token; it only asks `gh` which account it is
+  on. The project's pull requests, with their CI, are viewed and created from the Git tab. From there you browse and
   search your repositories, and clone any of them into a folder you pick — registered as a
   project in the same gesture.
+
+**Tasks** — a board with what your agents are working on: running, needs your answer, to
+review and done. From the card you allow or deny a permission, review the diff and send
+comments back. "New task" launches an agent in its own worktree; "Schedule" repeats it
+by itself.
 
 **Agents** — two kinds, and both work as agents: they use tools and loop as many times as
 needed to finish the task. API agents are a model with its instructions, effort and
@@ -730,6 +860,7 @@ pnpm exec electron scripts/test-terminal.cjs # the pipe-based fallback engine
 pnpm exec electron scripts/test-features.cjs # sessions, links, detection, notifications
 pnpm exec electron scripts/test-agents.cjs   # reasoning, context, limits, files, effort
 pnpm exec electron scripts/test-workspace.cjs # project files, git and GitHub
+pnpm exec electron scripts/test-v08.cjs      # everything in 0.8: quotas, permissions, workbench, help…
 pnpm exec electron scripts/shot.cjs Terminal # screenshots of one section
 python scripts/make-icon.py                  # regenerates build/icon.png
 ```
@@ -737,8 +868,9 @@ python scripts/make-icon.py                  # regenerates build/icon.png
 `scripts/ollama-setup.cjs` sets Ollama up with the best models for the machine. With
 `--dry-run` it only reports what it would do.
 
-The tests use a local SSE server and fake agents — a Node script emitting the same events
-as Claude Code and OpenCode, captured from the two real tools — so they spend no tokens
+The tests use a local SSE server and fake agents — Node scripts speaking the same
+protocols as Claude Code (permissions over standard input), OpenCode and Gemini CLI (ACP)
+and Codex (`app-server`), plus a fake `gh` and a fake OpenRouter — so they spend no tokens
 and touch no account. The git and file tests build a temporary repository and delete it
 when they're done.
 
@@ -779,7 +911,7 @@ Windows won't let it.
 Releasing is pushing a tag:
 
 ```bash
-git tag v0.7.0 && git push origin v0.7.0
+git tag v0.8.0 && git push origin v0.8.0
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) builds, on clean GitHub
@@ -823,6 +955,8 @@ doesn't change.
 ```
 src/
   shared/types.ts      the contract shared by all three processes
+  shared/ipcContract.ts  every channel between processes, with its types
+  shared/workspace.ts  the workbench: the pane tree and its operations
   main/
     index.ts           window, lifecycle and CSP
     ipc.ts             main channels, with errors turned into messages
@@ -858,7 +992,18 @@ src/
       links.ts         from a model to its page
       run.ts           streaming engine: 4 dialects and metrics
       limits.ts        rate limits read from response headers
-    agents/cli.ts      command-line agent execution
+    agents/cli.ts      command-line agent execution and their permissions
+    agents/acp.ts      ACP: OpenCode and Gemini CLI ask in the app
+    agents/codexServer.ts  Codex's app-server: approvals, threads and permissions
+    accounts.ts        what is signed in and how to sign in (gh, each CLI, OpenRouter OAuth)
+    quotas/            quotas for every AI: plans, balances, budgets and alerts
+    external/          Codex, OpenCode and Gemini CLI sessions opened outside the app
+    checkpoints.ts     a snapshot of the project before each turn, to undo it
+    worktrees.ts       a copy of the project per task
+    schedules.ts       scheduled tasks
+    tray.ts, quick.ts  system tray and quick prompt
+    updates.ts         new-version notice
+    mcp/               each CLI's MCP servers and the client for API agents
   preload/index.ts     isolated bridge to the renderer
   renderer/
     lib/engine.tsx     live state for everything, outside the pages
@@ -868,12 +1013,15 @@ src/
                        residents' comings and goings
     lib/pixelArt.ts    The House's artwork, pixel by pixel, no images
     lib/i18n.tsx       the strings, in Spanish and English
+    lib/workspace.ts   the workbench: panes, layouts and menu
+    lib/help.ts        the documentation behind the help button
     components/        Terminal (xterm.js), FilesPanel, Code (highlighting editor),
                        GitPanel, GitGraph (graph, merges and rebases), GithubPanel,
                        AgentPanel (context, usage, Claude's plan, branches),
                        AgentActivity (what the agent is doing), HouseCanvas,
-                       Stats…
-    pages/             the ten sections
+                       Workbench (panes, handles and drop zones), Help (help and
+                       tour), AccountsPanel, QuotasPanel, CommandPalette, Stats…
+    pages/             the eleven sections
 ```
 
 ---

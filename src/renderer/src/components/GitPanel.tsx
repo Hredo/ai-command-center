@@ -7,18 +7,37 @@
  * acepta subcomandos de una lista. Los que pueden tirar trabajo (un `reset
  * --hard`, un `push --force`) piden confirmación antes de ejecutarse.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   GitCommit, GitBranch, ArrowUp, ArrowDown, RefreshCw, Plus, Minus, Loader2, Terminal as TerminalIcon,
-  FileText, AlertTriangle, ChevronDown, Check, Archive, ArchiveRestore
+  FileText, AlertTriangle, ChevronDown, Check, Archive, ArchiveRestore, Sparkles, ShieldCheck
 } from 'lucide-react'
+import { AiReview } from './AiReview'
 import { Badge, Button, cx, Empty, Modal, Textarea } from './ui'
-import { relTime } from '../lib/format'
+import { cost, relTime, shortModel } from '../lib/format'
 import { BranchPicker, useGit } from './AgentPanel'
-import type { FileChange } from '@shared/types'
+import { ModelPicker, type Pick } from './ModelPicker'
+import { PullRequests } from './PullRequests'
+import { useStore } from '../lib/store'
+import { usePrefs } from '../lib/prefs'
+import type { FileChange, ModelInfo } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 import { withMod } from '../lib/platform'
+
+/**
+ * Qué modelo escribe los mensajes: el que elegiste o, si no, uno local (no
+ * cuesta nada) o el más barato con precio conocido.
+ */
+export function gitModelPick(saved: Pick | undefined, models: ModelInfo[]): Pick | null {
+  if (saved) return saved
+  const local = models.find((m) => m.local)
+  if (local) return { providerId: local.providerId, model: local.id }
+  const priced = models
+    .filter((m) => m.priceIn != null && m.priceOut != null)
+    .sort((a, b) => (a.priceIn ?? 0) + (a.priceOut ?? 0) - ((b.priceIn ?? 0) + (b.priceOut ?? 0)))
+  return priced[0] ? { providerId: priced[0].providerId, model: priced[0].id } : null
+}
 interface Commit {
   hash: string
   short: string
@@ -70,6 +89,30 @@ export function GitPanel({
   const [command, setCommand] = useState('')
   const [confirm, setConfirm] = useState<string | null>(null)
   const [showLog, setShowLog] = useState(false)
+  const { config, models, reload: reloadConfig } = useStore()
+  const { lang } = usePrefs()
+  const pick = useMemo(() => gitModelPick(config?.settings.gitModel, models), [config?.settings.gitModel, models])
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiNote, setAiNote] = useState<{ model: string; cost: number } | null>(null)
+  const [prevMessage, setPrevMessage] = useState<string | null>(null)
+  const [reviewing, setReviewing] = useState(false)
+
+  const writeWithAi = async (): Promise<void> => {
+    if (!pick) {
+      onToast?.('error', t('Elige qué modelo escribe el mensaje'))
+      return
+    }
+    setAiBusy(true)
+    const r = await window.api.git.suggestCommit(path, pick, lang)
+    setAiBusy(false)
+    if (!r.ok || !r.data) {
+      onToast?.('error', r.error ?? t('No se pudo escribir el mensaje'))
+      return
+    }
+    setPrevMessage(message.trim() && message.trim() !== r.data.message ? message : null)
+    setMessage(r.data.message)
+    setAiNote({ model: r.data.run.model, cost: r.data.run.costTotal ?? 0 })
+  }
 
   const refresh = useCallback(() => {
     reloadGit()
@@ -122,6 +165,8 @@ export function GitPanel({
       return
     }
     setMessage('')
+    setAiNote(null)
+    setPrevMessage(null)
     setResult(res)
     onToast?.('ok', 'Confirmado')
     refresh()
@@ -256,7 +301,7 @@ export function GitPanel({
 
       {/* ------------------------------- Operación sin terminar */}
       {state && state.operation !== 'none' ? (
-        <div className="px-3 py-2 rounded-lg bg-[#241a09] border border-[#4a3512] flex items-center gap-2.5">
+        <div className="px-3 py-2 rounded-lg bg-warn/10 border border-warn/30 flex items-center gap-2.5">
           <AlertTriangle size={13} className="text-warn shrink-0" />
           <div className="text-[12px] text-warn min-w-0 flex-1">
             {state.detail ?? state.operation}
@@ -296,7 +341,7 @@ export function GitPanel({
         {changes.length === 0 ? (
           <div className="px-3 py-4 text-[12px] text-dim">{t('El árbol está limpio.')}</div>
         ) : (
-          <div className="divide-y divide-[#151a26]">
+          <div className="divide-y divide-line-soft">
             {changes.map((c) => (
               <div key={c.path} className="px-3 py-1.5 flex items-center gap-2 text-[12px]">
                 <Badge tone={c.status === '?' ? 'warn' : c.status === 'D' ? 'bad' : 'accent'} title={t(STATUS_LABEL[c.status])}>
@@ -337,8 +382,41 @@ export function GitPanel({
       </div>
 
       {/* --------------------------------------------- Confirmar */}
-      <div className="border border-line rounded-lg bg-panel p-3 space-y-2">
-        <div className="text-[12px] font-medium">{t('Confirmar')}</div>
+      <div className="border border-line rounded-lg bg-panel p-3 space-y-2" data-commit-box>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-[12px] font-medium">{t('Confirmar')}</div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <div className="w-[220px]" title={t('Qué modelo escribe el mensaje: mejor uno barato o local. Se recuerda.')}>
+              <ModelPicker
+                compact
+                value={pick}
+                onChange={(p) => {
+                  void window.api.config.settings({ gitModel: p }).then(() => reloadConfig())
+                }}
+                placeholder={t('Modelo para escribirlo…')}
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setReviewing(true)}
+              disabled={!pick || changes.every((c) => c.status === '?')}
+              title={t('Un modelo revisa lo que vas a confirmar y comenta las líneas donde ve un fallo o un riesgo')}
+              data-ai-review-commit
+            >
+              <ShieldCheck size={12} /> {t('Revisar con IA')}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => void writeWithAi()}
+              disabled={aiBusy || !pick || changes.every((c) => c.status === '?')}
+              title={t('Escribe el mensaje a partir de los cambios, al estilo de los commits del repositorio')}
+              data-ai-commit
+            >
+              {aiBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {t('Escribir con IA')}
+            </Button>
+          </div>
+        </div>
         <Textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -348,10 +426,29 @@ export function GitPanel({
               void commit()
             }
           }}
-          rows={2}
+          rows={Math.min(8, Math.max(2, message.split('\n').length))}
           placeholder={t('Qué has hecho…')}
           className="text-[12.5px]"
+          data-commit-message
         />
+        {aiNote ? (
+          <div className="text-[11px] text-dim flex items-center gap-2 flex-wrap" data-ai-note>
+            <Sparkles size={11} className="text-violet" />
+            {t('Lo ha escrito {model} ({cost}). Revísalo antes de confirmar.', { model: shortModel(aiNote.model), cost: cost(aiNote.cost) })}
+            {prevMessage != null ? (
+              <button
+                className="underline hover:text-accent"
+                onClick={() => {
+                  setMessage(prevMessage)
+                  setPrevMessage(null)
+                  setAiNote(null)
+                }}
+              >
+                {t('Volver al tuyo')}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-dim">
             Confirma todo lo que git ya sigue (equivale a git commit -a). {withMod('Ctrl + Enter')}.
@@ -368,6 +465,16 @@ export function GitPanel({
         </div>
       </div>
 
+      <AiReview open={reviewing} onClose={() => setReviewing(false)} path={path} scope="commit" pick={pick} />
+
+      {/* --------------------------------------------- Pull requests y CI */}
+      <PullRequests
+        path={path}
+        pick={pick}
+        version={`${info.lastCommit?.hash ?? ''}:${info.ahead ?? 0}:${info.branch ?? ''}`}
+        onToast={onToast}
+      />
+
       {/* --------------------------------------------- Comando libre */}
       <div className="border border-line rounded-lg bg-panel p-3 space-y-2">
         <div className="text-[12px] font-medium">{t('Comando de git')}</div>
@@ -380,7 +487,7 @@ export function GitPanel({
               if (e.key === 'Enter' && command.trim()) void maybeRun(command.trim())
             }}
             placeholder="log --oneline -20"
-            className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1.5 font-mono text-[12px] outline-none focus:border-[#2c3346]"
+            className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1.5 font-mono text-[12px] outline-none focus:border-dim/60"
           />
           <Button size="sm" disabled={!command.trim() || Boolean(busy)} onClick={() => void maybeRun(command.trim())}>
             {t('Ejecutar')}
@@ -406,7 +513,7 @@ export function GitPanel({
               </div>
             ) : null}
             {result.out || result.err ? (
-              <pre className="bg-[#07080c] border border-line rounded p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto m-0">
+              <pre className="bg-[var(--editor-bg)] border border-line rounded p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto m-0">
                 {result.out}
                 {result.err ? <span className={result.ok ? 'text-dim' : 'text-bad'}>{result.err}</span> : null}
               </pre>
@@ -437,7 +544,7 @@ export function GitPanel({
           ) : null}
         </div>
         {showLog ? (
-          <div className="divide-y divide-[#151a26]">
+          <div className="divide-y divide-line-soft">
             {log.map((c) => (
               <div key={c.hash} className="px-3 py-1.5 flex items-center gap-2 text-[12px]">
                 <span className="font-mono text-accent shrink-0">{c.short}</span>
@@ -452,7 +559,7 @@ export function GitPanel({
       </div>
 
       <Modal open={Boolean(diff)} onClose={() => setDiff(null)} title={diff?.file ?? ''} width="max-w-4xl">
-        <pre className="bg-[#07080c] border border-line rounded p-3 font-mono text-[11.5px] leading-[1.5] whitespace-pre max-h-[60vh] overflow-auto m-0">
+        <pre className="bg-[var(--editor-bg)] border border-line rounded p-3 font-mono text-[11.5px] leading-[1.5] whitespace-pre max-h-[60vh] overflow-auto m-0">
           {(diff?.text ?? '').split('\n').map((l, i) => (
             <div
               key={i}

@@ -12,7 +12,7 @@
 # instalarse: ventana, terminales con cada shell, comandos del agente y el PATH
 # del usuario. Si algo falla, no se publica nada.
 #
-# Empuja una etiqueta para publicar:  git tag v0.7.0 && git push origin v0.7.0
+# Empuja una etiqueta para publicar:  git tag v0.8.0 && git push origin v0.8.0
 # Sin etiqueta (Run workflow) se empaqueta y se prueba igual, sin publicar.
 name: release
 

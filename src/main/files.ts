@@ -152,3 +152,122 @@ export async function trashEntry(root: string, rel: string): Promise<boolean> {
 export function revealEntry(root: string, rel: string): void {
   shell.showItemInFolder(guard(root, rel))
 }
+
+/* ------------------------------------------------------------------ *
+ * Buscar por nombre                                                  *
+ * ------------------------------------------------------------------ */
+
+/** Tope de entradas por recorrido: un proyecto enorme no bloquea la app. */
+const MAX_WALK = 60_000
+/** Lo recorrido se reutiliza mientras escribes; al rato se vuelve a mirar el disco. */
+const WALK_TTL = 5_000
+
+interface WalkEntry {
+  rel: string
+  name: string
+  dir: boolean
+}
+
+const walks = new Map<string, { at: number; entries: WalkEntry[]; capped: boolean }>()
+
+/** Olvida lo recorrido de un proyecto: al crear o borrar algo se nota ya. */
+export function forgetWalk(root: string): void {
+  walks.delete(resolve(root))
+}
+
+function walk(root: string): { entries: WalkEntry[]; capped: boolean } {
+  const key = resolve(root)
+  const hit = walks.get(key)
+  if (hit && Date.now() - hit.at < WALK_TTL) return hit
+  const entries: WalkEntry[] = []
+  const queue: string[] = ['']
+  let capped = false
+  // Por niveles: lo de arriba sale antes, que es lo que más se busca.
+  for (let q = 0; q < queue.length && !capped; q++) {
+    const rel = queue[q]
+    let items: import('node:fs').Dirent[]
+    try {
+      items = readdirSync(join(key, rel), { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const it of items) {
+      const childRel = rel ? `${rel}/${it.name}` : it.name
+      // Los enlaces no se siguen: pueden dar vueltas o salir del proyecto.
+      if (it.isSymbolicLink()) continue
+      const dir = it.isDirectory()
+      entries.push({ rel: childRel, name: it.name, dir })
+      if (dir && !HEAVY.has(it.name.toLowerCase())) queue.push(childRel)
+      if (entries.length >= MAX_WALK) {
+        capped = true
+        break
+      }
+    }
+  }
+  const done = { at: Date.now(), entries, capped }
+  walks.set(key, done)
+  return done
+}
+
+const fold = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+
+/** Si las letras de `q` aparecen en orden en `s` («fpan» en «FilesPanel»), dónde. */
+function subsequence(s: string, q: string): number[] | null {
+  const at: number[] = []
+  let i = 0
+  for (const ch of q) {
+    i = s.indexOf(ch, i)
+    if (i === -1) return null
+    at.push(i++)
+  }
+  return at
+}
+
+export interface FileHit {
+  rel: string
+  name: string
+  dir: boolean
+  /** Letras del nombre que coinciden, para marcarlas. */
+  marks: number[]
+}
+
+/**
+ * Ficheros y carpetas del proyecto cuyo nombre o ruta encaja con lo escrito,
+ * sin entrar en `node_modules`, `.git` ni las carpetas de compilación.
+ *
+ * Varias palabras tienen que estar todas en la ruta. Primero los que empiezan
+ * así, luego los que lo contienen en el nombre, luego en la ruta y, al final,
+ * los que tienen esas letras en orden («fpan» encuentra FilesPanel).
+ */
+export function searchFiles(root: string, query: string, limit = 200): { hits: FileHit[]; total: number; capped: boolean } {
+  guard(root, '')
+  const terms = fold(query.trim()).split(/[\s/\\]+/).filter(Boolean)
+  if (!terms.length) return { hits: [], total: 0, capped: false }
+  const { entries, capped } = walk(root)
+  const last = terms[terms.length - 1]
+  const scored: { hit: FileHit; score: number }[] = []
+  for (const e of entries) {
+    const name = fold(e.name)
+    const path = fold(e.rel)
+    let score = 0
+    let marks: number[] = []
+    if (terms.every((t) => path.includes(t))) {
+      const i = name.indexOf(last)
+      if (i === 0) score = 400
+      else if (i > 0) score = 300
+      else score = 150
+      if (i >= 0) marks = Array.from({ length: last.length }, (_, k) => i + k)
+    } else if (terms.length === 1) {
+      const sub = subsequence(name, last)
+      if (!sub) continue
+      score = 60 - (sub[sub.length - 1] - sub[0])
+      marks = sub
+    } else continue
+    // A igualdad, lo menos profundo y lo más corto.
+    score -= e.rel.split('/').length * 2 + e.name.length / 20
+    if (!e.dir) score += 1
+    scored.push({ hit: { rel: e.rel, name: e.name, dir: e.dir, marks }, score })
+  }
+  scored.sort((a, b) => b.score - a.score || a.hit.rel.localeCompare(b.hit.rel))
+  return { hits: scored.slice(0, limit).map((x) => x.hit), total: scored.length, capped }
+}

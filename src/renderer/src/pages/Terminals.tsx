@@ -12,6 +12,7 @@ import { Button, Badge, Empty, cx, Dot, Field, Modal } from '../components/ui'
 import { TerminalView } from '../components/Terminal'
 import { useStore } from '../lib/store'
 import { openTerm, closeTerm, useTerms, sendTermCommand } from '../lib/engine'
+import { lastNavTarget, onNavigate } from '../lib/nav'
 
 
 import { useT } from '../lib/i18n'
@@ -70,6 +71,16 @@ export default function Terminals(): React.JSX.Element {
     setActive(list[list.length - 1]?.info.id ?? null)
   }, [active, terms, list])
 
+  // Quien abre una terminal desde otra sección (el CLI original de una
+  // conversación, un inicio de sesión) pide que se enseñe la suya.
+  useEffect(() => {
+    const last = lastNavTarget()
+    if (last?.page === 'terminal' && last.termId) setActive(last.termId)
+    return onNavigate((n) => {
+      if (n.page === 'terminal' && n.termId) setActive(n.termId)
+    })
+  }, [])
+
   const spawn = async (cwd?: string, projectId?: string, title?: string): Promise<void> => {
     const { id, error } = await openTerm({ cwd, projectId, title })
     if (id) {
@@ -97,10 +108,12 @@ export default function Terminals(): React.JSX.Element {
             return (
               <button
                 key={term.info.id}
+                data-term-tab={term.info.id}
+                data-active={on || undefined}
                 onClick={() => setActive(term.info.id)}
                 className={cx(
                   'group px-3 flex items-center gap-2 border-r border-line shrink-0 max-w-[240px] transition-colors',
-                  on ? 'bg-panel text-ink' : 'text-muted hover:text-ink hover:bg-[#12151f]'
+                  on ? 'bg-panel text-ink' : 'text-muted hover:text-ink hover:bg-raised/60'
                 )}
               >
                 {on ? <span className="absolute" /> : null}
@@ -214,7 +227,7 @@ export default function Terminals(): React.JSX.Element {
                   <button
                     key={p.id}
                     onClick={() => void spawn(p.path, p.id, p.name)}
-                    className="w-full px-3 py-2 rounded-lg border border-line hover:border-[#2c3346] hover:bg-hover flex items-center gap-2.5 text-left"
+                    className="w-full px-3 py-2 rounded-lg border border-line hover:border-dim/60 hover:bg-hover flex items-center gap-2.5 text-left"
                   >
                     <span className="w-1.5 h-6 rounded-full shrink-0" style={{ background: p.color }} />
                     <span className="flex-1 min-w-0">
@@ -234,7 +247,7 @@ export default function Terminals(): React.JSX.Element {
                 value={newCwd}
                 onChange={(e) => setNewCwd(e.target.value)}
                 placeholder={t('Vacío = tu carpeta de usuario')}
-                className="flex-1 min-w-0 h-9 px-3 bg-raised border border-line rounded-lg num text-[12px] outline-none focus:border-[#2c3346]"
+                className="flex-1 min-w-0 h-9 px-3 bg-raised border border-line rounded-lg num text-[12px] outline-none focus:border-dim/60"
               />
               <Button variant="outline" onClick={() => void pickFolder()}>
                 {t('Elegir…')}

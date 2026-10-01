@@ -18,6 +18,28 @@ Cada paquete se instaló y se probó en GitHub Actions antes de publicarse · *E
 
 ---
 
+## ✨ Novedades en 0.8.0 · What's new in 0.8.0
+
+| Español | English |
+|---|---|
+| **Una mesa de trabajo.** Hasta cuatro secciones a la vez en paneles que se dividen, se arrastran y se redimensionan: la Consola junto a la Terminal, un proyecto con sus Tareas debajo. Las distribuciones se guardan con nombre y la app recuerda cómo la dejaste. | **A workbench.** Up to four sections at once in panes you split, drag and resize: the Console next to the Terminal, a project with its Tasks below. Layouts are saved by name and the app remembers how you left it. |
+| **Aspecto nuevo y a tu gusto.** Tema «Mesa» y su versión clara, tipografía incluida en la app (igual en los tres sistemas), y un menú que se ordena arrastrando y se esconde con el botón derecho. | **A new look, your way.** The “Mesa” theme and its light version, fonts bundled with the app (the same on all three systems), and a menu you reorder by dragging and hide with a right click. |
+| **Recorrido de bienvenida y ayuda.** La primera vez, un recorrido corto señala dónde está cada cosa. El botón **?** (o F1) abre la documentación completa, con buscador. | **Welcome tour and help.** On first launch a short tour points at where everything is. The **?** button (or F1) opens the full documentation, with search. |
+| **Los agentes preguntan sus permisos en la app**, como en su terminal: Claude Code, OpenCode, Gemini CLI y Codex, cada uno con sus modos. Retoman y bifurcan su sesión, y «Abrir en su terminal» lanza el CLI original con esa misma sesión. | **Agents ask for their permissions in the app**, as in their own terminal: Claude Code, OpenCode, Gemini CLI and Codex, each with its own modes. They resume and fork their session, and “Open in its terminal” launches the original CLI on that same session. |
+| **Cupos de todas tus IAs**, diciendo de dónde sale cada dato: el % de tu plan de Claude y de ChatGPT/Codex, Copilot, los saldos de OpenRouter, DeepSeek y Moonshot, Gemini CLI y OpenCode Go. Con proyección, avisos al 50, 80 y 95 % y presupuestos que pueden frenar antes de lanzar. | **Quotas for all your AIs**, saying where each figure comes from: your Claude and ChatGPT/Codex plan %, Copilot, OpenRouter, DeepSeek and Moonshot balances, Gemini CLI and OpenCode Go. With a projection, alerts at 50, 80 and 95 % and budgets that can stop a run before it starts. |
+| **Todo en vivo, también lo de fuera.** Lo que uses en otra terminal o en la app de escritorio de Claude entra al histórico y a los cupos mientras ocurre. | **Everything live, outside the app too.** What you use in another terminal or in Claude's desktop app reaches the history and the quotas as it happens. |
+| **Relevo entre IAs.** «Seguir con…» pasa el trabajo a otro agente con el objetivo, los últimos mensajes, las tareas y el diff; la app lo propone sola cuando uno se queda sin cupo. | **Handoff between AIs.** “Continue with…” hands the work to another agent with the goal, the latest messages, the to-dos and the diff; the app suggests it on its own when one runs out of quota. |
+| **Agentes en paralelo.** Tablero de Tareas, un worktree por tarea, Arena de código (la misma tarea a varios agentes y se fusiona el que gane), tareas programadas y puntos de control para deshacer un turno. | **Agents in parallel.** A Tasks board, a worktree per task, a code Arena (the same task to several agents, merge the winner), scheduled tasks and checkpoints to undo a turn. |
+| **Revisar antes de fusionar.** Diffs con comentarios que vuelven al agente, revisión con IA, mensaje de commit generado y pull requests con su CI, sin salir de la app. | **Review before merging.** Diffs with comments that go back to the agent, AI review, generated commit messages and pull requests with their CI, without leaving the app. |
+| **Elegir bien.** Benchmarks y capacidades de cada modelo, comparador, recomendador con coste y tiempo estimados, Elo personal, baterías de prompts y juez local. | **Choosing well.** Benchmarks and capabilities for each model, a comparer, a recommender with estimated cost and time, a personal Elo, prompt suites and a local judge. |
+| **Cuentas.** Inicia sesión con GitHub sin salir de la app (el token lo guarda `gh`), con cada CLI por su comando oficial y con OpenRouter por OAuth. | **Accounts.** Sign in to GitHub without leaving the app (`gh` keeps the token), to each CLI through its official command, and to OpenRouter through OAuth. |
+| **Y además:** paleta de comandos (Ctrl+K), búsqueda en conversaciones e histórico, bandeja del sistema, prompt rápido con atajo global, aviso de versión nueva, centro de MCP y Skills, MCP y `web_fetch` en los agentes por API, biblioteca de prompts, imágenes pegadas y un explorador de archivos que busca en todo el proyecto. | **And also:** a command palette (Ctrl+K), search across conversations and history, a system tray, a quick prompt on a global shortcut, a new-version notice, an MCP and Skills hub, MCP and `web_fetch` for API agents, a prompt library, pasted images and a file explorer that searches the whole project. |
+| **Linux y macOS.** En un Linux sin bandeja de iconos, cerrar la ventana ya no la esconde donde no se puede recuperar; salir con trabajo en marcha pregunta antes; `--quick` abre el prompt rápido desde un atajo del escritorio (Wayland). | **Linux and macOS.** On a Linux desktop with no tray, closing the window no longer hides it where it can't be brought back; quitting with work in progress asks first; `--quick` opens the quick prompt from a desktop shortcut (Wayland). |
+
+La lista completa, en el [README](https://github.com/Hredo/ai-command-center/blob/main/README.es.md#novedades-de-la-08) · *The full list is in the [README](https://github.com/Hredo/ai-command-center/blob/main/README.md#whats-new-in-08)*.
+
+---
+
 ## ✨ Novedades en 0.7.0 · What's new in 0.7.0
 
 | Español | English |
@@ -90,8 +112,8 @@ instala el perfil de AppArmor que lo permite.
 
 | Sistema | Orden |
 |---|---|
-| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.7.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.7.0-mac-arm64.dmg` |
+| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.8.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.8.0-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
@@ -150,8 +172,8 @@ the `.deb`: the AppImage starts there without Chromium's isolation, because only
 
 | System | Command |
 |---|---|
-| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.7.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.7.0-mac-arm64.dmg` |
+| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.8.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.8.0-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.

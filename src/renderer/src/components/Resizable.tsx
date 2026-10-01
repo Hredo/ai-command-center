@@ -11,8 +11,10 @@
  * la que se guarda en la configuración, así que el tamaño sigue ahí la próxima
  * vez que abras la aplicación.
  */
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { PanelLeftOpen, PanelRightOpen, X } from 'lucide-react'
 import { usePaneSize } from '../lib/prefs'
+import { useNarrow } from '../lib/paneSize'
 import { cx } from './ui'
 
 import { useT } from '../lib/i18n'
@@ -135,6 +137,8 @@ function Handle({
 export function Pane({
   paneKey,
   side,
+  collapse,
+  label,
   className,
   style,
   children,
@@ -144,10 +148,24 @@ export function Pane({
   paneKey: string
   /** Borde por el que se arrastra: el que da al contenido de al lado. */
   side: Side
+  /**
+   * Cuándo se pliega: con la sección estrecha (`narrow`) o muy estrecha
+   * (`tight`). Plegado queda una pestaña con su nombre; al pulsarla el panel se
+   * abre por encima del contenido, sin empujarlo.
+   */
+  collapse?: 'narrow' | 'tight'
+  /** El nombre que lleva la pestaña cuando está plegado. */
+  label?: string
   children: React.ReactNode
 } & React.HTMLAttributes<HTMLDivElement>): React.JSX.Element {
   const t = useT()
   const { size, min, max, set, reset } = usePaneSize(paneKey)
+  const { narrow, tight } = useNarrow()
+  const folded = collapse === 'narrow' ? narrow : collapse === 'tight' ? tight : false
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!folded) setOpen(false)
+  }, [folded])
   const ref = useRef<HTMLDivElement>(null)
   const live = useRef(size)
   const vertical = side === 'left' || side === 'right'
@@ -186,16 +204,63 @@ export function Pane({
 
   const commit = useCallback(() => set(live.current), [set])
 
+  if (!folded) {
+    return (
+      <div
+        {...rest}
+        ref={ref}
+        style={{ [vertical ? 'width' : 'height']: size, ...style }}
+        className={cx('relative shrink-0', className)}
+      >
+        {children}
+        <Handle side={side} onDrag={onDrag} onCommit={commit} onReset={reset} label={t('pane.resize')} />
+      </div>
+    )
+  }
+
+  // Plegado: una pestaña estrecha en su sitio y, al abrirlo, el panel por
+  // encima del contenido. Lo de dentro sigue montado para no perder su estado.
+  const atLeft = side === 'right'
+  const Icon = atLeft ? PanelLeftOpen : PanelRightOpen
+  const name = label ?? t('Panel')
   return (
-    <div
-      {...rest}
-      ref={ref}
-      style={{ [vertical ? 'width' : 'height']: size, ...style }}
-      className={cx('relative shrink-0', className)}
-    >
-      {children}
-      <Handle side={side} onDrag={onDrag} onCommit={commit} onReset={reset} label={t('pane.resize')} />
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title={t('Abrir: {name}', { name })}
+        data-pane-rail={paneKey}
+        className={cx(
+          'shrink-0 w-7 bg-void flex flex-col items-center gap-2 pt-2.5 text-dim hover:text-ink hover:bg-hover transition-colors',
+          atLeft ? 'border-r border-line' : 'border-l border-line'
+        )}
+      >
+        <Icon size={13} />
+        <span className="text-[10.5px] tracking-wide [writing-mode:vertical-rl] rotate-180 whitespace-nowrap">{name}</span>
+      </button>
+      {open ? <div className="absolute inset-0 z-[29] bg-black/45" onClick={() => setOpen(false)} /> : null}
+      <div
+        {...rest}
+        ref={ref}
+        hidden={!open}
+        data-pane-drawer={paneKey}
+        style={{ width: `min(${size}px, 88%)`, ...style }}
+        className={cx('absolute top-0 bottom-0 z-30 shadow-2xl', atLeft ? 'left-0' : 'right-0', className)}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          title={t('Cerrar')}
+          className={cx(
+            'absolute top-1.5 z-10 w-6 h-6 rounded-md bg-raised border border-line flex items-center justify-center text-dim hover:text-ink',
+            atLeft ? '-right-7' : '-left-7'
+          )}
+        >
+          <X size={12} />
+        </button>
+        {children}
+      </div>
+    </>
   )
 }
 

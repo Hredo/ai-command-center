@@ -285,9 +285,12 @@ app.whenReady().then(async () => {
   const detect = await js('window.api.detect.local()')
   const ollama = (detect.data ?? []).find((s) => s.id === 'ollama')
   log(Boolean(ollama), 'Ollama aparece en el sondeo de motores locales')
+  const ollamaUp = await fetch('http://127.0.0.1:11434/api/version', { signal: AbortSignal.timeout(2500) })
+    .then((r) => r.ok)
+    .catch(() => false)
   log(
-    ollama?.up === true,
-    'lo detecta encendido ahora que lo está',
+    ollama?.up === ollamaUp,
+    ollamaUp ? 'lo detecta encendido ahora que lo está' : 'lo da por apagado, que es como está en este equipo',
     ollama?.up ? `${ollama.models.length} modelos en ${ollama.latencyMs} ms` : `caído (${ollama?.url})`
   )
 
@@ -313,7 +316,7 @@ app.whenReady().then(async () => {
     const { id } = await engine.openTerm({ title: 'prueba' })
     const off = engine.onTermData(id, (f) => { if (f.type === 'data') buf += f.data })
     await sleep(1600)
-    engine.sendTermCommand(id, 'Write-Output "vivo"')
+    engine.sendTermCommand(id, 'echo vivo')
     for (let i = 0; i < 60; i++) {
       if (engine.peekTerm(id)?.busy === false && buf.includes('vivo')) break
       await sleep(100)

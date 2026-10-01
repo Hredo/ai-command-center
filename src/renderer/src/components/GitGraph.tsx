@@ -313,7 +313,7 @@ export function GitGraph({
             onClick={() => setAll((v) => !v)}
             className={cx(
               'px-2 py-1 rounded-md border text-[11px] transition-colors',
-              all ? 'bg-[#082a31] text-accent border-[#12525f]' : 'bg-raised text-dim border-line hover:text-muted'
+              all ? 'bg-accent/10 text-accent border-accent/40' : 'bg-raised text-dim border-line hover:text-muted'
             )}
             title={t('Ver todas las ramas o sólo la actual')}
           >
@@ -339,7 +339,7 @@ export function GitGraph({
 
       {/* --------------------------------- Operación a medias */}
       {state && state.operation !== 'none' ? (
-        <div className="px-4 py-2.5 bg-[#241a09] border-b border-[#4a3512] flex items-start gap-2.5 shrink-0">
+        <div className="px-4 py-2.5 bg-warn/10 border-b border-warn/30 flex items-start gap-2.5 shrink-0">
           <AlertTriangle size={14} className="text-warn shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1">
             <div className="text-[12px] text-warn">
@@ -450,7 +450,7 @@ export function GitGraph({
                     onDoubleClick={() => void openPatch(commit.hash)}
                     className={cx(
                       'w-full flex items-center gap-2 pr-4 text-[12px] text-left transition-colors',
-                      selected === commit.hash ? 'bg-[#0e1725]' : 'hover:bg-raised'
+                      selected === commit.hash ? 'bg-accent/5' : 'hover:bg-raised'
                     )}
                     style={{ height: ROW_H }}
                   >
@@ -610,7 +610,7 @@ export function GitGraph({
                     }
                   }}
                   placeholder={t('rama nueva aquí…')}
-                  className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1 text-[11.5px] font-mono outline-none focus:border-[#2c3346]"
+                  className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1 text-[11.5px] font-mono outline-none focus:border-dim/60"
                 />
                 <Button
                   size="sm"
@@ -635,7 +635,7 @@ export function GitGraph({
                     }
                   }}
                   placeholder={t('etiqueta aquí…')}
-                  className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1 text-[11.5px] font-mono outline-none focus:border-[#2c3346]"
+                  className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1 text-[11.5px] font-mono outline-none focus:border-dim/60"
                 />
                 <Button
                   size="sm"
@@ -777,7 +777,7 @@ export function GitGraph({
 
       {/* --------------------------------------- Parche del commit */}
       <Modal open={Boolean(patch)} onClose={() => setPatch(null)} title={`Commit ${patch?.hash.slice(0, 8) ?? ''}`} width="max-w-4xl">
-        <pre className="bg-[#07080c] border border-line rounded p-3 font-mono text-[11.5px] leading-[1.5] whitespace-pre max-h-[60vh] overflow-auto m-0">
+        <pre className="bg-[var(--editor-bg)] border border-line rounded p-3 font-mono text-[11.5px] leading-[1.5] whitespace-pre max-h-[60vh] overflow-auto m-0">
           {(patch?.text ?? '').split('\n').map((l, i) => (
             <div
               key={i}

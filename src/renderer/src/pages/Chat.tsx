@@ -12,7 +12,7 @@ import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
   ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw,
-  ArrowRightLeft, FileDiff, Lightbulb
+  ArrowRightLeft, FileDiff, Lightbulb, RefreshCw, Download, Upload
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -31,22 +31,28 @@ import { cost, tokens, shortModel, relTime } from '../lib/format'
 import {
   useSessions, useChat, newSession, openSession, patchSessionConfig, archiveSession,
   unarchiveSession, deleteSession, sendTurn, stopSession, loadSessions, approveStep,
-  useChatFocus, useQuotas, markTurnUndone, type Turn
+  useChatFocus, useQuotas, markTurnUndone, forkAt, planRewind, rewindAndSend, saveSessionNow, openTerm, sendTermCommand,
+  type Turn
 } from '../lib/engine'
+import { navigate } from '../lib/nav'
+import { RewindModal } from '../components/RewindModal'
+import { PromptTextarea, SavePromptButton } from '../components/PromptLibrary'
+import { openSearch } from '../components/SearchModal'
+import { usePrefs } from '../lib/prefs'
 import { UndoTurn } from '../components/UndoTurn'
 import { WorktreeBox } from '../components/WorktreeBox'
 import { DiffReview } from '../components/DiffReview'
 import { pickRelayAgent } from '@shared/quotaPick'
 import {
-  API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type StoredSession, type RunCheckpoint
+  API_PERMISSION_MODES, type Attachment, type Effort, type StoredSession, type RunCheckpoint
 } from '@shared/types'
 import { Pane } from '../components/Resizable'
-import { resumeCaps } from '@shared/cliCaps'
+import { cliPermissionModes, nativeCommand, resumeCaps } from '@shared/cliCaps'
 import { RelayModal, endedByLimit } from '../components/RelayModal'
 import { Recommender } from '../components/Recommender'
 
 import { useT } from '../lib/i18n'
-import { withMod } from '../lib/platform'
+import { IS_WIN, withMod } from '../lib/platform'
 function CopyBtn({ text }: { text: string }): React.JSX.Element {
   const t = useT()
   const [done, setDone] = useState(false)
@@ -78,7 +84,8 @@ function SessionRow({
   onArchive,
   onUnarchive,
   onDelete,
-  onPin
+  onPin,
+  onExport
 }: {
   session: StoredSession
   active: boolean
@@ -89,6 +96,7 @@ function SessionRow({
   onUnarchive: () => void
   onDelete: () => void
   onPin: () => void
+  onExport: () => void
 }): React.JSX.Element {
   const t = useT()
   const turns = session.turns?.filter((t) => t.role === 'assistant').length ?? 0
@@ -98,8 +106,10 @@ function SessionRow({
     <div
       className={cx(
         'group relative mx-1.5 rounded-lg transition-colors',
-        active ? 'bg-raised' : 'hover:bg-[#12151f]'
+        active ? 'bg-raised' : 'hover:bg-raised/60'
       )}
+      data-session-item={session.id}
+      data-active={active ? '' : undefined}
     >
       <button onClick={onOpen} className="w-full text-left px-2.5 py-2">
         {active ? <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-accent" /> : null}
@@ -130,6 +140,9 @@ function SessionRow({
         </button>
         <button onClick={onRename} className="text-dim hover:text-ink p-0.5" title={t('Renombrar')}>
           <Pencil size={11} />
+        </button>
+        <button onClick={onExport} className="text-dim hover:text-accent p-0.5" title={t('Exportar en Markdown o JSON')} data-action="export">
+          <Download size={11} />
         </button>
         {session.archived ? (
           <button onClick={onUnarchive} className="text-dim hover:text-ok p-0.5" title={t('Reabrir')}>
@@ -232,15 +245,27 @@ function TurnView({
   isCli,
   sessionId,
   onReview,
-  onAllow
+  onAllow,
+  onEdit,
+  onRegenerate,
+  onFork,
+  highlight
 }: {
   turn: Turn
   isCli: boolean
   sessionId: string
+  /** Se llegó aquí desde la búsqueda. */
+  highlight?: boolean
   /** Abrir la revisión del diff de este turno. */
   onReview?: () => void
   /** Claude Code: seguir dándole permiso sólo para lo que le faltó. */
   onAllow?: (rules: string[]) => void
+  /** Mensaje tuyo: cambiarlo y volver a mandarlo desde ahí. */
+  onEdit?: () => void
+  /** Respuesta: volver a pedirla. */
+  onRegenerate?: () => void
+  /** Respuesta: seguir desde aquí en una conversación nueva. */
+  onFork?: () => void
 }): React.JSX.Element {
   const t = useT()
   // Lo que el agente quiso hacer y no pudo por falta de permiso. Lo que
@@ -249,12 +274,22 @@ function TurnView({
   const rules = [...new Set(denied.map((s) => s.rule).filter((r): r is string => Boolean(r)))]
   if (turn.role === 'user') {
     return (
-      <div className="flex gap-3 justify-end">
-        <div className="bg-raised border border-line rounded-xl rounded-tr-sm px-3.5 py-2.5 max-w-[78%] space-y-2">
-          <div className="whitespace-pre-wrap break-words text-[13px]">{turn.content}</div>
-          <AttachmentList items={turn.attachments} readOnly />
+      <div className={cx('group flex gap-3 justify-end rounded-xl transition-shadow duration-700', highlight && 'ring-1 ring-accent/60 ring-offset-4 ring-offset-void')} data-turn={turn.id}>
+        <div className="max-w-[78%] flex flex-col items-end gap-1">
+          <div className="bg-raised border border-line rounded-xl rounded-tr-sm px-3.5 py-2.5 space-y-2">
+            <div className="whitespace-pre-wrap break-words text-[13px]">{turn.content}</div>
+            <AttachmentList items={turn.attachments} readOnly />
+          </div>
+          {onEdit ? (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              <Button size="sm" variant="ghost" onClick={onEdit} title={t('Cambiar este mensaje y volver a mandarlo desde aquí')} data-action="edit">
+                <Pencil size={12} /> {t('Editar')}
+              </Button>
+              <CopyBtn text={turn.content} />
+            </div>
+          ) : null}
         </div>
-        <div className="w-6 h-6 rounded-md bg-[#1e2231] flex items-center justify-center shrink-0 mt-0.5">
+        <div className="w-6 h-6 rounded-md bg-hover flex items-center justify-center shrink-0 mt-0.5">
           <User size={13} className="text-muted" />
         </div>
       </div>
@@ -262,11 +297,11 @@ function TurnView({
   }
 
   return (
-    <div className="flex gap-3">
+    <div className={cx('flex gap-3 rounded-xl transition-shadow duration-700', highlight && 'ring-1 ring-accent/60 ring-offset-4 ring-offset-void')} data-turn={turn.id}>
       <div
         className={cx(
           'w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5 border',
-          isCli ? 'bg-[#2a1f08] border-[#5c4413]' : 'bg-[#082a31] border-[#12525f]'
+          isCli ? 'bg-warn/15 border-warn/40' : 'bg-accent/10 border-accent/40'
         )}
       >
         {isCli ? <Cpu size={13} className="text-warn" /> : <Bot size={13} className="text-accent" />}
@@ -306,12 +341,22 @@ function TurnView({
                 onUndone={(v) => markTurnUndone(sessionId, turn.id, v)}
               />
             ) : null}
+            {onRegenerate ? (
+              <Button size="sm" variant="ghost" onClick={onRegenerate} title={t('Volver a pedir esta respuesta')} data-action="regenerate">
+                <RefreshCw size={12} />
+              </Button>
+            ) : null}
+            {onFork ? (
+              <Button size="sm" variant="ghost" onClick={onFork} title={t('Seguir desde aquí en una conversación nueva; esta se queda como está')} data-action="fork">
+                <GitFork size={12} />
+              </Button>
+            ) : null}
             {!turn.streaming && turn.content ? <CopyBtn text={turn.content} /> : null}
           </div>
         </div>
 
         {turn.error ? (
-          <div className="bg-[#1a1015] border border-[#4a2029] rounded-xl px-3.5 py-3 flex items-start gap-2.5">
+          <div className="bg-bad/10 border border-bad/30 rounded-xl px-3.5 py-3 flex items-start gap-2.5">
             <AlertTriangle size={15} className="text-bad shrink-0 mt-0.5" />
             <div className="min-w-0">
               <div className="text-bad text-[12.5px] font-medium mb-0.5">{t('No se pudo completar')}</div>
@@ -326,7 +371,7 @@ function TurnView({
                   <ChevronRight size={12} className="group-open:rotate-90 transition-transform" />
                   {t('Razonamiento interno')}
                 </summary>
-                <div className="mt-2 text-[12px] text-muted whitespace-pre-wrap border-l-2 border-[#37275c] pl-3">
+                <div className="mt-2 text-[12px] text-muted whitespace-pre-wrap border-l-2 border-violet/35 pl-3">
                   {turn.reasoning}
                 </div>
               </details>
@@ -336,7 +381,7 @@ function TurnView({
             <AgentActivity
               steps={turn.steps}
               running={turn.streaming}
-              onApprove={turn.runId ? (stepId, allow) => approveStep(turn.runId!, stepId, allow) : undefined}
+              onApprove={turn.runId ? (stepId, allow, always) => approveStep(turn.runId!, stepId, allow, always) : undefined}
             />
 
             {turn.content ? (
@@ -367,7 +412,7 @@ function TurnView({
 
             {/* Lo que no pudo hacer por falta de permiso: suele ser por qué se quedó a medias. */}
             {!turn.streaming && denied.length ? (
-              <div className="mt-2.5 bg-[#241a09] border border-[#4a3512] rounded-lg px-3 py-2.5 space-y-2" data-denied>
+              <div className="mt-2.5 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2.5 space-y-2" data-denied>
                 <div className="flex items-center gap-1.5 text-[12px] text-warn font-medium">
                   <AlertTriangle size={13} /> {t('Le faltó permiso para:')}
                 </div>
@@ -414,12 +459,17 @@ export default function Chat(): React.JSX.Element {
   const chat = useChat(activeId)
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
   const [showArchived, setShowArchived] = useState(false)
   const [renaming, setRenaming] = useState<StoredSession | null>(null)
   const [renameText, setRenameText] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<StoredSession | null>(null)
+  const [exporting, setExporting] = useState<string[] | null>(null)
+  const { lang } = usePrefs()
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [review, setReview] = useState<{ runId: string; checkpoint: RunCheckpoint; untilRunId?: string } | null>(null)
+  const [rewind, setRewind] = useState<{ turnId: string; mode: 'edit' | 'regenerate' } | null>(null)
 
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -438,17 +488,9 @@ export default function Chat(): React.JSX.Element {
     })
   }, [sessions, query, showArchived])
 
-  // Otra parte de la app (el relevo, la paleta) pide abrir una conversación.
-  const focusReq = useChatFocus()
-  useEffect(() => {
-    if (!focusReq) return
-    setActiveId(focusReq.id)
-    setShowArchived(false)
-    void openSession(focusReq.id)
-    stick.current = true
-  }, [focusReq])
-
-  // Al entrar: se abre la última conversación viva, o se crea una.
+  // Al entrar: se abre la última conversación viva, o se crea una. Va antes que
+  // la petición de abrir una concreta: si la Consola se monta por esa petición
+  // (desde la búsqueda o la paleta), la elegida tiene que ganar.
   useEffect(() => {
     if (activeId) return
     const first = sessions.find((s) => !s.archived)
@@ -459,6 +501,30 @@ export default function Chat(): React.JSX.Element {
       void newSession('chat').then(setActiveId)
     }
   }, [sessions, activeId])
+
+  // Otra parte de la app (el relevo, la paleta) pide abrir una conversación.
+  const focusReq = useChatFocus()
+  const [flash, setFlash] = useState<string | null>(null)
+  useEffect(() => {
+    if (!focusReq) return
+    setActiveId(focusReq.id)
+    // Una cerrada se enseña en su lista: si no, no se ve cuál está abierta.
+    setShowArchived(Boolean(sessionsRef.current.find((s) => s.id === focusReq.id)?.archived))
+    void openSession(focusReq.id)
+    stick.current = !focusReq.turnId
+    setFlash(focusReq.turnId ?? null)
+  }, [focusReq])
+
+  // Ir a un mensaje (desde la búsqueda): se centra y se marca un momento.
+  useEffect(() => {
+    if (!flash) return
+    const el = scroller.current?.querySelector(`[data-turn="${CSS.escape(flash)}"]`)
+    if (!el) return
+    stick.current = false
+    el.scrollIntoView({ block: 'center' })
+    const timer = window.setTimeout(() => setFlash(null), 2600)
+    return () => window.clearTimeout(timer)
+  }, [flash, turns])
 
   // Autoscroll pegado al final salvo que hayas subido a leer.
   useEffect(() => {
@@ -501,6 +567,13 @@ export default function Chat(): React.JSX.Element {
   const project = config?.projects.find((p) => p.id === session?.projectId)
   const apiAgent = config?.agents.find((a) => a.id === session?.agentId)
   const cliAgent = config?.cliAgents.find((a) => a.id === session?.cliAgentId)
+  // Qué modos de permiso entiende su CLI, y el que tiene ahora (o el suyo de partida).
+  const cliModes = cliAgent ? cliPermissionModes(cliAgent.command) : null
+  const cliMode =
+    cliModes?.modes.find((m) => m.id === session?.permissionMode)?.id ??
+    cliModes?.modes.find((m) => m.id === cliAgent?.permissionMode)?.id ??
+    cliModes?.initial ??
+    ''
 
   // Rama y estado del repositorio del proyecto de la sesión.
   // Con worktree, el agente trabaja allí: la carpeta, la rama y el estado de git son los suyos.
@@ -529,6 +602,76 @@ export default function Chat(): React.JSX.Element {
   useEffect(() => {
     setAttachments([])
   }, [activeId])
+
+  const exportAs = async (format: 'md' | 'json'): Promise<void> => {
+    if (!exporting) return
+    const ids = exporting
+    setExporting(null)
+    // Lo último que ha llegado puede estar aún sin guardar: se guarda antes de leerlo.
+    for (const id of ids) await saveSessionNow(id)
+    const r = await window.api.exchange.export(ids, format, lang)
+    if (!r.ok) toast('error', r.error ?? t('No se pudo exportar'))
+    else if (r.data) toast('ok', t('Exportadas {n} en {path}', { n: r.data.count, path: r.data.path }))
+  }
+
+  const importSessions = async (): Promise<void> => {
+    const r = await window.api.exchange.import()
+    if (!r.ok) {
+      toast('error', r.error ?? t('No se pudo importar'))
+      return
+    }
+    if (!r.data) return
+    await loadSessions()
+    const { imported, skipped } = r.data
+    if (imported.length) {
+      setShowArchived(false)
+      void open(imported[0].id)
+      toast('ok', t('Importadas {n} conversaciones', { n: imported.length }))
+    }
+    for (const s of skipped.slice(0, 3)) toast('error', `${s.file}: ${s.reason}`)
+  }
+
+  // Adjuntos que llegan pegando una imagen o arrastrando archivos a la caja.
+  const addAttachments = useCallback((added: Attachment[]) => {
+    setAttachments((list) => {
+      const seen = new Set(list.map((a) => a.path))
+      return [...list, ...added.filter((a) => !seen.has(a.path))]
+    })
+  }, [])
+
+  const onPaste = useCallback(
+    async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      // Si hay texto, se pega el texto: copiar de una hoja de cálculo trae
+      // también una imagen de la selección y no es lo que se quiere adjuntar.
+      if (e.clipboardData.getData('text/plain')) return
+      const images = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
+      if (!images.length) return
+      e.preventDefault()
+      for (const f of images) {
+        const r = await window.api.attach.paste(new Uint8Array(await f.arrayBuffer()), f.type)
+        if (r.ok && r.data) addAttachments([r.data])
+        else toast('error', r.error ?? t('No se pudo pegar la imagen'))
+      }
+    },
+    [addAttachments, toast, t]
+  )
+
+  const onDrop = useCallback(
+    async (e: React.DragEvent) => {
+      const files = [...e.dataTransfer.files]
+      if (!files.length) return
+      e.preventDefault()
+      const found: Attachment[] = []
+      for (const f of files) {
+        const path = window.api.attach.pathOf(f)
+        if (!path) continue
+        const r = await window.api.attach.describe(path)
+        if (r.ok && r.data) found.push(r.data)
+      }
+      if (found.length) addAttachments(found)
+    },
+    [addAttachments]
+  )
 
   // Con `override` se manda ese texto en vez de lo escrito (la revisión de un
   // diff): lo que tengas a medias en la caja y sus adjuntos se quedan.
@@ -571,6 +714,42 @@ export default function Chat(): React.JSX.Element {
       })
     },
     [session, config, t, toast, reloadGit]
+  )
+
+  // Regenerar la última respuesta de un chat que no tocó archivos va directo;
+  // si hay algo más que decidir (turnos detrás, archivos, un CLI), se pregunta.
+  const regenerate = useCallback(
+    (turnId: string) => {
+      if (!session || !config) return
+      const plan = planRewind(session.id, turnId)
+      if (!plan) return
+      if (plan.dropped > 2 || plan.checkpoints.length || plan.isCli) {
+        setRewind({ turnId, mode: 'regenerate' })
+        return
+      }
+      void rewindAndSend(session.id, turnId, plan.prompt, config, {
+        onStart: () => {
+          stick.current = true
+        }
+      }).then((r) => {
+        if (r.error) toast('error', t(r.error))
+        else if (r.run?.status === 'error') toast('error', r.run.error ?? t('No se pudo completar'))
+      })
+    },
+    [session, config, toast, t]
+  )
+
+  const fork = useCallback(
+    async (turnId: string) => {
+      if (!session || !config) return
+      const id = await forkAt(session.id, turnId, t('{title} (bifurcada)', { title: session.title }), config)
+      if (!id) return
+      setActiveId(id)
+      setShowArchived(false)
+      stick.current = true
+      toast('ok', t('Conversación bifurcada: sigue desde aquí; la original se queda como estaba.'))
+    },
+    [session, config, toast, t]
   )
 
   // Un agente de API fija modelo, prompt de sistema y parámetros de golpe.
@@ -624,7 +803,7 @@ export default function Chat(): React.JSX.Element {
   return (
     <div className="h-full flex">
       {/* ------------------------------------------------ Sesiones */}
-      <Pane paneKey="chat.sessions" side="right" className="border-r border-line bg-void flex flex-col">
+      <Pane paneKey="chat.sessions" side="right" collapse="tight" label={t('Conversaciones')} className="border-r border-line bg-void flex flex-col">
         <div className="px-2.5 pt-2.5 pb-2 space-y-2 shrink-0">
           <div className="flex gap-1.5">
             <Button size="sm" variant="primary" className="flex-1 justify-center" onClick={() => void create('chat')}>
@@ -644,8 +823,12 @@ export default function Chat(): React.JSX.Element {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && query.trim()) openSearch(query)
+              }}
+              title={t('Filtra la lista. Enter busca en todos los mensajes y en el histórico.')}
               placeholder={t('Buscar…')}
-              className="w-full h-7 pl-7 pr-2 bg-raised border border-line rounded-md text-[12px] outline-none focus:border-[#2c3346] placeholder:text-[#3a4255]"
+              className="w-full h-7 pl-7 pr-2 bg-raised border border-line rounded-md text-[12px] outline-none focus:border-dim/60 placeholder:text-dim/60"
             />
           </div>
           <div className="flex items-center gap-1 text-[11px]">
@@ -662,6 +845,25 @@ export default function Chat(): React.JSX.Element {
               {t('Cerradas')}
               <span className="num ml-1 text-dim">{sessions.filter((s) => s.archived).length}</span>
             </button>
+            <span className="ml-auto flex items-center gap-0.5">
+              <button
+                onClick={() => void importSessions()}
+                className="p-1 rounded-md text-dim hover:text-ink hover:bg-raised"
+                title={t('Importar conversaciones (JSON o Markdown exportados por la app)')}
+                data-import-sessions
+              >
+                <Upload size={12} />
+              </button>
+              <button
+                onClick={() => visible.length && setExporting(visible.map((s) => s.id))}
+                disabled={!visible.length}
+                className="p-1 rounded-md text-dim hover:text-ink hover:bg-raised disabled:opacity-40"
+                title={t('Exportar las conversaciones de esta lista')}
+                data-export-list
+              >
+                <Download size={12} />
+              </button>
+            </span>
           </div>
         </div>
 
@@ -690,6 +892,7 @@ export default function Chat(): React.JSX.Element {
                 onUnarchive={() => void unarchiveSession(s.id)}
                 onDelete={() => setConfirmDelete(s)}
                 onPin={() => patchSessionConfig(s.id, { pinned: !s.pinned })}
+                onExport={() => setExporting([s.id])}
               />
             ))
           )}
@@ -807,6 +1010,10 @@ export default function Chat(): React.JSX.Element {
                       : undefined
                   }
                   onAllow={i === turns.length - 1 && !running && isClaudeCli ? allowAndContinue : undefined}
+                  onEdit={!running && t.role === 'user' ? () => setRewind({ turnId: t.id, mode: 'edit' }) : undefined}
+                  onRegenerate={!running && t.role === 'assistant' && i > 0 ? () => regenerate(t.id) : undefined}
+                  onFork={!running && t.role === 'assistant' && !t.streaming ? () => void fork(t.id) : undefined}
+                  highlight={flash === t.id}
                 />
               )
             })}
@@ -841,10 +1048,18 @@ export default function Chat(): React.JSX.Element {
         {/* Entrada */}
         <div className="px-5 py-3.5 border-t border-line bg-void shrink-0">
           <div className="max-w-[860px] mx-auto">
-            <div className="relative">
-              <Textarea
+            <div
+              className="relative"
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+              }}
+              onDrop={(e) => void onDrop(e)}
+            >
+              <PromptTextarea
+                onPaste={(e) => void onPaste(e)}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onValue={setInput}
+                context={{ project: project?.name, branch: git?.branch }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                     e.preventDefault()
@@ -883,14 +1098,8 @@ export default function Chat(): React.JSX.Element {
 
             <div className="flex items-center justify-between gap-3 mt-1.5 text-[11px] text-dim flex-wrap">
               <div className="flex items-center gap-2">
-                <AttachButton
-                  onAdd={(added) =>
-                    setAttachments((list) => {
-                      const seen = new Set(list.map((a) => a.path))
-                      return [...list, ...added.filter((a) => !seen.has(a.path))]
-                    })
-                  }
-                />
+                <AttachButton onAdd={addAttachments} />
+                <SavePromptButton text={input} />
                 <span className="text-dim">{t('Esfuerzo')}</span>
                 <EffortPicker
                   value={effort}
@@ -917,11 +1126,30 @@ export default function Chat(): React.JSX.Element {
               <span className="num">{t('common.chars', { n: input.length })}</span>
             </div>
             <div className="mt-1 text-[11px] text-dim">
-              {withMod(t('Ctrl + Enter para enviar · la respuesta sigue llegando si cambias de pantalla'))}
+              {withMod(t('Ctrl + Enter para enviar · / para la biblioteca de prompts · la respuesta sigue llegando si cambias de pantalla'))}
             </div>
           </div>
         </div>
       </div>
+
+      {rewind && session ? (
+        <RewindModal
+          key={rewind.turnId + rewind.mode}
+          sessionId={session.id}
+          turnId={rewind.turnId}
+          mode={rewind.mode}
+          title={session.title}
+          onClose={() => setRewind(null)}
+          onStarted={(id) => {
+            setRewind(null)
+            stick.current = true
+            if (id !== session.id) {
+              setActiveId(id)
+              setShowArchived(false)
+            }
+          }}
+        />
+      ) : null}
 
       <Modal open={recommending} onClose={() => setRecommending(false)} title={t('¿Qué modelo uso?')} width="max-w-4xl">
         {recommending && session ? (
@@ -961,7 +1189,7 @@ export default function Chat(): React.JSX.Element {
       ) : null}
 
       {/* ------------------------------------------------ Ajustes de la sesión */}
-      <Pane paneKey="chat.detail" side="left" className="border-l border-line bg-void overflow-y-auto">
+      <Pane paneKey="chat.detail" side="left" collapse="narrow" label={t('Ajustes de la sesión')} className="border-l border-line bg-void overflow-y-auto">
         {!session ? (
           <div className="p-4 text-[12px] text-dim">{t('Crea o abre una conversación.')}</div>
         ) : (
@@ -1049,21 +1277,52 @@ export default function Chat(): React.JSX.Element {
               {/* ------------------------ Seguir en la misma sesión */}
               {cliAgent ? <CliContinuity session={session} command={cliAgent.command} /> : null}
 
+              {/* ------------------------ El CLI original, en una terminal */}
+              {cliAgent ? (
+                <Field label={t('Su terminal')}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-open-native
+                    onClick={async () => {
+                      const sid = session.cliSessionAgentId === session.cliAgentId ? session.cliSessionId : undefined
+                      const { id, error } = await openTerm({
+                        cwd: session.worktreePath ?? project?.path,
+                        projectId: project?.id,
+                        title: cliAgent.name
+                      })
+                      if (!id) {
+                        toast('error', t('No se pudo abrir la terminal:') + ' ' + (error ?? t('motivo desconocido')))
+                        return
+                      }
+                      sendTermCommand(id, nativeCommand(cliAgent.command, sid, IS_WIN))
+                      navigate({ page: 'terminal', termId: id })
+                    }}
+                  >
+                    <TerminalIcon size={12} /> {t('Abrir en su terminal')}
+                  </Button>
+                  <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
+                    {t('Abre {cmd} tal cual en una terminal de la app, con esta misma sesión: sus menús, sus comandos con «/» y su inicio de sesión están allí.', { cmd: cliAgent.command })}
+                  </p>
+                </Field>
+              ) : null}
+
               {/* ----------------------------- Hasta dónde puede llegar */}
-              {cliAgent && cliAgent.command.toLowerCase() === 'claude' ? (
+              {cliModes ? (
                 <Field label={t('Permisos')}>
                   <Select
-                    value={session.permissionMode ?? 'acceptEdits'}
+                    value={cliMode}
                     onChange={(e) => patchSessionConfig(session.id, { permissionMode: e.target.value })}
+                    data-cli-permission
                   >
-                    {PERMISSION_MODES.map((m) => (
+                    {cliModes.modes.map((m) => (
                       <option key={m.id} value={m.id}>
                         {t(m.label)}
                       </option>
                     ))}
                   </Select>
                   <p className="text-[11px] text-dim mt-1.5 leading-relaxed">
-                    {t(PERMISSION_MODES.find((m) => m.id === (session.permissionMode ?? 'acceptEdits'))?.hint ?? '')}
+                    {t(cliModes.modes.find((m) => m.id === cliMode)?.hint ?? '')}
                   </p>
                 </Field>
               ) : null}
@@ -1159,7 +1418,7 @@ export default function Chat(): React.JSX.Element {
                       type="checkbox"
                       checked={session.includeContext ?? true}
                       onChange={(e) => patchSessionConfig(session.id, { includeContext: e.target.checked })}
-                      className="accent-cyan-400"
+                      className="accent-[var(--color-accent)]"
                     />
                     {t('Adjuntar contexto del proyecto')}
                   </label>
@@ -1273,6 +1532,35 @@ export default function Chat(): React.JSX.Element {
           </div>
         )}
       </Pane>
+
+      {/* Exportar */}
+      <Modal
+        open={Boolean(exporting)}
+        onClose={() => setExporting(null)}
+        title={exporting && exporting.length > 1 ? t('Exportar {n} conversaciones', { n: exporting.length }) : t('Exportar la conversación')}
+      >
+        <div className="space-y-2" data-export>
+          {(
+            [
+              ['md', 'Markdown', t('Para leerla o compartirla: los mensajes, el razonamiento plegado, las herramientas que usó y lo que costó cada respuesta.')],
+              ['json', 'JSON', t('La conversación entera, tal cual se guarda: para llevarla a otro equipo o tener una copia. Se importa igual.')]
+            ] as const
+          ).map(([format, label, hint]) => (
+            <button
+              key={format}
+              type="button"
+              data-format={format}
+              onClick={() => void exportAs(format)}
+              className="w-full text-left rounded-lg border border-line hover:border-dim/60 hover:bg-raised px-3.5 py-2.5"
+            >
+              <div className="text-[13px] font-medium flex items-center gap-2">
+                <Download size={13} className="text-accent" /> {label}
+              </div>
+              <div className="text-[11.5px] text-dim mt-0.5 leading-relaxed">{hint}</div>
+            </button>
+          ))}
+        </div>
+      </Modal>
 
       {/* Renombrar */}
       <Modal

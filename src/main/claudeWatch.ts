@@ -27,6 +27,8 @@ const SETTLE_MS = 250
 const MAX_WAIT_MS = 1000
 /** Repaso de seguridad, por si el vigilante se pierde algo. */
 const POLL_MS = 15_000
+/** Cada cuánto se mira si la carpeta de sesiones ya existe, mientras no existe. */
+const ATTACH_MS = 5000
 
 type Send = (payload: { imported: number; files: number }) => void
 
@@ -71,22 +73,47 @@ function schedule(send: Send): void {
   }, wait)
 }
 
-export function watchClaude(send: Send): void {
-  if (!existsSync(ROOT)) return
-
-  // El primer repaso, en cuanto la ventana respire.
-  setTimeout(() => void refresh(send), 1500)
-
+/** Engancha el vigilante a la carpeta, si ya existe. Devuelve si quedó puesto. */
+function attach(send: Send): boolean {
+  if (watcher) return true
+  if (!existsSync(ROOT)) return false
   try {
     watcher = watch(ROOT, { recursive: true, persistent: false }, (_type, file) => {
       if (file && !String(file).endsWith('.jsonl')) return
       schedule(send)
     })
+    watcher.on('error', () => {
+      // La carpeta se borró o el sistema cortó la vigilancia: se vuelve a poner en el próximo repaso.
+      try {
+        watcher?.close()
+      } catch {
+        /* ya estaba cerrado */
+      }
+      watcher = null
+    })
+    return true
   } catch (err) {
     console.error('[claude] sin vigilancia de la carpeta de sesiones:', err)
+    return false
   }
+}
 
-  poll = setInterval(() => void refresh(send), POLL_MS)
+export function watchClaude(send: Send): void {
+  // El primer repaso, en cuanto la ventana respire.
+  if (attach(send)) setTimeout(() => void refresh(send), 1500)
+
+  // Claude Code instalado (o usado por primera vez) con la app ya abierta: la
+  // carpeta aparece después. El repaso periódico la engancha en cuanto existe.
+  let waited = 0
+  poll = setInterval(() => {
+    const had = Boolean(watcher)
+    if (!attach(send)) return
+    waited += ATTACH_MS
+    // Recién enganchada se repasa ya; después, sólo el repaso de seguridad.
+    if (had && waited < POLL_MS) return
+    waited = 0
+    void refresh(send)
+  }, ATTACH_MS)
   if (typeof poll.unref === 'function') poll.unref()
 }
 

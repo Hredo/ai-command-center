@@ -11,27 +11,31 @@
    componente: lo que no pase por aquí no cambia con el tema.
    --------------------------------------------------------------------------- */
 @theme {
-  --color-void: #08090d;
-  --color-panel: #0f1117;
-  --color-raised: #151824;
-  --color-hover: #1b1f2d;
-  --color-line: #1e2231;
-  --color-line-soft: #171a26;
+  --color-void: #131417;
+  --color-panel: #1a1c21;
+  --color-raised: #22252c;
+  --color-hover: #2b2f38;
+  --color-line: #2e323c;
+  --color-line-soft: #24272e;
 
-  --color-ink: #e7eaf2;
-  --color-muted: #8b93a7;
-  --color-dim: #5b6377;
+  --color-ink: #eceae4;
+  --color-muted: #a9adb8;
+  --color-dim: #7d8390;
 
-  --color-accent: #22d3ee;
-  --color-accent-dim: #0e7490;
-  --color-accent-soft: #6ee0f3;
-  --color-violet: #a78bfa;
-  --color-ok: #34d399;
-  --color-warn: #f59e0b;
-  --color-bad: #fb7185;
+  --color-accent: #8fa8ff;
+  --color-accent-dim: #4a5fb0;
+  --color-accent-soft: #b3c3ff;
+  --color-violet: #c7a6ff;
+  --color-ok: #6fd3a0;
+  --color-warn: #f0b354;
+  --color-bad: #f27d7d;
 
-  --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
-  --font-sans: 'Segoe UI Variable Display', 'Segoe UI', Inter, system-ui, sans-serif;
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', 'Atkinson Hyperlegible Mono Variable', Consolas, monospace;
+  --font-sans: 'Atkinson Hyperlegible Next Variable', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  /* Títulos de sección y nombre de la app: con carácter, y sólo ahí. */
+  --font-display: 'Bricolage Grotesque Variable', 'Atkinson Hyperlegible Next Variable', system-ui, sans-serif;
+  /* Cifras y datos de la interfaz (no el código, que usa la del editor). */
+  --font-num: 'Atkinson Hyperlegible Mono Variable', 'Cascadia Mono', Consolas, monospace;
 
   /* Redondeo. Lo cambia el ajuste de esquinas, y con él toda la aplicación. */
   --radius-xs: 3px;
@@ -181,9 +185,17 @@ textarea {
 }
 
 .num {
-  font-family: var(--font-mono);
+  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+/* Los títulos de sección llevan la tipografía con carácter; el resto, la de leer. */
+h1,
+.display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.015em;
 }
 
 /* Rejilla sutil de fondo, da sensación de panel técnico sin hacer ruido. */
@@ -510,4 +522,66 @@ textarea {
   tab-size: var(--code-tab);
   white-space: pre;
   overflow-x: auto;
+}
+
+/* ------------------------------------------------------------------ *
+ * Secciones en un panel estrecho                                      *
+ *                                                                    *
+ * Con la mesa partida una sección puede tener un tercio de la        *
+ * ventana. Su envoltorio dice cómo va de ancho (`data-w`) y aquí las  *
+ * rejillas de columnas fijas bajan de columnas, en todas a la vez.    *
+ * ------------------------------------------------------------------ */
+[data-w='narrow'] .grid-cols-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+[data-w='narrow'] .grid-cols-4,
+[data-w='narrow'] .grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+[data-w='tight'] .grid-cols-5,
+[data-w='tight'] .grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+[data-w='tight'] .grid-cols-3,
+[data-w='tight'] .grid-cols-2 { grid-template-columns: minmax(0, 1fr); }
+/* Un bloque ancho con otro estrecho al lado (gráfica y resumen): uno debajo del otro. */
+[data-w='narrow'] .grid-cols-3:has(> .col-span-2),
+[data-w='tight'] .grid-cols-3:has(> .col-span-2) { grid-template-columns: minmax(0, 1fr); }
+[data-w='narrow'] .grid-cols-3 > .col-span-2,
+[data-w='tight'] .grid-cols-3 > .col-span-2,
+[data-w='tight'] .grid-cols-2 > .col-span-2 { grid-column: auto; }
+/* Los márgenes laterales generosos sobran cuando no hay sitio. */
+[data-w='tight'] .px-6 { padding-inline: calc(var(--spacing) * 3); }
+[data-w='tight'] .px-5 { padding-inline: calc(var(--spacing) * 3); }
+
+/* Los títulos dentro de una respuesta en Markdown van con la letra de leer. */
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-family: var(--font-sans);
+  letter-spacing: 0;
+}
+
+/* El texto de la ayuda: algo más grande y con más aire que una respuesta. */
+.help-prose .md {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+.help-prose .md strong { color: var(--color-ink); font-weight: 600; }
+.help-prose .md p { margin: 0.8em 0; }
+.help-prose .md ul { margin: 0.6em 0; padding-left: 1.2em; }
+.help-prose .md li { margin: 0.35em 0; }
+
+/* Una fila que se desliza de lado (pestañas, barras de herramientas) sin enseñar barra. */
+.tabs-scroll { scrollbar-width: none; }
+.tabs-scroll::-webkit-scrollbar { display: none; }
+
+/* La cabecera de una sección (título a un lado, pestañas y botones al otro)
+   baja lo de la derecha a otra línea cuando el panel es estrecho. */
+[data-w='narrow'] div:has(> div > h1),
+[data-w='tight'] div:has(> div > h1) {
+  flex-wrap: wrap;
+  row-gap: calc(var(--spacing) * 3);
+}
+[data-w='narrow'] div:has(> div > h1) > div,
+[data-w='tight'] div:has(> div > h1) > div {
+  max-width: 100%;
+  flex-wrap: wrap;
+  row-gap: calc(var(--spacing) * 2);
 }

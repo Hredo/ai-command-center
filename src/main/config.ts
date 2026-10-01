@@ -3,7 +3,7 @@ import { paths } from './paths'
 import { writeFileAtomic } from './atomic'
 import { notifyChange } from './live'
 import { defaultTerminalCommand } from './platform'
-import { DEFAULT_APPEARANCE, DEFAULT_EDITOR } from '@shared/defaults'
+import { DEFAULT_APPEARANCE, DEFAULT_EDITOR, LEGACY_UI_FONT } from '@shared/defaults'
 import type { AppConfig, Settings, Agent, CliAgent, Project } from '@shared/types'
 
 const defaultSettings: Settings = {
@@ -20,6 +20,7 @@ const defaultSettings: Settings = {
   arenaDefaults: [],
   notifyOnFinish: true,
   notifyOnlyWhenUnfocused: true,
+  closeToTray: true,
   localPollSeconds: 8
 }
 
@@ -80,6 +81,12 @@ function migrateConfig(cfg: AppConfig): void {
       agent.parser = 'claude-stream-json'
       changed = true
     }
+  }
+  // 0.8: la tipografía de la interfaz va dentro de la app. Quien tuviera la de
+  // fábrica de antes pasa a la nueva; la que se eligió a mano no se toca.
+  if (cfg.settings.appearance?.uiFont === LEGACY_UI_FONT) {
+    cfg.settings.appearance.uiFont = DEFAULT_APPEARANCE.uiFont
+    changed = true
   }
   // 0.8: el presupuesto mensual, que era sólo informativo, pasa a ser uno más
   // de la lista de presupuestos, que avisan y pueden bloquear.

@@ -175,7 +175,7 @@ const base: Record<string, string> = {
   'security.warn': 'Check',
 
   /* ------------------------------------------------------------ Files */
-  'files.filter': 'filter by name…',
+  'files.filter': 'search the project…',
   'files.newFile': 'New file',
   'files.newFolder': 'New folder',
   'files.reveal.win': 'Show in Explorer',

@@ -17,7 +17,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   Eye, Pencil, FilePlus2, TerminalSquare, Search, Globe, Bot, ListTodo, Wrench,
-  Sparkles, Info, ChevronRight, Check, X, Loader2, Ban, Hand
+  Sparkles, Info, ChevronRight, Check, CheckCheck, X, Loader2, Ban, Hand
 } from 'lucide-react'
 import { Button, cx } from './ui'
 import { ms as fmtMs } from '../lib/format'
@@ -59,6 +59,54 @@ function isPending(step: AgentStep): boolean {
   return step.approval === 'pending' && step.status === 'running'
 }
 
+/** Qué se está pidiendo permiso para hacer, en una frase. */
+function pendingText(step: AgentStep, t: ReturnType<typeof useT>): string {
+  // Un CLI que pregunta dice él mismo qué quiere.
+  if (step.ask) {
+    const target = step.ask.target
+    switch (step.ask.kind) {
+      case 'outside':
+        return target
+          ? t('Quiere entrar en una carpeta fuera del proyecto: {dir}', { dir: target })
+          : t('Quiere entrar en una carpeta fuera del proyecto.')
+      case 'run':
+        return t('Quiere ejecutar este comando.')
+      case 'edit':
+        return t('Quiere modificar este archivo.')
+      case 'read':
+        return t('Quiere leer esto.')
+      case 'fetch':
+        return t('Quiere consultar esta dirección.')
+      default:
+        return t('Quiere usar {tool}.', { tool: step.tool ?? target ?? '' })
+    }
+  }
+  const tool = (step.tool ?? '').toLowerCase()
+  if (tool === 'web_fetch') {
+    let host = ''
+    try {
+      host = new URL(step.target ?? '').hostname.replace(/^www\./, '')
+    } catch {
+      /* sin dominio */
+    }
+    return host
+      ? t('Quiere leer esta página. Si lo permites, podrá leer más de {host} en este turno sin volver a preguntar.', { host })
+      : t('Quiere leer esta página.')
+  }
+  if (tool.startsWith('mcp__')) return t('Quiere usar esta herramienta de un servidor MCP.')
+  if (RUN_TOOL.test(tool)) return t('Quiere ejecutar este comando en el proyecto.')
+  return t('Quiere modificar este archivo.')
+}
+
+/** «Siempre en esta sesión», «Siempre en este proyecto»… */
+export function alwaysLabel(a: NonNullable<AgentStep['always']>, t: ReturnType<typeof useT>): string {
+  return a.scope === 'project'
+    ? t('Siempre en este proyecto')
+    : a.scope === 'user'
+      ? t('Siempre, en todos tus proyectos')
+      : t('Siempre en esta sesión')
+}
+
 /* ------------------------------------------------------------------ *
  * Una fila                                                           *
  * ------------------------------------------------------------------ */
@@ -70,7 +118,7 @@ function Row({
 }: {
   step: AgentStep
   live: boolean
-  onApprove?: (stepId: string, allow: boolean) => void
+  onApprove?: (stepId: string, allow: boolean, always?: boolean) => void
 }): React.JSX.Element {
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -150,18 +198,27 @@ function Row({
       </button>
 
       {pending ? (
-        <div className="ml-[26px] mr-2 mb-1.5 mt-0.5 px-2.5 py-2 rounded border border-[#4a3512] bg-[#1a1409] flex items-center gap-2 flex-wrap">
+        <div className="ml-[26px] mr-2 mb-1.5 mt-0.5 px-2.5 py-2 rounded border border-warn/30 bg-warn/10 flex items-center gap-2 flex-wrap">
           <span className="text-[11.5px] text-warn">
-            {RUN_TOOL.test((step.tool ?? '').toLowerCase())
-              ? t('Quiere ejecutar este comando en el proyecto.')
-              : t('Quiere modificar este archivo.')}
+            {pendingText(step, t)}
           </span>
           {onApprove ? (
             <span className="ml-auto flex items-center gap-1.5">
-              <Button size="sm" variant="primary" onClick={() => onApprove(step.id, true)}>
+              <Button size="sm" variant="primary" onClick={() => onApprove(step.id, true)} data-approve="once">
                 <Check size={12} /> {t('Permitir')}
               </Button>
-              <Button size="sm" variant="danger" onClick={() => onApprove(step.id, false)}>
+              {step.always ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onApprove(step.id, true, true)}
+                  title={step.always.what ? t('No vuelve a preguntar por: {what}', { what: step.always.what }) : undefined}
+                  data-approve="always"
+                >
+                  <CheckCheck size={12} /> {alwaysLabel(step.always, t)}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="danger" onClick={() => onApprove(step.id, false)} data-approve="deny">
                 <X size={12} /> {t('Rechazar')}
               </Button>
             </span>
@@ -176,7 +233,7 @@ function Row({
           className={cx(
             'ml-[26px] mr-2 mb-1 px-2.5 py-1.5 rounded border text-[11.5px] whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto',
             step.kind === 'thinking'
-              ? 'bg-[#120e1f] border-[#2a1f4a] text-muted'
+              ? 'bg-violet/10 border-violet/30 text-muted'
               : 'bg-void border-line font-mono text-muted'
           )}
         >
@@ -200,7 +257,7 @@ export function AgentActivity({
   /** Mientras corre se queda abierta sola. */
   running?: boolean
   /** Contesta a una petición de permiso. Sin esto no se pintan los botones. */
-  onApprove?: (stepId: string, allow: boolean) => void
+  onApprove?: (stepId: string, allow: boolean, always?: boolean) => void
 }): React.JSX.Element | null {
   const t = useT()
   const [open, setOpen] = useState(Boolean(running))

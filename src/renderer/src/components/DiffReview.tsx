@@ -174,7 +174,7 @@ export function DiffReview({
     editing?.id === c.id ? (
       <div key={c.id}>{editor}</div>
     ) : (
-      <div key={c.id} className="mx-2 my-1.5 bg-[#0d1a20] border border-[#1c3a44] rounded-lg px-3 py-2 flex items-start gap-2 font-sans">
+      <div key={c.id} className="mx-2 my-1.5 bg-accent/10 border border-accent/30 rounded-lg px-3 py-2 flex items-start gap-2 font-sans">
         <MessageSquarePlus size={12} className="text-accent shrink-0 mt-0.5" />
         <div className="text-[12.5px] whitespace-pre-wrap break-words flex-1 min-w-0">{c.text}</div>
         <button
@@ -258,7 +258,7 @@ export function DiffReview({
         ) : null}
 
         {orphans.length ? (
-          <div className="border border-[#5c4413] bg-[#1a1408] rounded-lg p-2 space-y-1">
+          <div className="border border-warn/40 bg-warn/10 rounded-lg p-2 space-y-1">
             <div className="text-[11px] text-warn">{t('Comentarios sobre líneas que ya no están en el diff (se envían igual):')}</div>
             {orphans.map((c) => (
               <div key={c.id} className="text-[11.5px] text-muted flex items-center gap-2">
@@ -282,7 +282,7 @@ export function DiffReview({
           return (
             <div key={f.path} className="border border-line rounded-lg overflow-hidden">
               <button
-                className="w-full flex items-center gap-2 px-3 py-2 bg-raised text-left hover:bg-[#1a1d29]"
+                className="w-full flex items-center gap-2 px-3 py-2 bg-raised text-left hover:bg-hover"
                 onClick={() =>
                   setCollapsed((s) => {
                     const n = new Set(s)
@@ -309,13 +309,13 @@ export function DiffReview({
               {isCollapsed ? null : f.binary ? (
                 <div className="px-3 py-2 text-[12px] text-dim">{t('Fichero binario: no se puede comentar por líneas.')}</div>
               ) : (
-                <div className="font-mono text-[11.5px] leading-[1.55] bg-[#07080c] overflow-x-auto">
+                <div className="font-mono text-[11.5px] leading-[1.55] bg-[var(--editor-bg)] overflow-x-auto">
                   {f.hunks.map((h, hi) => {
                     if (shown >= limit) return null
                     shown++
                     return (
                       <div key={hi}>
-                        <div className="px-3 py-0.5 text-violet bg-[#110f1c] text-[11px]">{h.header}</div>
+                        <div className="px-3 py-0.5 text-violet bg-violet/10 text-[11px]">{h.header}</div>
                         {h.lines.map((l) => {
                           if (shown >= limit) return null
                           shown++
@@ -330,9 +330,9 @@ export function DiffReview({
                                 onClick={readOnly ? undefined : () => setEditing({ key: k, file: f.path, line: l, text: '' })}
                                 className={cx(
                                   'group grid grid-cols-[42px_42px_14px_1fr]',
-                                  !readOnly && 'cursor-pointer hover:bg-[#12202a]',
-                                  l.kind === 'add' && 'bg-[#0b1a12]',
-                                  l.kind === 'del' && 'bg-[#1c0e12]',
+                                  !readOnly && 'cursor-pointer hover:bg-accent/10',
+                                  l.kind === 'add' && 'bg-ok/10',
+                                  l.kind === 'del' && 'bg-bad/10',
                                   here.length > 0 && 'shadow-[inset_2px_0_0_var(--color-accent)]'
                                 )}
                               >
@@ -349,7 +349,7 @@ export function DiffReview({
                                 <span
                                   className={cx(
                                     'whitespace-pre pr-3 relative',
-                                    l.kind === 'add' ? 'text-[#b5f5c8]' : l.kind === 'del' ? 'text-[#f5b5bd]' : 'text-muted'
+                                    l.kind === 'add' ? 'text-ok' : l.kind === 'del' ? 'text-bad' : 'text-muted'
                                   )}
                                 >
                                   {l.text || ' '}

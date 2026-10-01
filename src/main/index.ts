@@ -23,6 +23,12 @@ import { runSelfTest } from './selftest'
 import { startMaintenance, stopMaintenance } from './maintenance'
 import { watchExternal, stopWatchingExternal } from './external'
 import { startQuotas, stopQuotas, pokeQuotas } from './quotas'
+import { initTray, onWindowClose, markQuitting, showWindow, destroyTray, hasTray, confirmAppQuit } from './tray'
+import { initQuick, showQuick, unregisterQuickHotkey } from './quick'
+import { startUpdateChecks, stopUpdateChecks } from './updates'
+import { startScheduler, stopScheduler } from './schedules'
+import { stopAccounts } from './accounts'
+import { startedHidden } from './loginItem'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
 
 // Lo primero de todo: quitar de la línea de órdenes cualquier conmutador que
@@ -43,6 +49,8 @@ if (SELFTEST) app.setPath('userData', mkdtempSync(join(tmpdir(), 'acc-selftest-'
 const shellEnvReady = loadShellEnv()
 
 let mainWindow: BrowserWindow | null = null
+/** Abierta por el sistema al iniciar sesión: la primera ventana se queda en la bandeja. */
+let hideFirstWindow = startedHidden()
 
 /**
  * La barra de título la pinta la app en los tres sistemas. En Windows y
@@ -95,9 +103,20 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
-  // En macOS cerrar la ventana no cierra la app: se queda en el Dock y el
-  // icono la vuelve a abrir. Hasta entonces no hay ventana a la que avisar.
+  mainWindow.on('ready-to-show', () => {
+    if (hideFirstWindow && (hasTray() || IS_MAC)) {
+      hideFirstWindow = false
+      return
+    }
+    mainWindow?.show()
+  })
+  // Cerrar esconde la ventana en la bandeja (o sale, según Ajustes): ver tray.ts.
+  const win = mainWindow
+  win.on('close', (e) => {
+    if (!SELFTEST) onWindowClose(e, win)
+  })
+  // Windows: apagar o cerrar la sesión no debe quedarse esperando a la bandeja.
+  win.on('session-end', () => markQuitting())
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -225,6 +244,11 @@ app.whenReady().then(async () => {
   registerIpc(() => mainWindow)
   createWindow()
   if (SELFTEST && mainWindow) void runSelfTest(mainWindow, SELFTEST)
+  if (!SELFTEST) initTray({ getWin: () => mainWindow, createWindow, icon })
+  // El atajo global del prompt rápido (Ajustes › Preferencias).
+  if (!SELFTEST) initQuick({ getMain: () => mainWindow, showMain: showWindow })
+  // Lanzada con --quick sin estar ya abierta: arranca y enseña la ventanita.
+  if (!SELFTEST && process.argv.includes('--quick')) showQuick()
 
   // Las sesiones de Claude Code que corren fuera de la app —en una terminal o
   // en la app de Claude— se leen de sus transcripciones y entran al histórico
@@ -249,7 +273,9 @@ app.whenReady().then(async () => {
   if (!SELFTEST) {
     startQuotas(
       (r) => emit(mainWindow, 'quotas:updated', r),
-      (a) => emit(mainWindow, 'quotas:alert', a)
+      (a) => emit(mainWindow, 'quotas:alert', a),
+      // Con la ventana a la vista los saldos de fuera se preguntan cada minuto.
+      () => Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized())
     )
   }
 
@@ -271,6 +297,12 @@ app.whenReady().then(async () => {
   // La poda del histórico: sin frenar el arranque y de vez en cuando.
   if (!SELFTEST) startMaintenance()
 
+  // Las tareas programadas: el reloj aquí, la tarea la lanza la ventana.
+  if (!SELFTEST) startScheduler(() => mainWindow)
+
+  // ¿Hay versión nueva en GitHub? Sólo se avisa: ver updates.ts.
+  if (!SELFTEST) startUpdateChecks((u) => emit(mainWindow, 'updates:status', u))
+
   // El catálogo de modelos se refresca en segundo plano: la app abre igual
   // aunque no haya red.
   const cfg = getConfig()
@@ -283,8 +315,10 @@ app.whenReady().then(async () => {
       .catch((e) => console.error('No se pudo refrescar el catálogo:', e.message))
   }
 
+  // macOS: el icono del Dock vuelve a enseñar la ventana escondida.
   app.on('activate', () => {
     if (!mainWindow || BrowserWindow.getAllWindows().length === 0) createWindow()
+    else showWindow()
   })
 })
 
@@ -294,7 +328,10 @@ app.on('window-all-closed', () => {
 
 // Las shells de las terminales son procesos hijos: hay que cerrarlas o
 // quedarían huérfanas al salir.
-app.on('before-quit', () => {
+app.on('before-quit', (e) => {
+  // Cmd+Q o «Salir» del Dock con trabajo en marcha: se pregunta antes de cortarlo.
+  if (!SELFTEST && !confirmAppQuit(e)) return
+  markQuitting()
   stopWatchingLocalServers()
   stopWatchingClaude()
   stopAllWatches()
@@ -302,20 +339,32 @@ app.on('before-quit', () => {
   stopWatchingExternal()
   stopWatchingAttention()
   stopQuotas()
+  stopUpdateChecks()
+  stopScheduler()
+  stopAccounts()
   closeAllTerms()
+})
+
+// Sin esto, en Windows el icono se queda en la bandeja hasta que pasas el ratón.
+app.on('will-quit', () => {
+  destroyTray()
+  unregisterQuickHotkey()
 })
 
 // Una sola instancia: si se abre otra, se enfoca la que ya está.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    } else if (app.isReady()) {
-      // macOS: la app seguía viva en el Dock, pero sin ventana.
-      createWindow()
+  // También trae la ventana escondida en la bandeja: en un escritorio de Linux
+  // sin iconos de estado es la forma de volver a ella.
+  app.on('second-instance', (_e, argv) => {
+    // `ai-command-center --quick`: el prompt rápido, para asignarlo en los atajos
+    // del escritorio cuando el atajo global no llega (Wayland).
+    if (argv.includes('--quick') && app.isReady()) {
+      showQuick()
+      return
     }
+    if (mainWindow) showWindow()
+    else if (app.isReady()) createWindow()
   })
 }

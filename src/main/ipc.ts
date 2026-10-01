@@ -5,10 +5,18 @@ import { setKey, getStoredKey, listKeyStatus, mask, resolveKey, strongEncryption
 import { PROVIDERS } from './providers/catalog'
 import { fetchProviderModels, refreshCatalog, getCatalog, searchCatalog, priceFor, enrich } from './providers/models'
 import { runPrompt, abortRun, testProvider, answerApproval } from './providers/run'
-import { runCliAgent, killCli } from './agents/cli'
+import { runCliAgent, killCli, answerCliApproval } from './agents/cli'
 import { opencodeModels } from './opencode'
 import { detectAll, detectClis, probeLocalServers, providerStatuses, KNOWN_CLIS } from './detect'
-import { scanProject, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
+import { refreshTray, setBusy, type Busy } from './tray'
+import { checkForUpdate, lastUpdate } from './updates'
+import { listSchedules, removeSchedule, runScheduleNow, saveSchedule, scheduleFinished, scheduleStarted } from './schedules'
+import { loginItemStatus, setLoginItem } from './loginItem'
+import {
+  bindQuick, failQuick, hideQuick, openQuickInConsole, quickFinished, quickStatus, quickTap, registerQuickHotkey,
+  showQuick, submitQuick
+} from './quick'
+import { scanProject, projectScripts, projectContext, listProjectFiles, openInEditor, openInExplorer, openInTerminal } from './projects'
 import {
   queryRuns, overview, updateRun, deleteRun, clearRuns, arenaSessions, allRuns, bucketBy, projectTotals, modelUsage, personalElo
 } from './runs'
@@ -21,7 +29,7 @@ import { runMaintenance } from './maintenance'
 import { refreshExternal } from './external'
 import { importClaudeSessions } from './claudeSessions'
 import { TITLEBAR_HEIGHT, trafficLights } from '@shared/defaults'
-import type { RunOptions, CliRunOptions, Agent, CliAgent, Project } from '@shared/types'
+import type { RunOptions, CliRunOptions, Agent, CliAgent, Project, ScheduledTask } from '@shared/types'
 import type { IpcChannel, IpcArgs, IpcResult } from '@shared/ipcContract'
 
 /** El servidor de desarrollo, si lo hay: es el otro origen de confianza. */
@@ -65,7 +73,13 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   // ---------------- Config ----------------
   handle('config:get', () => getConfig())
   handle('config:save', (cfg: any) => saveConfig(cfg))
-  handle('config:settings', (patch: any) => updateSettings(patch))
+  handle('config:settings', (patch: any) => {
+    const cfg = updateSettings(patch)
+    // El menú de la bandeja va en el idioma de la interfaz.
+    if (patch && 'quickHotkey' in patch) registerQuickHotkey()
+    if (patch && ('language' in patch || 'quickHotkey' in patch)) refreshTray()
+    return cfg
+  })
 
   // ---------------- Proveedores ----------------
   handle('providers:defs', () => PROVIDERS)
@@ -160,16 +174,24 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   // ---------------- Ejecución ----------------
   ipcMain.handle('run:prompt', async (_e, opts: RunOptions, runId: string) => {
     const win = getWindow()
+    // Si la lanzó el prompt rápido, su ventanita lo ve llegar a la vez.
+    const tap = quickTap(opts?.conversationId)
     const send = (payload: any): void => {
       emit(win, 'run:delta', { runId, ...payload })
+      tap?.({ runId, ...payload })
     }
     const run = await runPrompt(opts, send, runId)
-    if (run.kind !== 'arena') notifyRun(run)
+    const seen = tap ? quickFinished(opts.conversationId, run) : false
+    if (run.kind !== 'arena' && !seen) notifyRun(run)
     return { ok: run.status !== 'error', data: run, error: run.error }
   })
   handle('run:abort', (runId: string) => abortRun(runId))
-  handle('run:approve', (runId: string, stepId: string, allow: boolean) =>
-    answerApproval(String(runId), String(stepId), allow === true)
+  // La misma respuesta vale para un agente por API y para un CLI que pregunta.
+  handle(
+    'run:approve',
+    (runId: string, stepId: string, allow: boolean, always?: boolean) =>
+      answerApproval(String(runId), String(stepId), allow === true) ||
+      answerCliApproval(String(runId), String(stepId), allow === true, always === true)
   )
 
   ipcMain.handle('cli:run', async (_e, opts: CliRunOptions, runId: string) => {
@@ -210,6 +232,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   })
   handle('projects:remove', (id: string) => removeFrom('projects', id))
   handle('projects:scan', (path: string) => scanProject(path))
+  // Sólo de proyectos dados de alta: no sirve para leer el package.json de cualquier carpeta.
+  handle('projects:scripts', (paths: string[]) => {
+    const known = new Set(getConfig().projects.map((p) => p.path))
+    return projectScripts(Array.isArray(paths) ? paths.filter((x) => typeof x === 'string' && known.has(x)) : [])
+  })
   handle('projects:context', (path: string, opts: any) => projectContext(path, opts ?? {}))
   handle('projects:files', (path: string, query?: string) => listProjectFiles(path, query ?? ''))
   handle('projects:openEditor', (path: string) => openInEditor(path))
@@ -287,7 +314,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     platform: process.platform,
     electron: process.versions.electron,
     node: process.versions.node,
-    providerCount: PROVIDERS.length
+    providerCount: PROVIDERS.length,
+    // El recorrido de bienvenida sale solo en la app instalada. Sin empaquetar
+    // (desarrollo, pruebas) taparía la ventana a quien la está conduciendo, y en
+    // la autoprueba de la CI saldría en las capturas.
+    tour: (app.isPackaged || process.env['ACC_TOUR'] === '1') && !process.env['ACC_SELFTEST']
   }))
   handle('app:openExternal', (url: string) => openExternal(url))
   handle('app:openDataDir', () => shell.openPath(paths.dir))
@@ -313,6 +344,52 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
    * los dibuja el sistema y no se enteran: hay que recalcular el alto de la
    * franja o dejan de cuadrar con la barra que pinta la aplicación.
    */
+  handle('app:busy', (b: Busy) => setBusy(b))
+
+  // ---------------- Tareas programadas ----------------
+  handle('schedules:list', () => listSchedules())
+  handle('schedules:save', (task: ScheduledTask) => saveSchedule(task))
+  handle('schedules:remove', (id: string) => removeSchedule(String(id)))
+  handle('schedules:runNow', (id: string) => runScheduleNow(String(id)))
+  handle('schedules:started', (runId: string, sessionId: string) => scheduleStarted(String(runId), String(sessionId)))
+  handle('schedules:finished', (runId: string, ok: boolean, error?: string) =>
+    scheduleFinished(String(runId), ok === true, typeof error === 'string' ? error : undefined)
+  )
+  handle('app:loginItem', () => loginItemStatus())
+  handle('app:setLoginItem', (enabled: boolean) => setLoginItem(enabled === true))
+
+  // ---------------- Versiones nuevas ----------------
+  handle('updates:get', () => lastUpdate())
+  handle('updates:check', async () => {
+    const u = await checkForUpdate()
+    emit(getWindow(), 'updates:status', u)
+    return u
+  })
+  handle('updates:skip', (version: string | null) => {
+    updateSettings({ skippedVersion: typeof version === 'string' && version ? version : undefined })
+    const u = lastUpdate()
+    if (u) emit(getWindow(), 'updates:status', u)
+    return u
+  })
+
+  // ---------------- Prompt rápido ----------------
+  handle('quick:submit', (req) => {
+    const prompt = String(req?.prompt ?? '').trim()
+    if (!prompt) throw new Error('Escribe algo')
+    if (!req?.providerId || !req?.model) throw new Error('Elige un modelo')
+    return submitQuick({
+      prompt,
+      providerId: String(req.providerId),
+      model: String(req.model),
+      sessionId: typeof req.sessionId === 'string' ? req.sessionId : undefined
+    })
+  })
+  handle('quick:bind', (requestId: string, sessionId: string) => bindQuick(String(requestId), String(sessionId)))
+  handle('quick:fail', (requestId: string, error: string) => failQuick(String(requestId), String(error)))
+  handle('quick:hide', () => hideQuick())
+  handle('quick:open', () => showQuick())
+  handle('quick:openConsole', (sessionId: string) => openQuickInConsole(String(sessionId)))
+  handle('quick:status', () => quickStatus())
   handle('app:chrome', (opts: { zoom?: number; background?: string; symbol?: string }) => {
     const win = getWindow()
     if (!win || win.isDestroyed()) return false

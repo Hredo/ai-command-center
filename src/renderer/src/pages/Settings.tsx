@@ -1,19 +1,149 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   Radar, KeyRound, Cpu, Cloud, Check, X, ExternalLink, FolderOpen,
-  ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare
+  ShieldCheck, Terminal, Pencil, RefreshCw, HardDrive, Info, Bell, TerminalSquare, AppWindow, Zap, LogIn
 } from 'lucide-react'
+import { ModelPicker } from '../components/ModelPicker'
+import { formatAccelerator, toAccelerator } from '../lib/hotkeys'
+import { UpdatesPanel } from '../components/UpdatesPanel'
 import { OllamaPanel } from '../components/OllamaPanel'
 import { QuotasSettings } from '../components/QuotasSettings'
+import { AccountsPanel } from '../components/AccountsPanel'
+import { startOpenRouterLogin } from '../lib/accounts'
 import { lastNavTarget, onNavigate } from '../lib/nav'
 import { Panel, PanelHeader, Button, Badge, Input, Field, Select, Toggle, cx, Dot, Tabs, Empty } from '../components/ui'
 import { AppearanceTab, EditorTab, SecurityTab } from './Appearance'
 import { useStore } from '../lib/store'
 import { relTime, bytes } from '../lib/format'
-import type { DetectionResult, NotifyHookInfo, ProviderStatus } from '@shared/types'
+import type { DetectionResult, LoginItemStatus, NotifyHookInfo, ProviderStatus, QuickHotkeyStatus, Settings as AppSettings } from '@shared/types'
 
 import { useT } from '../lib/i18n'
 import { IS_LINUX, IS_MAC, perOs } from '../lib/platform'
+
+/**
+ * Abrir la app al iniciar sesión, escondida en la bandeja: lo que necesitan
+ * las tareas programadas de la noche. Sólo en la app instalada.
+ */
+function LoginItemToggle(): React.JSX.Element {
+  const t = useT()
+  const [status, setStatus] = useState<LoginItemStatus | null>(null)
+  useEffect(() => {
+    void window.api.app.loginItem().then((r) => r.ok && r.data && setStatus(r.data))
+  }, [])
+  return (
+    <div className="space-y-1.5 pt-1" data-login-item>
+      <div className={cx(!status?.supported && 'opacity-50 pointer-events-none')}>
+      <Toggle
+        checked={Boolean(status?.enabled)}
+        onChange={(v) => void window.api.app.setLoginItem(v).then((r) => r.ok && r.data && setStatus(r.data))}
+        label={t('Abrir la app al iniciar sesión, en la bandeja')}
+      />
+      </div>
+      <p className="text-[11.5px] text-dim leading-relaxed">
+        {status && !status.supported
+          ? t('Sólo en la app instalada: en desarrollo no se registra nada.')
+          : IS_LINUX
+            ? t('Para que las tareas programadas corran aunque no la abras. En Linux se hace con un fichero en ~/.config/autostart que se borra al quitarlo.')
+            : IS_MAC
+              ? t('Para que las tareas programadas corran aunque no la abras. En macOS 13 o posterior el sistema no deja arrancarla escondida: se abre con su ventana y puedes cerrarla.')
+              : t('Para que las tareas programadas corran aunque no la abras.')}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * El prompt rápido: su atajo global (se graba pulsándolo), si se pudo
+ * registrar, y el modelo que usa.
+ */
+function QuickPromptPanel({ s, setSetting }: { s: AppSettings; setSetting: (patch: Partial<AppSettings>) => Promise<void> }): React.JSX.Element {
+  const t = useT()
+  const [status, setStatus] = useState<QuickHotkeyStatus | null>(null)
+  const [recording, setRecording] = useState(false)
+
+  useEffect(() => {
+    void window.api.quick.status().then((r) => r.ok && r.data && setStatus(r.data))
+  }, [s.quickHotkey])
+
+  // Grabando: la siguiente combinación que pulses es el atajo. Esc cancela.
+  useEffect(() => {
+    if (!recording) return
+    const onKey = (e: KeyboardEvent): void => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setRecording(false)
+        return
+      }
+      const acc = toAccelerator(e, IS_MAC)
+      if (!acc) return
+      setRecording(false)
+      void setSetting({ quickHotkey: acc })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [recording, setSetting])
+
+  const shown = status?.accelerator ? formatAccelerator(status.accelerator, IS_MAC, t) : ''
+  const pick = s.quickModel ?? null
+
+  return (
+    <Panel>
+      <PanelHeader
+        title={t('Prompt rápido')}
+        icon={<Zap size={14} />}
+        subtitle={t('Una ventanita encima de cualquier app para preguntar a un modelo')}
+      />
+      <div className="p-4 space-y-3" data-quick-settings>
+        <Field label={t('Atajo global')} hint={t('Funciona aunque la app esté en la bandeja o detrás de otras ventanas.')}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={cx(
+                'num h-8 px-3 rounded-lg border flex items-center text-[12.5px] min-w-[140px]',
+                recording ? 'border-accent text-accent' : 'border-line bg-raised'
+              )}
+              data-quick-hotkey
+            >
+              {recording ? t('Pulsa la combinación…') : shown || t('Apagado')}
+            </span>
+            <Button variant="ghost" onClick={() => setRecording((r) => !r)} data-quick-record>
+              {recording ? t('Cancelar') : t('Cambiar')}
+            </Button>
+            {status && status.accelerator !== status.defaultAccelerator ? (
+              <Button variant="ghost" onClick={() => void setSetting({ quickHotkey: undefined })}>
+                {t('Por defecto ({keys})', { keys: formatAccelerator(status.defaultAccelerator, IS_MAC, t) })}
+              </Button>
+            ) : null}
+            {status?.accelerator ? (
+              <Button variant="ghost" onClick={() => void setSetting({ quickHotkey: '' })} data-quick-off>
+                {t('Apagar')}
+              </Button>
+            ) : null}
+          </div>
+        </Field>
+        {status?.accelerator ? (
+          <p className={cx('text-[11.5px] leading-relaxed', status.registered ? 'text-dim' : 'text-warn')} data-quick-status>
+            {status.registered
+              ? t('Pulsa {keys} desde cualquier app. También está en el menú del icono de la bandeja y en la paleta (Ctrl+K).', { keys: shown })
+              : status.error === 'invalid'
+                ? t('Ese atajo no vale. Prueba con Ctrl o Alt y una letra o el espacio.')
+                : t('No se pudo registrar: otra app ya usa {keys}. Elige otro.', { keys: shown })}
+          </p>
+        ) : null}
+        {IS_LINUX ? (
+          <p className="text-[11.5px] text-dim leading-relaxed" data-quick-linux>
+            {t('En Linux con Wayland los atajos globales sólo llegan desde apps de X11; en X11 funcionan siempre.')}{' '}
+            {status?.command ? t('Lo que funciona en cualquier escritorio: asigna en sus atajos de teclado la orden') : null}{' '}
+            {status?.command ? <span className="num text-muted select-all">{status.command}</span> : null}
+          </p>
+        ) : null}
+        <Field label={t('Modelo')} hint={t('El de la última pregunta; también se cambia en la propia ventanita.')}>
+          <ModelPicker value={pick} onChange={(p) => void setSetting({ quickModel: p })} />
+        </Field>
+      </div>
+    </Panel>
+  )
+}
 
 /**
  * El hook de avisos de Claude Code: opcional y apagado de fábrica, como el
@@ -111,6 +241,19 @@ function ProviderRow({
     }
   }
 
+  const [connecting, setConnecting] = useState(false)
+  const connect = async (): Promise<void> => {
+    setConnecting(true)
+    const r = await startOpenRouterLogin()
+    setConnecting(false)
+    if (r.ok) {
+      toast('ok', t('OpenRouter conectado: la clave ha quedado guardada'))
+      onChanged()
+    } else if (r.error && r.error !== 'cancelado') {
+      toast('error', t('No se pudo conectar con OpenRouter:') + ' ' + r.error)
+    }
+  }
+
   const saveUrl = async (): Promise<void> => {
     await window.api.providers.setBaseUrl(p.id, baseUrl.trim())
     setEditingUrl(false)
@@ -161,8 +304,19 @@ function ProviderRow({
           <Button size="icon" variant="ghost" title={t('Cambiar endpoint')} onClick={() => setEditingUrl((v) => !v)}>
             <Pencil size={13} />
           </Button>
+          {p.id === 'openrouter' ? (
+            <Button
+              size="sm"
+              variant={p.keySource === 'none' ? 'primary' : 'ghost'}
+              loading={connecting}
+              title={t('Autorizas en openrouter.ai y te crea una clave para esta app, que se guarda cifrada aquí.')}
+              onClick={() => void connect()}
+            >
+              <LogIn size={12} /> {t('Iniciar sesión')}
+            </Button>
+          ) : null}
           {!p.local ? (
-            <Button size="sm" variant={p.keySource === 'none' ? 'primary' : 'outline'} onClick={() => setEditing((v) => !v)}>
+            <Button size="sm" variant={p.keySource === 'none' && p.id !== 'openrouter' ? 'primary' : 'outline'} onClick={() => setEditing((v) => !v)}>
               <KeyRound size={12} /> {p.keySource === 'none' ? t('Añadir key') : 'Cambiar'}
             </Button>
           ) : null}
@@ -221,7 +375,7 @@ function ProviderRow({
   )
 }
 
-const TABS = ['providers', 'local', 'quotas', 'detection', 'appearance', 'editor', 'security', 'prefs'] as const
+const TABS = ['providers', 'accounts', 'local', 'quotas', 'detection', 'appearance', 'editor', 'security', 'prefs'] as const
 type SettingsTab = (typeof TABS)[number]
 const isTab = (v: unknown): v is SettingsTab => TABS.includes(v as SettingsTab)
 
@@ -310,7 +464,7 @@ export default function Settings(): React.JSX.Element {
   return (
     <div className="h-full overflow-y-auto">
       <div className="px-6 py-5 max-w-[1080px] mx-auto space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-x-4 gap-y-3 flex-wrap">
           <div>
             <h1 className="text-[19px] font-semibold tracking-tight">{t('settings.title')}</h1>
             <p className="text-[12.5px] text-dim mt-0.5">{t('settings.subtitle')}</p>
@@ -321,6 +475,7 @@ export default function Settings(): React.JSX.Element {
               onChange={setTab}
               items={[
                 { id: 'providers', label: t('settings.tab.providers'), count: status.length },
+                { id: 'accounts', label: t('Cuentas') },
                 { id: 'local', label: t('settings.tab.local') },
                 { id: 'quotas', label: t('Cupos') },
                 { id: 'detection', label: t('settings.tab.detection') },
@@ -376,6 +531,9 @@ export default function Settings(): React.JSX.Element {
             </Panel>
           </>
         ) : null}
+
+        {/* ------------------------------------------------ Cuentas */}
+        {tab === 'accounts' ? <AccountsPanel onProviders={() => setTab('providers')} /> : null}
 
         {/* ------------------------------------------------ Local */}
         {tab === 'local' ? <OllamaPanel /> : null}
@@ -499,6 +657,8 @@ export default function Settings(): React.JSX.Element {
         {/* ------------------------------------------------ Preferencias */}
         {tab === 'prefs' && s ? (
           <div className="space-y-3">
+            <UpdatesPanel s={s} setSetting={setSetting} />
+
             <Panel>
               <PanelHeader
                 title={t('Notificaciones del sistema')}
@@ -520,6 +680,34 @@ export default function Settings(): React.JSX.Element {
                   {t('Se avisa de prompts y agentes al acabar, de comparativas completas, de descargas de modelos, y de comandos de terminal que hayan tardado más de doce segundos. Pulsar el aviso trae la ventana al frente.')}
                 </p>
                 <ClaudeAttentionToggle />
+              </div>
+            </Panel>
+
+            <QuickPromptPanel s={s} setSetting={setSetting} />
+
+            <Panel>
+              <PanelHeader
+                title={t('Al cerrar la ventana')}
+                icon={<AppWindow size={14} />}
+                subtitle={t('Qué pasa con lo que está en marcha')}
+              />
+              <div className="p-4 space-y-3" data-close-to-tray>
+                <Toggle
+                  checked={s.closeToTray !== false}
+                  onChange={(v) => void setSetting({ closeToTray: v })}
+                  label={t('Seguir en la bandeja del sistema')}
+                />
+                <p className="text-[11.5px] text-dim leading-relaxed">
+                  {s.closeToTray !== false
+                    ? t('La ventana se esconde y lo que está en marcha sigue: una conversación, un agente, una orden en la terminal. Vuelves desde el icono de la bandeja y sales desde su menú; si hay algo en marcha, te pregunta antes de cortarlo.')
+                    : t('Cerrar la ventana sale de la app. Si hay algo en marcha te pregunta antes, y puedes dejarla en la bandeja en ese momento.')}
+                </p>
+                {IS_LINUX ? (
+                  <p className="text-[11.5px] text-dim leading-relaxed">
+                    {t('Si tu escritorio no enseña iconos de bandeja, abrir la app otra vez desde el lanzador trae la ventana que ya estaba.')}
+                  </p>
+                ) : null}
+                <LoginItemToggle />
               </div>
             </Panel>
 

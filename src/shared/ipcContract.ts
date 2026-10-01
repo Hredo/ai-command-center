@@ -11,11 +11,11 @@
  * se ponen de acuerdo.
  */
 import type {
-  Agent, AppConfig, Attachment, Battery, BatteryRun, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
+  Agent, AppConfig, Attachment, Battery, BatteryRun, PromptTemplate, SearchQuery, SearchResult, PullsReport, PullCheck, ClaudeUsage, CliAgent, CliEvent, CliRunOptions, DetectedCli, DetectedServer,
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
-  ProjectInfo, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
+  ProjectInfo, ProjectScripts, UpdateInfo, AccountStatus, AccountsEvent, ScheduledTask, ScheduledTaskView, ScheduleRun, LoginItemStatus, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
   RunOptions, RunRecord, Settings, SkillsReport, StatsBucket, StoredSession, StreamDelta, TermEvent, TermInfo,
   UsageSnapshot, WorktreeInfo, WorktreeSetup
 } from './types'
@@ -61,6 +61,12 @@ export interface IpcContract {
   'batteries:saveRun': { args: [run: BatteryRun]; result: boolean }
   'batteries:removeRun': { args: [id: string]; result: boolean }
   /** La nota de un juez local (Ollama) con una rúbrica: su opinión. */
+  'search:query': { args: [q: SearchQuery]; result: SearchResult }
+  'sessions:export': { args: [ids: string[], format: 'md' | 'json', lang?: 'es' | 'en']; result: { path: string; count: number } | null }
+  'sessions:import': { args: []; result: { imported: { id: string; title: string }[]; skipped: { file: string; reason: string }[] } | null }
+  'prompts:save': { args: [prompt: PromptTemplate]; result: AppConfig }
+  'prompts:remove': { args: [id: string]; result: AppConfig }
+  'prompts:used': { args: [id: string]; result: boolean }
   'batteries:judge': {
     args: [model: string, input: { rubric: string; prompt: string; response: string }]
     result: { score: number; reason: string }
@@ -75,6 +81,32 @@ export interface IpcContract {
   'agents:save': { args: [a: Agent]; result: AppConfig }
   'agents:saveCli': { args: [a: CliAgent]; result: AppConfig }
   'agents:workspace': { args: [id?: string]; result: string }
+  'schedules:list': { args: []; result: ScheduledTaskView[] }
+  'schedules:save': { args: [task: ScheduledTask]; result: AppConfig }
+  'schedules:remove': { args: [id: string]; result: AppConfig }
+  'schedules:runNow': { args: [id: string]; result: string }
+  'schedules:started': { args: [runId: string, sessionId: string]; result: void }
+  'schedules:finished': { args: [runId: string, ok: boolean, error?: string]; result: void }
+  'app:loginItem': { args: []; result: LoginItemStatus }
+  'app:setLoginItem': { args: [enabled: boolean]; result: LoginItemStatus }
+  'accounts:status': { args: []; result: AccountStatus[] }
+  'accounts:githubLogin': { args: []; result: { ok: boolean; error?: string } }
+  'accounts:githubCancel': { args: []; result: boolean }
+  'accounts:githubGit': { args: []; result: boolean }
+  'accounts:githubSetupGit': { args: []; result: { ok: boolean; detail: string } }
+  'accounts:openrouterLogin': { args: []; result: { ok: boolean; error?: string } }
+  'accounts:openrouterCancel': { args: []; result: boolean }
+  'updates:get': { args: []; result: UpdateInfo | null }
+  'updates:check': { args: []; result: UpdateInfo }
+  'updates:skip': { args: [version: string | null]; result: UpdateInfo | null }
+  'quick:submit': { args: [req: Omit<QuickRun, 'requestId'>]; result: string }
+  'quick:bind': { args: [requestId: string, sessionId: string]; result: void }
+  'quick:fail': { args: [requestId: string, error: string]; result: void }
+  'quick:hide': { args: []; result: void }
+  'quick:open': { args: []; result: void }
+  'quick:openConsole': { args: [sessionId: string]; result: void }
+  'quick:status': { args: []; result: QuickHotkeyStatus }
+  'app:busy': { args: [busy: { chats: number; arena: number; terms: number }]; result: void }
   'app:chrome': { args: [arg1: { zoom: number; background?: string; symbol?: string; }]; result: boolean }
   'app:info': { args: []; result: any }
   /** El error de abrirla, o vacío si se abrió. */
@@ -83,6 +115,9 @@ export interface IpcContract {
   'app:security': { args: []; result: SecurityReport }
   'attach:describe': { args: [path: string]; result: Attachment }
   'attach:pick': { args: []; result: Attachment[] }
+  'attach:paste': { args: [data: Uint8Array, mime: string]; result: Attachment }
+  'attach:thumb': { args: [path: string]; result: string | null }
+  'attach:open': { args: [path: string]; result: void }
   'checkpoints:diff': { args: [root: string, id: string, untilId?: string]; result: { diff: string; until: 'next' | 'now'; truncated: boolean } | null }
   'checkpoints:preview': { args: [root: string, id: string]; result: { restore: string[]; remove: string[]; headMoved: boolean } | null }
   'checkpoints:undo': { args: [root: string, id: string]; result: { restore: string[]; remove: string[]; headMoved: boolean; safetyId?: string } }
@@ -102,6 +137,10 @@ export interface IpcContract {
   'external:refresh': { args: []; result: { imported: number } }
   'files:create': { args: [root: string, rel: string, dir: boolean]; result: DirEntry | null }
   'files:list': { args: [root: string, rel?: string]; result: DirEntry[] }
+  'files:search': {
+    args: [root: string, query: string]
+    result: { hits: { rel: string; name: string; dir: boolean; marks: number[] }[]; total: number; capped: boolean }
+  }
   'files:read': { args: [root: string, rel: string]; result: FileContent }
   'files:reveal': { args: [root: string, rel: string]; result: boolean }
   'files:trash': { args: [root: string, rel: string]; result: boolean }
@@ -109,6 +148,24 @@ export interface IpcContract {
   'git:changes': { args: [path: string]; result: FileChange[] }
   'git:checkout': { args: [path: string, branch: string, create?: boolean]; result: { ok: boolean; detail: string; info?: GitInfo } }
   'git:commit': { args: [path: string, message: string, all?: boolean]; result: GitCmd }
+  'git:review': {
+    args: [path: string, scope: 'commit' | 'branch', base: string | undefined, pick: { providerId: string; model: string }, lang?: 'es' | 'en']
+    result: {
+      diff: string
+      truncated: boolean
+      summary: string
+      comments: { file: string; line?: number; severity: 'error' | 'warning' | 'info'; comment: string }[]
+      run: RunRecord
+    }
+  }
+  'pulls:report': { args: [path: string]; result: PullsReport }
+  'pulls:checks': { args: [path: string, num: number]; result: PullCheck[] }
+  'pulls:create': { args: [path: string, input: { title: string; body: string; base: string; draft?: boolean }]; result: { url: string; pushed: boolean } }
+  'pulls:describe': {
+    args: [path: string, base: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en']
+    result: { title: string; body: string; run: RunRecord }
+  }
+  'git:suggestCommit': { args: [path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en']; result: { message: string; run: RunRecord } }
   'git:diff': { args: [path: string, file?: string, staged?: boolean]; result: string }
   'git:graph': { args: [path: string, limit?: number, all?: boolean]; result: GitGraph }
   'git:info': { args: [path: string]; result: GitInfo }
@@ -164,6 +221,7 @@ export interface IpcContract {
   'projects:remove': { args: [id: string]; result: AppConfig }
   'projects:save': { args: [p: Project]; result: AppConfig }
   'projects:scan': { args: [path: string]; result: ProjectInfo }
+  'projects:scripts': { args: [paths: string[]]; result: ProjectScripts }
   'providers:defs': { args: []; result: ProviderDef[] }
   'providers:keyPreview': { args: [id: string]; result: string }
   'providers:keyStatus': { args: []; result: Record<string, string> }
@@ -183,7 +241,7 @@ export interface IpcContract {
   'relay:build': { args: [src: RelaySource]; result: RelayPackage }
   'relay:prompt': { args: [pkg: RelayPackage, opts?: { includeDiff?: boolean; note?: string }]; result: string }
   'run:abort': { args: [runId: string]; result: boolean }
-  'run:approve': { args: [runId: string, stepId: string, allow: boolean]; result: boolean }
+  'run:approve': { args: [runId: string, stepId: string, allow: boolean, always?: boolean]; result: boolean }
   'run:prompt': { args: [opts: RunOptions, runId: string]; result: RunRecord }
   'runs:arena': { args: []; result: { arenaId: string; createdAt: number; prompt: string; runs: RunRecord[] }[] }
   'runs:buckets': { args: [field: string, days?: number]; result: StatsBucket[] }
@@ -267,6 +325,20 @@ export interface IpcEvents {
   'detect:localChanged': DetectedServer[]
   /** Los avisos de Claude Code en una terminal (su hook Notification). */
   'attention:changed': TerminalAttention[]
+  /** Le toca a una tarea programada: la ventana la lanza como una del tablero. */
+  'schedules:run': ScheduleRun
+  /** Lo último que se sabe de las versiones publicadas (al mirar, solo o a mano). */
+  'updates:status': UpdateInfo
+  /** Un inicio de sesión lanzado desde la app: el código de gh, la dirección, el final. */
+  'accounts:event': AccountsEvent
+  /** Prompt rápido: a la ventana principal, que lo lanza en la Consola. */
+  'quick:run': QuickRun
+  /** Prompt rápido: abrir en la Consola la conversación que salió de él. */
+  'quick:focus': { sessionId: string }
+  /** A la ventanita del prompt rápido: lo que va contestando. */
+  'quick:event': QuickEvent
+  /** A la ventanita: se acaba de enseñar (para poner el cursor en el texto). */
+  'quick:shown': Record<string, never>
 }
 
 export type IpcEvent = keyof IpcEvents

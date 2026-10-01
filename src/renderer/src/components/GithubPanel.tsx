@@ -15,6 +15,7 @@ import { relTime } from '../lib/format'
 import type { GhRepo, GhStatus } from '@shared/types'
 
 import { useT } from '../lib/i18n'
+import { startGithubLogin, useAccounts } from '../lib/accounts'
 export function GithubPanel({
   onToast,
   onOpenTerminal,
@@ -49,6 +50,12 @@ export function GithubPanel({
   useEffect(() => {
     void check()
   }, [check])
+
+  // Una sesión que se abre o se cierra (aquí o en una terminal) se refleja sola.
+  const { signedInTick } = useAccounts()
+  useEffect(() => {
+    if (signedInTick) void check(true)
+  }, [signedInTick, check])
 
   useEffect(() => {
     if (status?.authed) void load()
@@ -110,10 +117,8 @@ export function GithubPanel({
             <Button
               size="sm"
               variant="primary"
-              onClick={async () => {
-                const cmd = await window.api.github.loginCommand()
-                onOpenTerminal?.(cmd.data ?? 'gh auth login --web')
-              }}
+              data-github-signin
+              onClick={() => void startGithubLogin()}
             >
               <LogIn size={12} /> {t('Iniciar sesión')}
             </Button>
@@ -181,7 +186,7 @@ export function GithubPanel({
               if (e.key === 'Enter') void load()
             }}
             placeholder={t('buscar entre tus repositorios…')}
-            className="w-full bg-void border border-line rounded-md pl-7 pr-2 py-1.5 text-[12.5px] outline-none focus:border-[#2c3346]"
+            className="w-full bg-void border border-line rounded-md pl-7 pr-2 py-1.5 text-[12.5px] outline-none focus:border-dim/60"
           />
         </div>
         <Button size="sm" onClick={() => void load()} disabled={loading}>
@@ -195,7 +200,7 @@ export function GithubPanel({
           {loading ? t('Pidiendo la lista…') : t('No hay repositorios que mostrar.')}
         </div>
       ) : (
-        <div className="border border-line rounded-lg divide-y divide-[#151a26] max-h-[440px] overflow-y-auto">
+        <div className="border border-line rounded-lg divide-y divide-line-soft max-h-[440px] overflow-y-auto">
           {repos.map((r) => (
             <div key={r.nameWithOwner} className="px-3 py-2 flex items-start gap-2.5 hover:bg-raised transition-colors">
               <div className="min-w-0 flex-1">

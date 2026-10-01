@@ -15,12 +15,15 @@ import { getStoredKey, resolveKey } from '../secrets'
 import { getConfig } from '../config'
 import { ghApi } from '../github'
 import { allRuns } from '../runs'
+import { openRouterOrigin } from '../testSeams'
 import type { Quota } from '@shared/types'
 
 interface Source {
   key: string
   /** Cada cuánto se vuelve a preguntar, en ms. */
   ttl: number
+  /** Lo mismo con la ventana en uso: lo que gastes fuera se ve casi al momento. */
+  fast: number
   enabled: () => boolean
   fetch: () => Promise<Quota[]>
   /** Nombre para el error, si falla. */
@@ -43,9 +46,39 @@ export function onRemoteChange(cb: () => void): void {
   changed = cb
 }
 
+/** Si alguien está mirando la app: entonces se pregunta más a menudo. */
+let attentive: () => boolean = () => false
+export function setRemoteAttention(fn: () => boolean): void {
+  attentive = fn
+}
+
+/** Qué fuente dice el saldo de cada proveedor por API. */
+const SOURCE_OF: Record<string, string> = {
+  openrouter: 'openrouter',
+  deepseek: 'deepseek',
+  moonshot: 'moonshot',
+  anthropic: 'anthropic-admin',
+  openai: 'openai-admin'
+}
+
+/**
+ * Se acaba de gastar con este proveedor desde la app: su saldo se vuelve a
+ * preguntar en el próximo repaso, sin esperar a su intervalo. Como mucho una
+ * vez cada pocos segundos, por si llegan varias ejecuciones seguidas.
+ */
+export function remoteSpent(providerId: string): boolean {
+  const st = state.get(SOURCE_OF[providerId] ?? '')
+  if (!st || st.running || Date.now() - st.at < 4000) return false
+  st.at = 0
+  return true
+}
+
 /* ------------------------------------------------------------------ *
  * Utilidades                                                         *
  * ------------------------------------------------------------------ */
+
+/** Cada cuánto se pregunta un saldo: se dice en su ficha. */
+const CADENCE = 'Se pregunta cada minuto con la app a la vista (cada 10–15 con la ventana escondida) y al terminar cada ejecución con este proveedor: lo que gastes fuera se ve enseguida.'
 
 const bearer = (key: string): RequestInit => ({ headers: { Authorization: `Bearer ${key}` } })
 const num = (v: unknown): number | undefined => {
@@ -88,7 +121,7 @@ async function openrouter(): Promise<Quota[]> {
   const { key } = resolveKey('openrouter')
   const now = Date.now()
   const out: Quota[] = []
-  const k = (await fetchJson('https://openrouter.ai/api/v1/key', bearer(key)))?.data ?? {}
+  const k = (await fetchJson(`${openRouterOrigin()}/api/v1/key`, bearer(key)))?.data ?? {}
 
   // El tope de la propia clave, si le has puesto uno.
   const limit = num(k.limit)
@@ -114,7 +147,7 @@ async function openrouter(): Promise<Quota[]> {
       usedPct: pct(used, limit),
       resetsAt: reset === 'daily' ? nextUtcMidnight(now) : reset === 'weekly' ? nextUtcMonday(now) : reset === 'monthly' ? nextUtcMonth(now) : undefined,
       origin: 'official',
-      how: 'Lo dice OpenRouter de tu clave (/api/v1/key).',
+      how: ['Lo dice OpenRouter de tu clave (/api/v1/key).', CADENCE].join('\n'),
       updatedAt: now
     })
   }
@@ -122,7 +155,7 @@ async function openrouter(): Promise<Quota[]> {
   // Créditos de la cuenta. Con algunas claves no se puede leer: no pasa nada.
   let totalCredits: number | undefined
   try {
-    const c = (await fetchJson('https://openrouter.ai/api/v1/credits', bearer(key)))?.data ?? {}
+    const c = (await fetchJson(`${openRouterOrigin()}/api/v1/credits`, bearer(key)))?.data ?? {}
     totalCredits = num(c.total_credits)
     const totalUsage = num(c.total_usage)
     if (totalCredits != null && totalUsage != null) {
@@ -138,7 +171,7 @@ async function openrouter(): Promise<Quota[]> {
         remaining: Math.max(0, totalCredits - totalUsage),
         usedPct: pct(totalUsage, totalCredits),
         origin: 'official',
-        how: 'Créditos comprados y gastados según OpenRouter (/api/v1/credits).',
+        how: ['Créditos comprados y gastados según OpenRouter (/api/v1/credits).', CADENCE].join('\n'),
         updatedAt: now
       })
     }
@@ -200,7 +233,7 @@ async function deepseek(): Promise<Quota[]> {
     unit: info.currency === 'CNY' ? 'cny' : 'usd',
     remaining: balance,
     origin: 'official',
-    how: 'Saldo de la cuenta según DeepSeek (/user/balance).',
+    how: ['Saldo de la cuenta según DeepSeek (/user/balance).', CADENCE].join('\n'),
     updatedAt: Date.now(),
     error: j?.is_available === false ? 'Saldo insuficiente' : undefined
   }]
@@ -224,7 +257,7 @@ async function moonshot(): Promise<Quota[]> {
     unit: cn ? 'cny' : 'usd',
     remaining: available,
     origin: 'official',
-    how: 'Saldo disponible según Moonshot (/v1/users/me/balance).',
+    how: ['Saldo disponible según Moonshot (/v1/users/me/balance).', CADENCE].join('\n'),
     updatedAt: Date.now(),
     error: available <= 0 ? 'Sin saldo' : undefined
   }]
@@ -381,13 +414,16 @@ async function openaiCost(): Promise<Quota[]> {
 const balancesOn = (): boolean => getConfig().settings.quotas?.balances !== false
 const hasKey = (id: string): boolean => Boolean(resolveKey(id).key)
 
+/** Con la ventana en uso, los saldos se preguntan cada minuto (el repaso de los cupos es de un minuto). */
+const FAST = MIN - 5000
+
 const SOURCES: Source[] = [
-  { key: 'openrouter', provider: 'OpenRouter', ttl: 10 * MIN, enabled: () => balancesOn() && hasKey('openrouter'), fetch: openrouter },
-  { key: 'deepseek', provider: 'DeepSeek', ttl: 15 * MIN, enabled: () => balancesOn() && hasKey('deepseek'), fetch: deepseek },
-  { key: 'moonshot', provider: 'Moonshot (Kimi)', ttl: 15 * MIN, enabled: () => balancesOn() && hasKey('moonshot'), fetch: moonshot },
-  { key: 'copilot', provider: 'GitHub Copilot', ttl: 5 * MIN, enabled: () => getConfig().settings.quotas?.copilot === true, fetch: copilot },
-  { key: 'anthropic-admin', provider: 'Anthropic (API)', ttl: 30 * MIN, enabled: () => Boolean(adminKey('anthropic')), fetch: anthropicCost },
-  { key: 'openai-admin', provider: 'OpenAI (API)', ttl: 30 * MIN, enabled: () => Boolean(adminKey('openai')), fetch: openaiCost }
+  { key: 'openrouter', provider: 'OpenRouter', ttl: 10 * MIN, fast: FAST, enabled: () => balancesOn() && hasKey('openrouter'), fetch: openrouter },
+  { key: 'deepseek', provider: 'DeepSeek', ttl: 15 * MIN, fast: FAST, enabled: () => balancesOn() && hasKey('deepseek'), fetch: deepseek },
+  { key: 'moonshot', provider: 'Moonshot (Kimi)', ttl: 15 * MIN, fast: FAST, enabled: () => balancesOn() && hasKey('moonshot'), fetch: moonshot },
+  { key: 'copilot', provider: 'GitHub Copilot', ttl: 5 * MIN, fast: 2 * MIN - 5000, enabled: () => getConfig().settings.quotas?.copilot === true, fetch: copilot },
+  { key: 'anthropic-admin', provider: 'Anthropic (API)', ttl: 30 * MIN, fast: 5 * MIN, enabled: () => Boolean(adminKey('anthropic')), fetch: anthropicCost },
+  { key: 'openai-admin', provider: 'OpenAI (API)', ttl: 30 * MIN, fast: 5 * MIN, enabled: () => Boolean(adminKey('openai')), fetch: openaiCost }
 ]
 
 function refresh(src: Source): void {
@@ -421,7 +457,8 @@ export function remoteQuotas(force = false): Quota[] {
       continue
     }
     const st = state.get(src.key)
-    if (!st || force || now - st.at > src.ttl) refresh(src)
+    const ttl = attentive() ? Math.min(src.ttl, src.fast) : src.ttl
+    if (!st || force || now - st.at > ttl) refresh(src)
     if (!st) continue
     out.push(...st.quotas)
     if (st.error && !st.quotas.length) {

@@ -10,6 +10,8 @@ import { cost, tokens, ms, tps, dateTime, shortModel, colorFor } from '../lib/fo
 import type { RunRecord } from '@shared/types'
 import { Pane } from '../components/Resizable'
 import { RelayModal, relaySourceOf } from '../components/RelayModal'
+import { openSearch } from '../components/SearchModal'
+import { lastNavTarget, onNavigate, type NavTarget } from '../lib/nav'
 
 import { useT } from '../lib/i18n'
 function Detail({ run, onClose, onDelete }: { run: RunRecord | null; onClose: () => void; onDelete: (id: string) => void }): React.JSX.Element | null {
@@ -111,7 +113,7 @@ function Detail({ run, onClose, onDelete }: { run: RunRecord | null; onClose: ()
           <div className="px-5 py-4">
             <div className="text-[11px] uppercase tracking-wider text-dim mb-2">{t('Respuesta')}</div>
             {run.error ? (
-              <div className="bg-[#1a1015] border border-[#4a2029] rounded-lg px-3 py-2.5 flex items-start gap-2">
+              <div className="bg-bad/10 border border-bad/30 rounded-lg px-3 py-2.5 flex items-start gap-2">
                 <AlertTriangle size={14} className="text-bad shrink-0 mt-0.5" />
                 <span className="text-[12px] text-muted break-words">{run.error}</span>
               </div>
@@ -158,6 +160,18 @@ export default function History(): React.JSX.Element {
   const [selected, setSelected] = useState<RunRecord | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const version = useRunsVersion()
+
+  // Desde la búsqueda: abrir una ejecución concreta.
+  useEffect(() => {
+    const show = (target: NavTarget | null): void => {
+      if (target?.page !== 'history' || !target.runId) return
+      void window.api.runs.compare([target.runId]).then((r) => {
+        if (r.ok && r.data?.[0]) setSelected(r.data[0])
+      })
+    }
+    show(lastNavTarget())
+    return onNavigate(show)
+  }, [])
 
   const load = useCallback(async () => {
     const r = await window.api.runs.query({
@@ -231,13 +245,20 @@ export default function History(): React.JSX.Element {
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('Buscar en prompts y respuestas…')}
               className="pl-8"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && search.trim()) openSearch(search)
+              }}
             />
           </div>
+          <Button variant="ghost" onClick={() => openSearch(search)} title={t('Buscar también en las conversaciones, con frases exactas y filtros (Ctrl+Mayús+F)')}>
+            <Search size={13} /> {t('En todo')}
+          </Button>
           <Select value={kind} onChange={(e) => setKind(e.target.value)} className="w-[140px]">
             <option value="">{t('Todo tipo')}</option>
             <option value="chat">{t('Consola')}</option>
             <option value="arena">Arena</option>
             <option value="cli">{t('Agente CLI')}</option>
+            <option value="git">Git</option>
           </Select>
           <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-[130px]">
             <option value="">{t('Todo estado')}</option>
@@ -305,7 +326,7 @@ export default function History(): React.JSX.Element {
                     <tr
                       key={r.id}
                       onClick={() => setSelected(r)}
-                      className="border-b border-line-soft hover:bg-[#12151f] cursor-pointer"
+                      className="border-b border-line-soft hover:bg-raised/60 cursor-pointer"
                     >
                       <td className="pl-4 py-2 num text-[11.5px] text-dim whitespace-nowrap">
                         {dateTime(r.createdAt)}
@@ -322,7 +343,7 @@ export default function History(): React.JSX.Element {
                       </td>
                       <td className="py-2">
                         <Badge tone={r.kind === 'arena' ? 'violet' : r.kind === 'cli' ? 'warn' : 'neutral'}>
-                          {r.kind === 'chat' ? 'consola' : r.kind === 'arena' ? 'arena' : 'cli'}
+                          {r.kind === 'chat' ? 'consola' : r.kind === 'arena' ? 'arena' : r.kind === 'git' ? 'git' : 'cli'}
                         </Badge>
                       </td>
                       <td className="num text-right text-[11.5px] text-muted whitespace-nowrap">

@@ -25,6 +25,7 @@ import { LiveMetrics } from '../components/Stats'
 import { AgentActivity } from '../components/AgentActivity'
 import { DiffReview } from '../components/DiffReview'
 import { BatteryPanel } from '../components/BatteryPanel'
+import { PromptTextarea, SavePromptButton } from '../components/PromptLibrary'
 import { samePath } from '../components/WorktreeBox'
 import { useStore } from '../lib/store'
 import { cost, tokens, ms, tps, shortModel, colorFor, relTime } from '../lib/format'
@@ -316,17 +317,17 @@ export default function Arena(): React.JSX.Element {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="h-12 px-5 border-b border-line flex items-center justify-between gap-3 shrink-0 bg-void">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Swords size={15} className="text-violet" />
-          <span className="font-medium">Arena</span>
-          <span className="text-[12px] text-dim truncate">
+      <div className="min-h-12 px-5 py-1.5 border-b border-line flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap shrink-0 bg-void">
+        <div className="flex items-center gap-2.5 shrink-0 max-w-full">
+          <Swords size={15} className="text-violet shrink-0" />
+          <span className="font-medium shrink-0">Arena</span>
+          <span className="text-[12px] text-dim truncate @max-[64rem]:hidden">
             {codeMode
               ? t('la misma tarea, cada uno en su worktree: compara y fusiona el mejor')
               : t('mismo prompt, modelos y agentes, decisiones con datos')}
           </span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap max-w-full">
           <Button
             size="sm"
             variant="ghost"
@@ -432,9 +433,11 @@ export default function Arena(): React.JSX.Element {
 
       {/* ------------------------------------------------ Prompt */}
       <div className="px-5 py-3.5 border-b border-line shrink-0 bg-void">
-        <Textarea
+        <PromptTextarea
           value={state.prompt}
-          onChange={(e) => setArena({ prompt: e.target.value })}
+          onValue={(v) => setArena({ prompt: v })}
+          placement="below"
+          context={{ project: state.project?.name }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
               e.preventDefault()
@@ -450,6 +453,9 @@ export default function Arena(): React.JSX.Element {
           className="text-[13px] leading-relaxed"
         />
         <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <span className="text-[11px] mr-1">
+            <SavePromptButton text={state.prompt} />
+          </span>
           <FolderGit2 size={13} className={codeMode ? 'text-accent' : 'text-dim'} />
           <div className="w-[230px] shrink-0">
             <Select
@@ -688,7 +694,7 @@ export default function Arena(): React.JSX.Element {
                   onApprove={c.runId && c.mode === 'api' ? (stepId, allow) => approveStep(c.runId!, stepId, allow) : undefined}
                 />
                 {c.error ? (
-                  <div className="bg-[#1a1015] border border-[#4a2029] rounded-lg px-3 py-2.5 flex items-start gap-2">
+                  <div className="bg-bad/10 border border-bad/30 rounded-lg px-3 py-2.5 flex items-start gap-2">
                     <AlertTriangle size={14} className="text-bad shrink-0 mt-0.5" />
                     <span className="text-[12px] text-muted break-words whitespace-pre-wrap">{c.error}</span>
                   </div>

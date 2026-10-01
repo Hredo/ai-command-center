@@ -22,6 +22,10 @@ import { usePrefs } from '../lib/prefs'
 import { useT, LANGUAGES } from '../lib/i18n'
 import { perOs } from '../lib/platform'
 import { THEMES, UI_FONTS, CODE_FONTS, ACCENTS } from '../lib/themes'
+import { SECTIONS } from '../lib/sections'
+import { resetNav, setNav, shortcutOf, useWorkspace } from '../lib/workspace'
+import type { PageId } from '../lib/nav'
+import { ChevronDown, ChevronUp, PanelLeft } from 'lucide-react'
 import { DEFAULT_PANES } from '@shared/defaults'
 import { useStore } from '../lib/store'
 import type { Appearance as AppearanceSettings, EditorPrefs } from '@shared/types'
@@ -168,6 +172,66 @@ function ThemeCard({
 /* ------------------------------------------------------------------ *
  * Apariencia                                                         *
  * ------------------------------------------------------------------ */
+
+/**
+ * El menú lateral a tu gusto: qué secciones se ven y en qué orden. Lo mismo se
+ * hace sobre el propio menú (arrastrando y con el botón derecho); aquí está
+ * todo junto.
+ */
+function NavSettings(): React.JSX.Element {
+  const t = useT()
+  const ws = useWorkspace()
+  const custom = ws.navOrder.some((id, i) => id !== SECTIONS[i]?.id) || ws.navHidden.length > 0
+  const move = (id: PageId, delta: number): void => {
+    const order = [...ws.navOrder]
+    const at = order.indexOf(id)
+    const to = at + delta
+    if (at < 0 || to < 0 || to >= order.length) return
+    ;[order[at], order[to]] = [order[to], order[at]]
+    setNav(order, ws.navHidden)
+  }
+  return (
+    <Panel>
+      <PanelHeader
+        title={t('Menú lateral')}
+        icon={<PanelLeft size={14} />}
+        subtitle={t('Qué secciones se ven y en qué orden. También se ordena arrastrando en el propio menú.')}
+        right={
+          <Button size="sm" variant="ghost" disabled={!custom} onClick={() => resetNav()} data-nav-reset>
+            <RotateCcw size={12} /> {t('Dejar el menú como venía')}
+          </Button>
+        }
+      />
+      <div className="p-2" data-nav-settings>
+        {ws.navOrder.map((id, i) => {
+          const sec = SECTIONS.find((x) => x.id === id)
+          if (!sec) return null
+          const Icon = sec.icon
+          const hidden = ws.navHidden.includes(id)
+          return (
+            <div key={id} className="flex items-center gap-2.5 px-2 h-9 rounded-lg hover:bg-hover" data-nav-row={id}>
+              <Icon size={14} className={hidden ? 'text-dim' : 'text-muted'} />
+              <span className={cx('text-[12.5px] flex-1', hidden && 'text-dim line-through')}>{t(`nav.${id}`)}</span>
+              <span className="num text-[10.5px] text-dim w-14 text-right">{hidden ? '' : (shortcutOf(id) ?? '')}</span>
+              <Button size="icon" variant="ghost" disabled={i === 0} onClick={() => move(id, -1)} title={t('Subir')}>
+                <ChevronUp size={13} />
+              </Button>
+              <Button size="icon" variant="ghost" disabled={i === ws.navOrder.length - 1} onClick={() => move(id, 1)} title={t('Bajar')}>
+                <ChevronDown size={13} />
+              </Button>
+              <div className={cx(id === 'settings' && 'opacity-40 pointer-events-none')} title={id === 'settings' ? t('Ajustes no se puede esconder') : undefined}>
+                <Toggle
+                  checked={!hidden}
+                  onChange={(v) => setNav(ws.navOrder, v ? ws.navHidden.filter((x) => x !== id) : [...ws.navHidden, id])}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Panel>
+  )
+}
 
 export function AppearanceTab(): React.JSX.Element {
   const t = useT()
@@ -328,6 +392,8 @@ export function AppearanceTab(): React.JSX.Element {
           <p className="text-[11.5px] text-dim leading-relaxed">{t('appearance.animations.hint')}</p>
         </div>
       </Panel>
+
+      <NavSettings />
 
       <Panel>
         <PanelHeader title={t('appearance.panes')} icon={<Ruler size={14} />} subtitle={t('appearance.panes.hint')} />

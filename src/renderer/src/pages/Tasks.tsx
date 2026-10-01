@@ -14,22 +14,23 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   SquareKanban, Plus, Square, Check, X, FileDiff, MessageSquareReply, FolderGit2, GitBranch, Swords,
-  RotateCcw, Archive, Cpu, Bot, AlertTriangle, Loader2, ExternalLink, TerminalSquare
+  RotateCcw, Archive, Cpu, Bot, AlertTriangle, Loader2, ExternalLink, TerminalSquare, CalendarClock
 } from 'lucide-react'
-import { Button, Badge, Select, Textarea, Modal, Field, Toggle, Empty, cx } from '../components/ui'
-import { ModelPicker, type Pick } from '../components/ModelPicker'
+import { Button, Badge, Select, Textarea, Empty, cx } from '../components/ui'
 import { DiffReview } from '../components/DiffReview'
+import { TaskForm, SchedulesStrip } from '../components/TaskForm'
+import { alwaysLabel } from '../components/AgentActivity'
 import { samePath } from '../components/WorktreeBox'
 import { useStore } from '../lib/store'
 import { useT } from '../lib/i18n'
 import { cost, ms, relTime, shortModel, colorFor } from '../lib/format'
 import { navigate } from '../lib/nav'
 import {
-  useSessions, useOpenChats, useArena, useTick, useRunsVersion, useTerminalAttention, newSession, patchSessionConfig, sendTurn,
+  useSessions, useOpenChats, useArena, useTick, useRunsVersion, useTerminalAttention, sendTurn,
   setTaskDone, stopSession, stopArena, approveStep, focusChat, archiveSession
 } from '../lib/engine'
 import { buildTasks, TASK_COLUMNS, type TaskCard, type TaskColumn } from '../lib/tasks'
-import { PERMISSION_MODES, API_PERMISSION_MODES, type AppConfig, type WorktreeInfo } from '@shared/types'
+import type { AppConfig, ScheduledTask, WorktreeInfo } from '@shared/types'
 import { withMod } from '../lib/platform'
 
 const COLUMN: Record<TaskColumn, { title: string; hint: string; tone: string }> = {
@@ -283,6 +284,16 @@ function Card({
               <Button size="sm" onClick={() => approveStep(card.pending!.runId, card.pending!.step.id, true)}>
                 <Check size={12} /> {t('Permitir')}
               </Button>
+              {card.pending.step.always ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => approveStep(card.pending!.runId, card.pending!.step.id, true, true)}
+                  title={card.pending.step.always.what}
+                >
+                  {alwaysLabel(card.pending.step.always, t)}
+                </Button>
+              ) : null}
               <Button size="sm" variant="ghost" onClick={() => approveStep(card.pending!.runId, card.pending!.step.id, false)}>
                 <X size={12} /> {t('Rechazar')}
               </Button>
@@ -330,202 +341,6 @@ function Card({
 /** Qué agente lanza la tarea: «cli:<id>», «api:<id>» o «model» (un modelo por API como agente). */
 type AgentChoice = string
 
-function NewTask({ open, onClose, config, projectId }: { open: boolean; onClose: () => void; config: AppConfig; projectId: string }): React.JSX.Element {
-  const t = useT()
-  const { toast, models } = useStore()
-  const [project, setProject] = useState('')
-  const [agent, setAgent] = useState<AgentChoice>('')
-  const [pick, setPick] = useState<Pick | null>(null)
-  const [permission, setPermission] = useState('acceptEdits')
-  const [worktree, setWorktree] = useState(true)
-  const [prompt, setPrompt] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  // Al abrir: el proyecto del filtro (o el primero) y su agente por defecto.
-  useEffect(() => {
-    if (!open) return
-    const p = config.projects.find((x) => x.id === projectId) ?? config.projects[0]
-    setProject(p?.id ?? '')
-    const def = p?.defaultAgentId
-    const choice = config.cliAgents.some((a) => a.id === def)
-      ? `cli:${def}`
-      : config.agents.some((a) => a.id === def)
-        ? `api:${def}`
-        : config.cliAgents[0]
-          ? `cli:${config.cliAgents[0].id}`
-          : config.agents[0]
-            ? `api:${config.agents[0].id}`
-            : 'model'
-    setAgent(choice)
-    // Para «un modelo como agente», de partida uno local si hay.
-    const m = models.find((x) => x.local) ?? models[0]
-    setPick((cur) => cur ?? (m ? { providerId: m.providerId, model: m.id } : null))
-  }, [open, projectId, config, models])
-
-  const cliAgent = agent.startsWith('cli:') ? config.cliAgents.find((a) => a.id === agent.slice(4)) : undefined
-  const apiAgent = agent.startsWith('api:') ? config.agents.find((a) => a.id === agent.slice(4)) : undefined
-  const modes = cliAgent
-    ? cliAgent.command.toLowerCase() === 'claude'
-      ? PERMISSION_MODES
-      : null
-    : API_PERMISSION_MODES
-  // El permiso de partida es el del agente, si lo tiene.
-  useEffect(() => {
-    setPermission(cliAgent?.permissionMode ?? apiAgent?.permissionMode ?? 'acceptEdits')
-  }, [cliAgent?.id, apiAgent?.id, cliAgent?.permissionMode, apiAgent?.permissionMode])
-
-  const p = config.projects.find((x) => x.id === project)
-  const ready = Boolean(p && prompt.trim() && (cliAgent || apiAgent || (agent === 'model' && pick)))
-
-  const launch = async (): Promise<void> => {
-    if (!p || !ready) return
-    setBusy(true)
-    const text = prompt.trim()
-    const title = text.replace(/\s+/g, ' ').slice(0, 54)
-    const mode = modes?.some((m) => m.id === permission) ? permission : undefined
-    const id = cliAgent
-      ? await newSession('cli', { title, cliAgentId: cliAgent.id, cliModel: cliAgent.model, projectId: p.id, permissionMode: mode })
-      : apiAgent
-        ? await newSession('chat', {
-            title,
-            agentId: apiAgent.id,
-            providerId: apiAgent.providerId,
-            model: apiAgent.model,
-            systemPrompt: apiAgent.systemPrompt,
-            temperature: apiAgent.temperature,
-            maxTokens: apiAgent.maxTokens,
-            effort: apiAgent.effort,
-            projectId: p.id,
-            permissionMode: mode
-          })
-        : await newSession('chat', {
-            title,
-            providerId: pick!.providerId,
-            model: pick!.model,
-            projectId: p.id,
-            agentMode: true,
-            maxTokens: 8192,
-            permissionMode: mode
-          })
-    if (worktree) {
-      const r = await window.api.worktrees.create(p.path, { label: title, projectId: p.id, sessionId: id })
-      if (!r.ok || !r.data) {
-        setBusy(false)
-        toast('error', t('No se pudo crear el worktree: {error}. La tarea está en la Consola sin lanzar.', { error: r.error ?? '' }))
-        return
-      }
-      patchSessionConfig(id, { worktreePath: r.data.path })
-      if (r.data.setup && !r.data.setup.ok) {
-        toast('error', t('El worktree está creado, pero su preparación falló: {cmd}', { cmd: r.data.setup.command }))
-      }
-    }
-    setBusy(false)
-    setPrompt('')
-    onClose()
-    const r = await sendTurn(id, text, config)
-    if (r.error) toast('error', t(r.error))
-    else if (r.run?.status === 'error') toast('error', r.run.error ?? t('El agente falló'))
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={t('Nueva tarea')}
-      width="max-w-xl"
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            {t('Cancelar')}
-          </Button>
-          <Button loading={busy} disabled={!ready} onClick={() => void launch()}>
-            <Plus size={13} /> {t('Lanzar')}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        {!config.projects.length ? (
-          <p className="text-[12.5px] text-warn">{t('Añade antes un proyecto en Proyectos: una tarea trabaja sobre uno.')}</p>
-        ) : null}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('Proyecto')}>
-            <Select value={project} onChange={(e) => setProject(e.target.value)}>
-              {config.projects.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={t('Agente')}>
-            <Select value={agent} onChange={(e) => setAgent(e.target.value)}>
-              {config.cliAgents.length ? (
-                <optgroup label={t('Línea de comandos')}>
-                  {config.cliAgents.map((a) => (
-                    <option key={a.id} value={`cli:${a.id}`}>
-                      {a.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-              {config.agents.length ? (
-                <optgroup label={t('Agentes por API')}>
-                  {config.agents.map((a) => (
-                    <option key={a.id} value={`api:${a.id}`}>
-                      {a.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-              <option value="model">{t('Un modelo por API, como agente')}</option>
-            </Select>
-          </Field>
-        </div>
-        {agent === 'model' ? (
-          <Field label={t('Modelo')} hint={t('Hace falta un modelo que admita herramientas (llamadas a funciones).')}>
-            <ModelPicker value={pick} onChange={setPick} />
-          </Field>
-        ) : null}
-        {modes ? (
-          <Field label={t('Permisos')} hint={t(modes.find((m) => m.id === permission)?.hint ?? modes[0].hint)}>
-            <Select value={modes.some((m) => m.id === permission) ? permission : modes[0].id} onChange={(e) => setPermission(e.target.value)}>
-              {modes.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {t(m.label)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        ) : null}
-        <div className="space-y-1.5">
-          <Toggle checked={worktree} onChange={setWorktree} label={t('En un worktree aparte')} />
-          <p className="text-[11px] text-dim leading-relaxed">
-            {worktree
-              ? t('Una carpeta y una rama propias (acc/…) al lado del repositorio: tu carpeta no se toca y puedes tener varios agentes a la vez.') +
-                (p?.worktreeSetup ? ' ' + t('Al crearlo se ejecuta «{cmd}».', { cmd: p.worktreeSetup }) : '')
-              : t('Trabaja directamente en la carpeta del proyecto.')}
-          </p>
-        </div>
-        <Field label={t('Tarea')}>
-          <Textarea
-            rows={5}
-            value={prompt}
-            placeholder={t('Qué tiene que hacer el agente…')}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault()
-                void launch()
-              }
-            }}
-          />
-        </Field>
-      </div>
-    </Modal>
-  )
-}
-
 export default function Tasks(): React.JSX.Element {
   const t = useT()
   const { config, toast } = useStore()
@@ -536,6 +351,8 @@ export default function Tasks(): React.JSX.Element {
   const [projectId, setProjectId] = useState('')
   const [period, setPeriod] = useState<string>('7')
   const [creating, setCreating] = useState(false)
+  const [scheduling, setScheduling] = useState(false)
+  const [editing, setEditing] = useState<ScheduledTask | null>(null)
   const [reviewing, setReviewing] = useState<TaskCard | null>(null)
 
   const terminal = useTerminalAttention()
@@ -617,11 +434,16 @@ export default function Tasks(): React.JSX.Element {
               ))}
             </Select>
           </div>
+          <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setScheduling(true)} data-open-schedule>
+            <CalendarClock size={13} /> {t('Programar')}
+          </Button>
           <Button size="sm" className="shrink-0" onClick={() => setCreating(true)}>
             <Plus size={13} /> {t('Nueva tarea')}
           </Button>
         </div>
       </div>
+
+      <SchedulesStrip config={config} projectId={projectId} onEdit={setEditing} onNew={() => setScheduling(true)} />
 
       {total === 0 && !all.length ? (
         <Empty
@@ -659,7 +481,9 @@ export default function Tasks(): React.JSX.Element {
         </div>
       )}
 
-      <NewTask open={creating} onClose={() => setCreating(false)} config={config} projectId={projectId} />
+      <TaskForm open={creating} onClose={() => setCreating(false)} config={config} projectId={projectId} />
+      <TaskForm open={scheduling} onClose={() => setScheduling(false)} config={config} projectId={projectId} scheduling />
+      <TaskForm open={Boolean(editing)} onClose={() => setEditing(null)} config={config} projectId={projectId} editing={editing} />
 
       {reviewing?.review ? (
         <DiffReview

@@ -513,7 +513,7 @@ export function UsageRows(): React.JSX.Element {
   }
 
   return (
-    <div className="divide-y divide-[#151a26]">
+    <div className="divide-y divide-line-soft">
       {rows.map((s) => {
         const pctCtx = s.contextUsed != null && s.contextLimit ? (s.contextUsed / s.contextLimit) * 100 : null
         const reqPct =
@@ -748,7 +748,7 @@ export function EffortPicker({
           className={cx(
             'px-1.5 py-0.5 rounded text-[10.5px] border transition-colors',
             value === e
-              ? 'bg-[#082a31] text-accent border-[#12525f]'
+              ? 'bg-accent/10 text-accent border-accent/40'
               : 'bg-raised text-dim border-line hover:text-muted',
             !supported && e !== 'auto' && 'opacity-35 cursor-not-allowed'
           )}
@@ -865,7 +865,7 @@ export function BranchPicker({
       <button
         onClick={() => setOpen((v) => !v)}
         disabled={busy}
-        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-raised border border-line text-[11.5px] hover:border-[#2c3346] hover:text-accent transition-colors max-w-[240px]"
+        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-raised border border-line text-[11.5px] hover:border-dim/60 hover:text-accent transition-colors max-w-[240px]"
         title={
           info.upstream
             ? `sigue a ${info.upstream}${info.ahead ? `, ${info.ahead} por delante` : ''}${info.behind ? `, ${info.behind} por detrás` : ''}`
@@ -930,7 +930,7 @@ export function BranchPicker({
                 if (e.key === 'Enter' && creating.trim()) void go(creating.trim(), true)
               }}
               placeholder={t('rama nueva desde aquí…')}
-              className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1 text-[11.5px] font-mono outline-none focus:border-[#2c3346]"
+              className="flex-1 min-w-0 bg-void border border-line rounded px-2 py-1 text-[11.5px] font-mono outline-none focus:border-dim/60"
             />
             <Button size="sm" variant="ghost" disabled={!creating.trim()} onClick={() => void go(creating.trim(), true)}>
               <Plus size={11} />
@@ -966,6 +966,27 @@ export function AttachButton({ onAdd }: { onAdd: (a: Attachment[]) => void }): R
   )
 }
 
+/** Miniaturas ya pedidas: una imagen no se vuelve a leer del disco cada vez que se pinta. */
+const thumbs = new Map<string, Promise<string | null>>()
+
+function Thumb({ path, size }: { path: string; size: number }): React.JSX.Element | null {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    let p = thumbs.get(path)
+    if (!p) {
+      p = window.api.attach.thumb(path).then((r) => (r.ok ? (r.data ?? null) : null))
+      thumbs.set(path, p)
+    }
+    void p.then((s) => alive && setSrc(s))
+    return () => {
+      alive = false
+    }
+  }, [path])
+  if (!src) return null
+  return <img src={src} alt="" className="rounded-[3px] object-cover shrink-0" style={{ width: size, height: size }} data-thumb />
+}
+
 export function AttachmentList({
   items,
   onRemove,
@@ -975,16 +996,43 @@ export function AttachmentList({
   onRemove?: (path: string) => void
   readOnly?: boolean
 }): React.JSX.Element | null {
+  const t = useT()
   if (!items?.length) return null
   return (
     <div className="flex flex-wrap gap-1.5">
-      {items.map((a) => (
+      {items.map((a) =>
+        a.image ? (
+          <span
+            key={a.path}
+            title={`${a.path}${a.skipped ? ' · ' + a.skipped : ''}`}
+            className={cx(
+              'inline-flex items-center gap-1.5 p-1 pr-1.5 rounded border text-[11px]',
+              a.skipped ? 'bg-warn/10 border-warn/30 text-warn' : 'bg-raised border-line text-muted'
+            )}
+            data-attachment-image
+          >
+            <button
+              type="button"
+              onClick={() => void window.api.attach.open(a.path)}
+              title={t('Abrir la imagen')}
+              className="flex items-center gap-1.5"
+            >
+              <Thumb path={a.path} size={readOnly ? 72 : 36} />
+              <span className="font-mono max-w-[160px] truncate">{a.name}</span>
+            </button>
+            {!readOnly && onRemove ? (
+              <button onClick={() => onRemove(a.path)} className="text-dim hover:text-bad">
+                <X size={11} />
+              </button>
+            ) : null}
+          </span>
+        ) : (
         <span
           key={a.path}
           title={`${a.path}${a.skipped ? ' · ' + a.skipped : ''}`}
           className={cx(
             'inline-flex items-center gap-1.5 pl-2 pr-1.5 py-0.5 rounded border text-[11px]',
-            a.skipped ? 'bg-[#241a09] border-[#4a3512] text-warn' : 'bg-raised border-line text-muted'
+            a.skipped ? 'bg-warn/10 border-warn/30 text-warn' : 'bg-raised border-line text-muted'
           )}
         >
           <Paperclip size={10} />
@@ -997,7 +1045,8 @@ export function AttachmentList({
             </button>
           ) : null}
         </span>
-      ))}
+        )
+      )}
     </div>
   )
 }

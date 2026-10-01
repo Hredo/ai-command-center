@@ -31,6 +31,7 @@ Todo en tu equipo: sin cuenta, sin servidor y sin telemetría.
 
 - [Qué es](#qué-es)
 - [Un vistazo](#un-vistazo)
+- [Novedades de la 0.8](#novedades-de-la-08)
 - [**Instalación**](#instalación) — [qué archivo](#qué-archivo-me-descargo) · [Windows](#windows) · [macOS](#macos) · [Linux](#linux) · [compilarla](#compilarla-tú-mismo)
 - [Verificar la descarga](#verificar-la-descarga)
 - [Primeros pasos](#primeros-pasos)
@@ -60,6 +61,9 @@ tres cosas que normalmente están repartidas entre media docena de pestañas y t
   sesiones que lanzaste fuera de la aplicación.
 - **Tus proyectos** — ficheros, editor con coloreado, git completo con árbol de commits,
   GitHub, terminales reales y agentes ejecutándose dentro de cada carpeta.
+- **Una mesa de trabajo** — varias secciones a la vez en paneles que se dividen, se
+  arrastran y se guardan; un tablero de tareas para tus agentes y los cupos de todas tus
+  IAs en vivo.
 
 Todo corre en local. Las claves se guardan cifradas con el sistema de credenciales de tu
 propio sistema (DPAPI en Windows, el Llavero en macOS, GNOME Keyring o KWallet en Linux) y
@@ -104,6 +108,117 @@ el histórico vive en ficheros tuyos. No hay servidor, ni cuenta que crear, ni t
 
 ---
 
+## Novedades de la 0.8
+
+La 0.8 es la versión grande: la app deja de ser sólo un sitio donde lanzar IAs y pasa a
+ser el sitio donde se trabaja con ellas.
+
+**Una mesa de trabajo a tu medida**
+
+- **Varias secciones a la vez.** La ventana se divide en hasta cuatro paneles: la Consola
+  junto a la Terminal, un proyecto con sus Tareas debajo. Se parte desde el botón de
+  distribución de la barra de título, con Ctrl+clic en el menú, o arrastrando una sección
+  y soltándola en el borde de un panel. Los tiradores reparten el espacio, las
+  distribuciones se guardan con nombre y la app recuerda cómo la dejaste. Cambiar la
+  distribución no vuelve a montar nada: lo que tenías a medio escribir sigue ahí.
+- **Cada sección se adapta a su panel.** Cuando va justa de ancho, sus listas laterales se
+  pliegan en una pestaña que se abre por encima y las rejillas bajan de columnas.
+- **Aspecto nuevo.** Tema «Mesa» (carbón cálido, texto con más contraste) y su versión
+  clara, además de los doce que ya había. La tipografía va dentro de la app —Atkinson
+  Hyperlegible para leer, Bricolage Grotesque para los títulos—, así que se ve igual en
+  Windows, macOS y Linux.
+- **El menú, a tu gusto.** Las secciones se ordenan arrastrando y se esconden con el
+  botón derecho; los atajos Ctrl+1…9 siguen tu orden.
+- **Recorrido de bienvenida y ayuda.** La primera vez, un recorrido corto señala sobre la
+  propia interfaz dónde está cada cosa y deja elegir el aspecto. El botón **?** (o F1) abre
+  la documentación completa, con buscador, en español y en inglés.
+
+**Los agentes, como en su terminal**
+
+- **Preguntan sus permisos en la app.** Claude Code (por su protocolo de control),
+  OpenCode y Gemini CLI (por ACP) y Codex (por su `app-server`, el mismo protocolo de su
+  extensión de VS Code) piden permiso aquí igual que en su terminal: **Permitir**,
+  **Siempre…** o **Rechazar**, en la conversación o desde la tarjeta de Tareas. Cada uno
+  con sus propios modos (los de Claude Code; Auto, Read Only y Full Access de Codex; plan
+  y build de OpenCode).
+- **Retoman su sesión.** Cada turno sigue en la misma sesión del agente, o la bifurca.
+- **«Abrir en su terminal»** lanza el CLI original, con esa misma sesión, en una terminal
+  de la app, para lo que sólo existe allí.
+- **Codex y Gemini CLI** dejan de ser texto plano: pasos, tokens, plan y sesión.
+- **MCP en los agentes por API**, y `web_fetch`. AGENTS.md y CLAUDE.md se leen y se editan
+  desde el proyecto.
+
+**No quedarte tirado**
+
+- **Cupos de todas tus IAs**, en un solo sitio y diciendo de dónde sale cada dato: el %
+  oficial de tu plan de Claude y de ChatGPT/Codex, las peticiones de Copilot, los saldos
+  de OpenRouter, DeepSeek y Moonshot, lo medido de Gemini CLI y OpenCode Go, y tus
+  presupuestos. Con proyección («a este ritmo llegas al tope a las 17:40») y avisos al
+  50, 80 y 95 %.
+- **Todo en vivo, también lo de fuera.** Una sesión de Claude Code, Codex, Gemini CLI u
+  OpenCode abierta en otra terminal —o en la app de escritorio de Claude— entra al
+  histórico y a los cupos mientras ocurre: en las pruebas, menos de medio segundo para
+  una sesión de Claude Code que crece y poco más de un segundo para el % de Codex. Los
+  saldos por API se preguntan cada minuto con la ventana a la vista y justo al terminar
+  una ejecución con ese proveedor.
+- **Relevo entre IAs.** «Seguir con…» prepara un paquete con el objetivo, los últimos
+  mensajes, las tareas, los archivos tocados y el diff, y lo lanza en otro agente. La app
+  lo propone sola cuando uno se queda sin cupo.
+- **Presupuestos que funcionan**: por mes, día, proyecto, proveedor o agente, con avisos
+  y, si quieres, freno antes de lanzar.
+- **Puntos de control por turno**: «Deshacer este turno» devuelve los archivos a como
+  estaban, sin tocar tu stash ni tus ramas.
+
+**Agentes en paralelo**
+
+- **Tareas**: un tablero con lo que tienen entre manos tus agentes (en marcha, necesita
+  tu respuesta, para revisar, hecho), desde el que se contesta un permiso o se revisa el
+  diff sin abrir la conversación.
+- **Un worktree por tarea**, para que cada agente trabaje en su copia y no pise tu carpeta.
+- **Arena de código**: la misma tarea a varios agentes, cada uno en su worktree, con sus
+  pruebas, y se fusiona el que gane.
+- **Tareas programadas**: cada día, los laborables, cada semana o cada tantas horas; con
+  la app en la bandeja basta.
+- **Revisión de diffs con comentarios** que vuelven al agente, y **revisión con IA** antes
+  del commit o de la pull request.
+
+**Elegir bien**
+
+- Benchmarks y capacidades en la ficha de cada modelo, comparador y favoritos.
+- **Recomendador**: describe la tarea y propone tres opciones con coste y tiempo estimados.
+- **Elo personal** con tus ganadores de la Arena, **baterías de prompts** repetibles y un
+  **juez local**.
+
+**Cuentas**
+
+- **Ajustes › Cuentas** dice con qué tienes sesión (GitHub, Claude Code, Codex, Gemini
+  CLI, OpenCode) y deja entrar en lo que falta. GitHub se inicia sin salir de la app: `gh`
+  da su código de un solo uso y la app lo enseña; el token lo guarda `gh`. Cada CLI entra
+  con su comando oficial. OpenRouter, por su OAuth con PKCE. Los demás proveedores no
+  ofrecen inicio de sesión a aplicaciones de terceros: se usa su clave, y se dice así.
+
+**Y además**
+
+- **Paleta de comandos** (Ctrl+K) y **búsqueda** en conversaciones e histórico.
+- **Bandeja del sistema**: cerrar la ventana no corta lo que está en marcha.
+- **Prompt rápido**: un atajo global abre una ventanita encima de cualquier app.
+- **Aviso de versión nueva**, con la descarga de tu sistema (no se actualiza sola).
+- **Git y GitHub con IA**: mensaje de commit generado, pull requests con su CI.
+- **Consola**: editar y reenviar, regenerar, bifurcar desde cualquier mensaje, biblioteca
+  de prompts con variables, imágenes pegadas, exportar e importar.
+- **Explorador de archivos** que busca en todo el proyecto.
+- **Linux y macOS**: en un Linux sin bandeja de iconos cerrar la ventana no la esconde
+  donde no se puede recuperar; salir con trabajo en marcha (⌘Q, el Dock) pregunta antes;
+  `--quick` abre el prompt rápido desde un atajo del escritorio (Wayland).
+
+**Lo que no se puede, dicho claro.** El saldo de OpenCode Zen y el uso de Cursor sólo
+están en su web. Lo que hables en claude.ai o chatgpt.com no deja rastro en tu equipo.
+Codex, por su servidor, se ha comprobado contra el Codex real hasta abrir conversación y
+turno; sus aprobaciones siguen su esquema publicado y están probadas con un doble, no con
+una cuenta de ChatGPT. macOS se comprueba en la CI y revisando el código, no a mano.
+
+---
+
 ## Instalación
 
 **[Windows](#windows)** · **[macOS](#macos)** · **[Linux](#linux)** · [compilarla tú](#compilarla-tú-mismo)
@@ -115,12 +230,12 @@ en la sección **Assets**. Busca la línea de tu sistema:
 
 | Tu sistema | Descarga | Qué es |
 |---|---|---|
-| **Windows** 10 u 11 | `AI-Command-Center-Setup-0.7.0.exe` | Instalador (recomendado) |
-| | `AI-Command-Center-0.7.0-x64.zip` | Portátil, sin instalar nada |
-| **macOS** con chip de Apple (M1, M2, M3, M4…) | `AI-Command-Center-0.7.0-mac-arm64.dmg` | Imagen de disco |
-| **macOS** con procesador Intel | `AI-Command-Center-0.7.0-mac-x64.dmg` | Imagen de disco |
-| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.7.0-linux-amd64.deb` | Paquete, se instala con `apt` |
-| **Cualquier otro Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.7.0-linux-x86_64.AppImage` | Un solo archivo, sin instalar nada |
+| **Windows** 10 u 11 | `AI-Command-Center-Setup-0.8.0.exe` | Instalador (recomendado) |
+| | `AI-Command-Center-0.8.0-x64.zip` | Portátil, sin instalar nada |
+| **macOS** con chip de Apple (M1, M2, M3, M4…) | `AI-Command-Center-0.8.0-mac-arm64.dmg` | Imagen de disco |
+| **macOS** con procesador Intel | `AI-Command-Center-0.8.0-mac-x64.dmg` | Imagen de disco |
+| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.8.0-linux-amd64.deb` | Paquete, se instala con `apt` |
+| **Cualquier otro Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.8.0-linux-x86_64.AppImage` | Un solo archivo, sin instalar nada |
 | Linux en **ARM** (Raspberry Pi 5, Ampere…) | `…-linux-arm64.deb` o `…-linux-arm64.AppImage` | Lo mismo, para ARM64 |
 
 > **¿No sabes qué Mac tienes?** Menú Apple → **Acerca de este Mac**. Si pone *Chip Apple
@@ -165,7 +280,7 @@ aplicación funciona igual. No hay nada que se rompa por faltar.
 
 #### Opción A — Instalador (recomendado)
 
-1. Descarga `AI-Command-Center-Setup-0.7.0.exe`.
+1. Descarga `AI-Command-Center-Setup-0.8.0.exe`.
 2. Ejecútalo con doble clic. **Windows va a mostrarte un aviso azul**; es normal y está
    explicado [aquí abajo](#windows-te-va-a-avisar-por-qué-y-qué-hacer): pulsa **Más
    información** y después **Ejecutar de todas formas**.
@@ -179,7 +294,7 @@ No pide permisos de administrador y no toca nada fuera de tu perfil de usuario.
 Útil si no quieres instalar nada, si vas a llevártela en un USB, o si el instalador se te
 queda bloqueado.
 
-1. Descarga `AI-Command-Center-0.7.0-x64.zip`.
+1. Descarga `AI-Command-Center-0.8.0-x64.zip`.
 2. **Antes de descomprimir**, haz clic derecho sobre el `.zip`, entra en **Propiedades**,
    marca **Desbloquear** abajo del todo y pulsa **Aceptar**.
 
@@ -272,7 +387,7 @@ Cosas propias del Mac que ya están resueltas:
 Desde la carpeta donde lo hayas descargado:
 
 ```bash
-sudo apt install ./AI-Command-Center-0.7.0-linux-amd64.deb
+sudo apt install ./AI-Command-Center-0.8.0-linux-amd64.deb
 ```
 
 (El `./` importa: sin él, `apt` busca en internet un paquete con ese nombre.) Aparece en
@@ -283,11 +398,11 @@ incluido el perfil de AppArmor que piden Ubuntu 24.04 y posteriores.
 #### Opción B — AppImage (cualquier distribución)
 
 ```bash
-chmod +x AI-Command-Center-0.7.0-linux-x86_64.AppImage
+chmod +x AI-Command-Center-0.8.0-linux-x86_64.AppImage
 ```
 
 ```bash
-./AI-Command-Center-0.7.0-linux-x86_64.AppImage
+./AI-Command-Center-0.8.0-linux-x86_64.AppImage
 ```
 
 O dale permiso de ejecución desde el gestor de archivos (*Propiedades → Permisos →
@@ -371,8 +486,8 @@ lo descargaste:
 
 | Sistema | Orden |
 |---|---|
-| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.7.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.7.0-mac-arm64.dmg` |
+| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.8.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.8.0-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 El valor tiene que coincidir, letra por letra, con la línea correspondiente de
@@ -383,9 +498,14 @@ lo ejecutes**: bórralo y vuelve a descargarlo.
 
 ## Primeros pasos
 
+La primera vez, un **recorrido de bienvenida** te enseña dónde está cada cosa y deja elegir
+el aspecto. Después, el botón **?** de la barra de arriba (o **F1**) abre la ayuda completa,
+con buscador.
+
 La aplicación **arranca vacía a propósito**: no trae ninguna clave, no crea ninguna cuenta
 y no se conecta a nada por su cuenta. Para que haga algo necesitas al menos una de estas
-tres cosas.
+tres cosas. **Ajustes › Cuentas** reúne los inicios de sesión: GitHub, cada agente y
+OpenRouter.
 
 ### 1. Una clave de API
 
@@ -409,7 +529,10 @@ Si ya usas Claude Code, Codex, Aider, OpenCode o Gemini CLI, no necesitas ningun
 la aplicación los busca en tu `PATH` y los ejecuta con tu sesión de siempre.
 
 1. Abre **Agentes**. Los que tengas instalados salen detectados, con su versión.
-2. Selecciona uno en la Consola y escribe.
+2. Si alguno no tiene sesión, **Ajustes › Cuentas › Iniciar sesión** lanza su comando
+   oficial en una terminal de la app.
+3. Selecciona uno en la Consola y escribe. Cuando necesite permiso para algo, te lo
+   pregunta ahí mismo.
 
 ### 3. Modelos locales, sin pagar nada a nadie
 
@@ -430,8 +553,9 @@ la aplicación los busca en tu `PATH` y los ejecuta con tu sesión de siempre.
 | Linux `.deb` | `sudo apt install ./` seguido del nombre del `.deb` nuevo | `sudo apt remove ai-command-center` |
 | Linux AppImage | Sustituye el archivo por el nuevo | Borra el archivo |
 
-Actualizar conserva tu configuración, tus claves y todo el histórico. Para enterarte de
-cuándo hay versión nueva, pulsa *Watch → Custom → Releases* arriba en este repositorio.
+Actualizar conserva tu configuración, tus claves y todo el histórico. La propia app avisa
+cuando hay versión nueva y enseña la descarga de tu sistema (**Ajustes › Preferencias**);
+no se actualiza sola, porque no va firmada.
 
 **Tus datos no se borran al desinstalar**, para que reinstalar no te deje a cero. Siguen
 en la [carpeta de datos](#dónde-guarda-los-datos); si quieres borrarlos de verdad, elimina
@@ -455,7 +579,9 @@ esa carpeta a mano.
 | Todos | La app abre pero está todo vacío | Es lo normal al principio | Añade una clave o un agente: ver [Primeros pasos](#primeros-pasos) |
 | Todos | La terminal se abre y se queda colgada | Faltan los binarios de la consola nativa | Vuelve a descargar; si compilas tú, ejecuta `pnpm install` y luego `pnpm dist` |
 | Todos | El panel de git dice que no hay git | `git` no está en el `PATH` | Instálalo ([tabla](#requisitos)) y reinicia la app |
-| Todos | El panel de GitHub pide iniciar sesión | Falta la CLI de GitHub | Instálala ([tabla](#requisitos)), después `gh auth login --web` |
+| Todos | El panel de GitHub pide iniciar sesión | Falta la CLI de GitHub o su sesión | Instálala ([tabla](#requisitos)); después, **Ajustes › Cuentas › Iniciar sesión** |
+| Linux | Al cerrar la ventana la app sale en vez de quedarse en la bandeja | Tu escritorio no tiene bandeja de iconos (GNOME sin la extensión de AppIndicator) | Es lo correcto: sin bandeja no habría forma de volver a ella |
+| Linux | El atajo global del prompt rápido no responde | En Wayland los atajos globales no llegan | Asigna en los atajos de tu escritorio la orden que enseña **Ajustes › Preferencias** (`… --quick`) |
 | Todos | Ollama no aparece | El servidor no está corriendo | Arráncalo, o usa el botón de **Ajustes → Local** |
 | Todos | Un proveedor responde 401 | Clave incorrecta o caducada | Vuelve a pegarla en **Ajustes → Proveedores** |
 
@@ -521,10 +647,11 @@ gasto real y la hora del reinicio, y ahí se para.
   se vea que no se ha colgado; al terminar se pliega y deja la respuesta limpia. Lo que
   el agente no cuenta no se dibuja: si una herramienta no dice cuántas líneas tocó, no
   sale el contador.
-- **Modelo y permisos del agente de consola**, cuando su CLI los admite. En Claude Code se
-  elige el modelo (Fable, Opus, Sonnet, Haiku) y con qué manga ancha trabaja: que edite
-  solo, que haga todo sin preguntar, que se quede en el plan o que pregunte. Los permisos
-  denegados aparecen en la línea de tiempo como lo que son, un paso que no se dejó hacer.
+- **Modelo y permisos del agente de consola.** Cada CLI pregunta aquí lo mismo que
+  preguntaría en su terminal —editar un archivo, ejecutar un comando, salir del proyecto—
+  con **Permitir**, **Siempre…** y **Rechazar**, y con sus propios modos: los de Claude
+  Code, los de Codex (Auto, Read Only, Full Access) y los de OpenCode y Gemini CLI. La
+  respuesta vuelve al propio CLI por su protocolo, no por un atajo de la app.
 
 **Arena** — el mismo prompt contra dos, tres o cuatro contendientes a la vez, en columnas
 y en streaming simultáneo. Un contendiente puede ser un modelo por API o un agente de
@@ -579,11 +706,17 @@ Cada proyecto tiene además:
   hacer y el proceso principal arma la llamada a git, así que un nombre de rama no puede
   colar una opción. Git corre sin editor y sin preguntas (`GIT_EDITOR=true`), de forma que
   nada se queda esperando a un teclado que no existe.
-- **GitHub** — inicias sesión con su CLI oficial (`gh auth login --web`): se abre el
-  navegador y autorizas tú. La aplicación no ve ni guarda tu contraseña ni tu token;
-  sólo le pregunta a `gh` con qué cuenta está. Desde ahí ves tus repositorios, los
+- **GitHub** — inicias sesión con su CLI oficial sin salir de la app: `gh` da un código
+  de un solo uso, la app lo enseña y tú autorizas en el navegador. La aplicación no ve ni
+  guarda tu contraseña ni tu token; sólo le pregunta a `gh` con qué cuenta está. Las pull
+  requests del proyecto, con su CI, se ven y se crean desde la pestaña Git. Desde ahí ves tus repositorios, los
   buscas, y clonas cualquiera eligiendo carpeta: queda dado de alta como proyecto en el
   mismo gesto.
+
+**Tareas** — un tablero con lo que tienen entre manos tus agentes: en marcha, necesita tu
+respuesta, para revisar y hecho. Desde la tarjeta se da o se niega un permiso, se revisa
+el diff y se devuelven comentarios. «Nueva tarea» lanza un agente en su propio worktree;
+«Programar» la repite sola.
 
 **Agentes** — dos tipos, y los dos trabajan como agentes: usan herramientas y dan las
 vueltas que haga falta hasta acabar la tarea. Los de API son un modelo con sus
@@ -736,6 +869,7 @@ pnpm exec electron scripts/test-terminal.cjs # el motor de respaldo por tubería
 pnpm exec electron scripts/test-features.cjs # sesiones, enlaces, detección, avisos
 pnpm exec electron scripts/test-agents.cjs   # razonamiento, contexto, límites, archivos, esfuerzo
 pnpm exec electron scripts/test-workspace.cjs # ficheros del proyecto, git y GitHub
+pnpm exec electron scripts/test-v08.cjs      # todo lo de la 0.8: cupos, permisos, mesa, ayuda…
 pnpm exec electron scripts/shot.cjs Terminal # capturas de una sección
 python scripts/make-icon.py                  # regenera build/icon.png
 ```
@@ -743,9 +877,10 @@ python scripts/make-icon.py                  # regenera build/icon.png
 `scripts/ollama-setup.cjs` deja Ollama con los mejores modelos para el equipo. Con
 `--dry-run` sólo informa de lo que haría.
 
-Las pruebas usan un servidor SSE local y agentes de mentira —un script de Node que emite
-los mismos eventos que Claude Code y OpenCode, capturados de las dos herramientas
-reales—, así que no gastan tokens ni tocan ninguna cuenta. Las de git y ficheros montan un
+Las pruebas usan un servidor SSE local y agentes de mentira —scripts de Node que hablan
+los mismos protocolos que Claude Code (permisos por la entrada estándar), OpenCode y
+Gemini CLI (ACP) y Codex (`app-server`), además de un `gh` y un OpenRouter falsos—, así
+que no gastan tokens ni tocan ninguna cuenta. Las de git y ficheros montan un
 repositorio temporal y lo borran al acabar.
 
 ### Dependencias nativas
@@ -786,7 +921,7 @@ escribir el desinstalador y Windows no le deja—.
 Publicar es empujar una etiqueta:
 
 ```bash
-git tag v0.7.0 && git push origin v0.7.0
+git tag v0.8.0 && git push origin v0.8.0
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) genera, en máquinas
@@ -829,6 +964,8 @@ del respaldo encima. Sólo vale mientras la versión de Electron no cambie.
 ```
 src/
   shared/types.ts      contrato común entre los tres procesos
+  shared/ipcContract.ts  cada canal entre procesos, con sus tipos
+  shared/workspace.ts  la mesa de trabajo: el árbol de paneles y sus operaciones
   main/
     index.ts           ventana, ciclo de vida y CSP
     ipc.ts             canales principales, con errores convertidos en mensajes
@@ -864,7 +1001,18 @@ src/
       links.ts         de un modelo a su página
       run.ts           motor de streaming: 4 dialectos y métricas
       limits.ts        límites de uso leídos de las cabeceras
-    agents/cli.ts      ejecución de agentes de línea de comandos
+    agents/cli.ts      ejecución de agentes de línea de comandos y sus permisos
+    agents/acp.ts      ACP: OpenCode y Gemini CLI preguntan en la app
+    agents/codexServer.ts  el app-server de Codex: aprobaciones, hilos y permisos
+    accounts.ts        con qué hay sesión y cómo entrar (gh, cada CLI, OAuth de OpenRouter)
+    quotas/            los cupos de todas las IAs: planes, saldos, presupuestos y avisos
+    external/          sesiones de Codex, OpenCode y Gemini CLI abiertas fuera de la app
+    checkpoints.ts     la foto del proyecto antes de cada turno, para deshacerlo
+    worktrees.ts       una copia del proyecto por tarea
+    schedules.ts       tareas programadas
+    tray.ts, quick.ts  bandeja del sistema y prompt rápido
+    updates.ts         aviso de versión nueva
+    mcp/               los MCP de cada CLI y el cliente para los agentes por API
   preload/index.ts     puente aislado hacia el renderer
   renderer/
     lib/engine.tsx     estado vivo de todo, fuera de las páginas
@@ -874,12 +1022,15 @@ src/
                        vaivén de los vecinos
     lib/pixelArt.ts    el dibujo de La Casa, píxel a píxel, sin imágenes
     lib/i18n.tsx       los textos, en español y en inglés
+    lib/workspace.ts   la mesa de trabajo: paneles, distribuciones y menú
+    lib/help.ts        la documentación que abre el botón de ayuda
     components/        Terminal (xterm.js), FilesPanel, Code (editor coloreado),
                        GitPanel, GitGraph (árbol, merges y rebases), GithubPanel,
                        AgentPanel (contexto, consumo, plan de Claude, ramas),
                        AgentActivity (lo que va haciendo el agente), HouseCanvas,
-                       Stats…
-    pages/             las diez secciones
+                       Workbench (paneles, tiradores y zonas de soltar), Help (ayuda
+                       y recorrido), AccountsPanel, QuotasPanel, CommandPalette, Stats…
+    pages/             las once secciones
 ```
 
 ---

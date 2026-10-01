@@ -32,10 +32,13 @@ import {
   API_PERMISSION_MODES, PERMISSION_MODES, type Attachment, type Effort, type Project, type ProjectInfo,
   type RunRecord
 } from '@shared/types'
+import { cliPermissionModes } from '@shared/cliCaps'
 import { Pane } from '../components/Resizable'
+import { lastNavTarget, onNavigate, type NavTarget } from '../lib/nav'
 
 import { useT } from '../lib/i18n'
-type Tab = 'overview' | 'files' | 'git' | 'graph' | 'terminal' | 'agent' | 'instructions' | 'settings'
+const PROJECT_TABS = ['overview', 'files', 'git', 'graph', 'terminal', 'agent', 'instructions', 'settings'] as const
+type Tab = (typeof PROJECT_TABS)[number]
 
 /**
  * Salida del agente, tomada de la sesión que vive en el motor. Así se sigue
@@ -46,6 +49,12 @@ const EFFORT_CLIS = new Set(['claude', 'codex', 'aider'])
 
 /** Los que admiten elegir modelo y modo de permisos desde aquí. */
 const CLAUDE_LIKE = new Set(['claude'])
+
+/** Cada CLI tiene sus modos: uno que no es suyo se lee como el suyo de partida. */
+const cliModeOf = (command: string, mode: string): string => {
+  const own = cliPermissionModes(command)
+  return own ? (own.modes.some((m) => m.id === mode) ? mode : own.initial) : mode
+}
 
 /** En el selector de agente, un modelo local de Ollama va con este prefijo delante. */
 const LOCAL_PREFIX = 'ollama:'
@@ -71,7 +80,7 @@ function AgentOutput({ sessionId }: { sessionId: string | null }): React.JSX.Ele
         const el = ref.current
         if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
       }}
-      className="flex-1 min-h-0 overflow-y-auto bg-[#07080c] border border-line rounded-lg p-3 font-mono text-[12px] leading-[1.6]"
+      className="flex-1 min-h-0 overflow-y-auto bg-[var(--editor-bg)] border border-line rounded-lg p-3 font-mono text-[12px] leading-[1.6]"
     >
       {turns.length === 0 ? (
         <span className="text-dim">{t('La salida del agente aparecerá aquí.')}</span>
@@ -96,7 +105,7 @@ function AgentOutput({ sessionId }: { sessionId: string | null }): React.JSX.Ele
                   <summary className="text-[11.5px] text-violet cursor-pointer">
                     {t('Razonamiento del agente')}
                   </summary>
-                  <div className="mt-1 text-[11.5px] text-dim whitespace-pre-wrap border-l-2 border-[#37275c] pl-2.5">
+                  <div className="mt-1 text-[11.5px] text-dim whitespace-pre-wrap border-l-2 border-violet/35 pl-2.5">
                     {turn.reasoning}
                   </div>
                 </details>
@@ -250,6 +259,38 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
   useEffect(() => {
     if (tab === 'agent' && agentSession) void openSession(agentSession.id)
   }, [tab, agentSession?.id])
+
+  // Desde otra parte de la app (la paleta, un aviso): abrir un proyecto y, si
+  // se dice, una de sus pestañas o lanzar una orden en su terminal.
+  const [pendingCmd, setPendingCmd] = useState<{ projectId: string; command: string } | null>(null)
+  useEffect(() => {
+    const go = (target: NavTarget | null): void => {
+      if (target?.page !== 'projects') return
+      if (target.projectId) {
+        setSelected(target.projectId)
+        setShowClosed(false)
+      }
+      if (target.tab && (PROJECT_TABS as readonly string[]).includes(target.tab)) setTab(target.tab as Tab)
+      if (target.command && target.projectId) {
+        setTab('terminal')
+        setPendingCmd({ projectId: target.projectId, command: target.command })
+      }
+    }
+    go(lastNavTarget())
+    return onNavigate(go)
+  }, [])
+
+  // La orden sale en cuanto ese proyecto está elegido y su terminal abierta
+  // (la abre la pestaña de terminal si no la tenía).
+  useEffect(() => {
+    if (!pendingCmd || project?.id !== pendingCmd.projectId) return
+    if (projectTermId) {
+      sendTermCommand(projectTermId, pendingCmd.command)
+      setPendingCmd(null)
+    } else if (termError) {
+      setPendingCmd(null)
+    }
+  }, [pendingCmd, project?.id, projectTermId, termError])
 
   useEffect(() => {
     if (!selected && projects.length) setSelected(projects[0].id)
@@ -435,7 +476,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
         projectName: project.name,
         effort: cliEffort,
         model: cliModel || undefined,
-        permissionMode: cliPermission,
+        permissionMode: agent ? cliModeOf(agent.command, cliPermission) : cliPermission,
         attachments
       })
     }
@@ -478,7 +519,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
   return (
     <div className="h-full flex">
       {/* ------------------------------------------------ Lista */}
-      <Pane paneKey="projects.list" side="right" className="border-r border-line bg-void flex flex-col">
+      <Pane paneKey="projects.list" side="right" collapse="narrow" label={t('Proyectos')} className="border-r border-line bg-void flex flex-col">
         <div className="h-12 px-4 border-b border-line flex items-center justify-between shrink-0">
           <span className="font-medium text-[13px]">{t('Proyectos')}</span>
           <div className="flex items-center gap-0.5">
@@ -528,7 +569,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                 key={p.id}
                 className={cx(
                   'group w-full px-3 py-2 flex items-center gap-2.5 transition-colors relative',
-                  selected === p.id ? 'bg-raised' : 'hover:bg-[#12151f]'
+                  selected === p.id ? 'bg-raised' : 'hover:bg-raised/60'
                 )}
               >
                 {selected === p.id ? (
@@ -722,7 +763,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
 
                   <Panel className="flex flex-col">
                     <PanelHeader title={t('Actividad reciente')} icon={<Sparkles size={14} />} />
-                    <div className="divide-y divide-[#171a26] max-h-[300px] overflow-y-auto">
+                    <div className="divide-y divide-line-soft max-h-[300px] overflow-y-auto">
                       {projectRuns.length === 0 ? (
                         <div className="px-4 py-6 text-[12.5px] text-dim text-center">
                           {t('Todavía no has lanzado nada sobre este proyecto.')}
@@ -772,7 +813,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                               })
                             }
                           }}
-                          className="px-2 py-1 bg-raised border border-line rounded-md text-[11.5px] font-mono hover:border-[#2c3346] hover:text-accent transition-colors flex items-center gap-1.5"
+                          className="px-2 py-1 bg-raised border border-line rounded-md text-[11.5px] font-mono hover:border-dim/60 hover:text-accent transition-colors flex items-center gap-1.5"
                         >
                           <Play size={9} />
                           {k}
@@ -826,7 +867,7 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                   </div>
                   <button
                     onClick={() => void openProjectTerm()}
-                    className="px-3 py-1.5 bg-raised border border-line rounded-md text-[12px] hover:border-[#2c3346] hover:text-accent transition-colors"
+                    className="px-3 py-1.5 bg-raised border border-line rounded-md text-[12px] hover:border-dim/60 hover:text-accent transition-colors"
                   >
                     {t('Reintentar')}
                   </button>
@@ -1004,6 +1045,25 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                           </select>
                         </>
                       ) : null}
+                      {selectedCli && !CLAUDE_LIKE.has((selectedCli.command ?? '').toLowerCase()) && cliPermissionModes(selectedCli.command) ? (
+                        <>
+                          <span className="text-[11px] text-dim">{t('Permisos')}</span>
+                          <select
+                            value={cliModeOf(selectedCli.command, cliPermission)}
+                            onChange={(e) => setCliPermission(e.target.value)}
+                            title={t(
+                              cliPermissionModes(selectedCli.command)?.modes.find((m) => m.id === cliModeOf(selectedCli.command, cliPermission))?.hint ?? ''
+                            )}
+                            className="bg-raised border border-line rounded-md px-1.5 py-1 text-[11px] outline-none"
+                          >
+                            {(cliPermissionModes(selectedCli.command)?.modes ?? []).map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {t(m.label)}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      ) : null}
                       <span className="text-[11px] text-dim">{t('Esfuerzo')}</span>
                       <EffortPicker
                         value={cliEffort}
@@ -1022,20 +1082,20 @@ export default function Projects({ onNav }: { onNav?: (page: string) => void }):
                       {t('Trabaja en')} <span className="font-mono text-muted">{project.path}</span>
                       {contextMax ? (
                         <>
-                          <span className="text-[#3a4255]">·</span>
+                          <span className="text-dim/60">·</span>
                           {t('contexto de {n} tokens, el máximo del modelo', { n: contextMax.toLocaleString() })}
                         </>
                       ) : null}
                       {agentSession ? (
                         <>
-                          <span className="text-[#3a4255]">·</span>
+                          <span className="text-dim/60">·</span>
                           <MessagesSquare size={11} />
                           {t('la conversación se guarda y se retoma desde la Consola')}
                         </>
                       ) : null}
                       {cliRunning ? (
                         <>
-                          <span className="text-[#3a4255]">·</span>
+                          <span className="text-dim/60">·</span>
                           <Dot tone="ok" pulse /> {t('sigue corriendo aunque cambies de pantalla')}
                         </>
                       ) : null}

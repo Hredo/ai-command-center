@@ -15,10 +15,18 @@ export interface NavTarget {
   page: PageId
   /** Conversación de la Consola que hay que abrir. */
   sessionId?: string
+  /** Mensaje de esa conversación al que hay que ir. */
+  turnId?: string
+  /** Ejecución del Histórico que hay que abrir. */
+  runId?: string
   /** Proyecto que hay que seleccionar. */
   projectId?: string
   /** Pestaña interna de la sección, si tiene. */
   tab?: string
+  /** Orden que hay que lanzar en la terminal del proyecto (un script, desde la paleta). */
+  command?: string
+  /** Pestaña de Terminales que hay que enseñar. */
+  termId?: string
 }
 
 type Listener = (t: NavTarget) => void

@@ -178,6 +178,46 @@ export function opencodeSessions(): ExternalSession[] {
   return sessions
 }
 
+/**
+ * Lo que gastó un turno de una sesión lanzada desde la app (por ACP): los
+ * mensajes del asistente de esa sesión desde que empezó el turno. El coste lo
+ * pone OpenCode con los precios de models.dev; así un turno de una sesión
+ * retomada no vuelve a contar los anteriores. Sólo la tabla `message`.
+ */
+export function opencodeTurnUsage(
+  sessionId: string,
+  since: number
+): { cost: number; input: number; output: number; cacheRead: number; reasoning: number; model?: string; messages: number } | null {
+  const db = open()
+  if (!db) return null
+  try {
+    const rows = db
+      .prepare(
+        `select json_extract(data, '$.cost') c, json_extract(data, '$.tokens.input') i,
+                json_extract(data, '$.tokens.output') o, json_extract(data, '$.tokens.cache.read') r,
+                json_extract(data, '$.tokens.reasoning') re, json_extract(data, '$.modelID') m
+           from message
+          where session_id = ? and time_created >= ? and json_extract(data, '$.role') = 'assistant'`
+      )
+      .all(sessionId, since - 2000) as any[]
+    if (!rows.length) return null
+    const out = { cost: 0, input: 0, output: 0, cacheRead: 0, reasoning: 0, model: undefined as string | undefined, messages: rows.length }
+    for (const r of rows) {
+      out.cost += Number(r.c) || 0
+      out.input += Number(r.i) || 0
+      out.output += Number(r.o) || 0
+      out.cacheRead += Number(r.r) || 0
+      out.reasoning += Number(r.re) || 0
+      if (r.m) out.model = String(r.m)
+    }
+    return out
+  } catch {
+    return null
+  } finally {
+    db.close()
+  }
+}
+
 /** Lo gastado con el plan Go desde un instante, valorado como lo valora OpenCode. */
 export function opencodeGoSince(since: number): HourBucket {
   return sumBuckets(goBuckets, since)

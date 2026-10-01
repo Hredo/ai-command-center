@@ -5,7 +5,7 @@ import { shell } from 'electron'
 import { getConfig } from './config'
 import { projectInstructions } from './instructions'
 import { IS_MAC, IS_WIN, defaultTerminalCommand, findInPath } from './platform'
-import type { ProjectInfo } from '@shared/types'
+import type { ProjectInfo, ProjectScripts } from '@shared/types'
 
 const IGNORE = new Set([
   'node_modules', '.git', 'dist', 'out', 'build', '.next', '.nuxt', '.venv', 'venv',
@@ -112,6 +112,37 @@ function envKeyNames(dir: string): string[] {
   return [...names]
 }
 
+function detectPackageManager(path: string): string | undefined {
+  if (existsSync(join(path, 'pnpm-lock.yaml'))) return 'pnpm'
+  if (existsSync(join(path, 'yarn.lock'))) return 'yarn'
+  if (existsSync(join(path, 'bun.lockb'))) return 'bun'
+  if (existsSync(join(path, 'package-lock.json'))) return 'npm'
+  if (existsSync(join(path, 'requirements.txt'))) return 'pip'
+  if (existsSync(join(path, 'Cargo.toml'))) return 'cargo'
+  return undefined
+}
+
+/**
+ * Los scripts del package.json de varios proyectos, para la paleta de
+ * comandos. Sólo lee ese fichero y mira qué gestor usa: nada de recorrer la
+ * carpeta como hace scanProject, que con muchos proyectos se notaría.
+ */
+export function projectScripts(paths: string[]): ProjectScripts {
+  const out: ProjectScripts = {}
+  for (const path of paths.slice(0, 200)) {
+    const pkg = readJson(join(path, 'package.json'))
+    const scripts = pkg?.scripts
+    if (!scripts || typeof scripts !== 'object') continue
+    const clean: Record<string, string> = {}
+    for (const [k, v] of Object.entries(scripts)) if (typeof v === 'string') clean[k] = v
+    // Sin lockfile de JS se usa pnpm, como el botón de scripts de Proyectos.
+    const pm = detectPackageManager(path)
+    const packageManager = pm && ['pnpm', 'yarn', 'bun', 'npm'].includes(pm) ? pm : 'pnpm'
+    if (Object.keys(clean).length) out[path] = { packageManager, scripts: clean }
+  }
+  return out
+}
+
 export async function scanProject(path: string): Promise<ProjectInfo> {
   if (!existsSync(path)) {
     return { path, exists: false, languages: [], aiDeps: [], envKeyNames: [] }
@@ -145,13 +176,7 @@ export async function scanProject(path: string): Promise<ProjectInfo> {
     }
   }
 
-  let packageManager: string | undefined
-  if (existsSync(join(path, 'pnpm-lock.yaml'))) packageManager = 'pnpm'
-  else if (existsSync(join(path, 'yarn.lock'))) packageManager = 'yarn'
-  else if (existsSync(join(path, 'bun.lockb'))) packageManager = 'bun'
-  else if (existsSync(join(path, 'package-lock.json'))) packageManager = 'npm'
-  else if (existsSync(join(path, 'requirements.txt'))) packageManager = 'pip'
-  else if (existsSync(join(path, 'Cargo.toml'))) packageManager = 'cargo'
+  const packageManager = detectPackageManager(path)
 
   const [gitBranch, status] = await Promise.all([
     execIn(path, 'git', ['rev-parse', '--abbrev-ref', 'HEAD']),

@@ -268,7 +268,7 @@ function Block({ block, onRerun }: { block: TermBlock; onRerun: (cmd: string) =>
 
   if (block.system) {
     return (
-      <div className="px-4 py-2 border-l-2 border-[#4a3a14] bg-[#14110a] font-mono text-[12px] whitespace-pre-wrap break-words leading-[1.55]">
+      <div className="px-4 py-2 border-l-2 border-warn/35 bg-warn/5 font-mono text-[12px] whitespace-pre-wrap break-words leading-[1.55]">
         <Output segments={block.segments} />
       </div>
     )
@@ -281,8 +281,8 @@ function Block({ block, onRerun }: { block: TermBlock; onRerun: (cmd: string) =>
       <div
         className={cx(
           'group px-4 py-2 flex items-start gap-2 cursor-pointer select-none',
-          failed ? 'bg-[#150d10]' : 'bg-[#0c0e15]',
-          'hover:bg-[#12151f]'
+          failed ? 'bg-bad/10' : 'bg-void',
+          'hover:bg-raised/60'
         )}
         onClick={() => setCollapsed((c) => !c)}
       >
@@ -405,11 +405,11 @@ function PipeInput({ termId, busy, alive, history }: {
         spellCheck={false}
         disabled={!alive}
         placeholder={alive ? t('Comando…') : t('La shell se ha cerrado. Abre otra terminal.')}
-        className="flex-1 min-w-0 bg-transparent border-0 outline-none resize-none font-mono text-[12.5px] leading-[1.5] text-ink placeholder:text-[#3a4255] py-0.5"
+        className="flex-1 min-w-0 bg-transparent border-0 outline-none resize-none font-mono text-[12.5px] leading-[1.5] text-ink placeholder:text-dim/60 py-0.5"
       />
       <div className="shrink-0 flex items-center gap-1.5 pb-0.5">
         {!alive ? <AlertCircle size={13} className="text-bad" /> : null}
-        <span className="text-[10.5px] text-[#3a4255] flex items-center gap-1">
+        <span className="text-[10.5px] text-dim/60 flex items-center gap-1">
           <CornerDownLeft size={10} /> {t('Intro')}
         </span>
         <Button size="sm" variant="ghost" onClick={submit} disabled={!input.trim() || !alive}>
@@ -444,7 +444,7 @@ function PipeView({ termId }: { termId: string }): React.JSX.Element {
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="px-4 py-2 shrink-0 bg-[#14110a] border-b border-[#4a3a14] flex items-start gap-2 text-[11.5px] leading-relaxed">
+      <div className="px-4 py-2 shrink-0 bg-warn/5 border-b border-warn/35 flex items-start gap-2 text-[11.5px] leading-relaxed">
         <Info size={13} className="text-warn shrink-0 mt-0.5" />
         <span className="text-muted">
           Modo reducido: no se pudo cargar la consola nativa, así que sólo funcionan los comandos
@@ -515,7 +515,7 @@ export function TerminalView({ termId, compact, className }: TerminalViewProps):
   const last = state.lastExit
 
   return (
-    <div className={cx('h-full flex flex-col min-h-0 bg-[#07080c]', className)}>
+    <div className={cx('h-full flex flex-col min-h-0 bg-[var(--editor-bg)]', className)}>
       {!compact ? (
         <div className="h-9 px-3 shrink-0 border-b border-line flex items-center gap-2.5 bg-void">
           <TerminalSquare size={13} className="text-accent shrink-0" />
@@ -571,7 +571,7 @@ export function TerminalView({ termId, compact, className }: TerminalViewProps):
           )}
 
           {!state.info.alive ? <span className="text-bad">{t('la shell se ha cerrado')}</span> : null}
-          <span className="ml-auto num text-[#3a4255] truncate max-w-[45%]" title={state.info.cwd}>
+          <span className="ml-auto num text-dim/60 truncate max-w-[45%]" title={state.info.cwd}>
             {state.info.cwd}
           </span>
         </div>

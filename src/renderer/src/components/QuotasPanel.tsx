@@ -127,7 +127,7 @@ function QuotaRow({ q }: { q: Quota }): React.JSX.Element {
         </span>
       </div>
       {q.usedPct != null ? (
-        <div className="h-1.5 bg-[#1a1e2b] rounded-full overflow-hidden">
+        <div className="h-1.5 bg-hover rounded-full overflow-hidden">
           <div
             className="h-full rounded-full transition-all"
             style={{ width: `${Math.max(2, Math.min(100, q.usedPct))}%`, background: BAR[tone ?? 'ok'], opacity: q.stale ? 0.45 : 1 }}

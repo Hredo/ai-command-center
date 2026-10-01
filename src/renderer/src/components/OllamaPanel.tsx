@@ -45,7 +45,7 @@ function ProgressBar({ p }: { p: PullProgress }): React.JSX.Element {
   const pct = p.total && p.completed ? Math.min(100, (p.completed / p.total) * 100) : null
   return (
     <div className="space-y-1">
-      <div className="h-1.5 bg-[#1a1f2e] rounded-full overflow-hidden">
+      <div className="h-1.5 bg-hover rounded-full overflow-hidden">
         <div
           className={cx('h-full rounded-full transition-all', pct == null && 'animate-pulse')}
           style={{
@@ -286,7 +286,7 @@ export function OllamaPanel(): React.JSX.Element {
             hint={t('Descarga uno de los recomendados de abajo: están ordenados por cómo rinden en tu equipo.')}
           />
         ) : (
-          <div className="divide-y divide-[#171a26]">
+          <div className="divide-y divide-line-soft">
             {status.models.map((m) => (
               <div key={m.name} className="px-4 py-2.5 flex items-center gap-3">
                 <Cpu size={13} className="text-ok shrink-0" />
@@ -349,7 +349,7 @@ export function OllamaPanel(): React.JSX.Element {
             )}
           </div>
         ) : (
-          <div className="divide-y divide-[#171a26]">
+          <div className="divide-y divide-line-soft">
             {recs.map((r) => {
               const has = installed.has(r.name)
               const prog = pulls[r.name]

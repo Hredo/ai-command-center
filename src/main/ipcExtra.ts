@@ -2,7 +2,7 @@
  * Canales de terminales, sesiones, Ollama, enlaces de modelos y avisos.
  * Van aparte de ipc.ts sólo para no tener un fichero de mil líneas.
  */
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { homedir } from 'node:os'
 import { handle } from './ipc'
 import { emit } from './emit'
@@ -27,9 +27,13 @@ import {
 import { watchRepo, unwatchRepo, pokeRepo } from './watch'
 import { usageSnapshots, cliLimitOf } from './usage'
 import { claudeWindows, refreshClaude } from './claudeSessions'
-import { pickAttachments, describeFile } from './attach'
-import { listDir, readProjectFile, writeProjectFile, createEntry, trashEntry, revealEntry } from './files'
+import { pickAttachments, describeFile, savePastedImage, imageThumb, imageMime } from './attach'
+import { listDir, readProjectFile, writeProjectFile, createEntry, trashEntry, revealEntry, searchFiles, forgetWalk } from './files'
 import { ghStatus, ghRepos, ghClone, ghLoginCommand, ghLogoutCommand, forgetGhPath } from './github'
+import {
+  accountsStatus, initAccounts, startGithubLogin, cancelGithubLogin, githubGitHelper, githubSetupGit,
+  startOpenRouterLogin, cancelOpenRouterLogin
+} from './accounts'
 import { notifyArena, notifyCommand, notifyPull } from './notify'
 import { allRuns } from './runs'
 import { buildRelay, relayPrompt } from './relay'
@@ -46,11 +50,16 @@ import { mcpReport, planMcpCopy, copyMcpServer, setAppMcpEnabled, removeAppMcp, 
 import { testAppMcp, pruneMcp } from './mcp/client'
 import { classifyWithOllama } from './recommend'
 import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryRun, judgeWithOllama } from './batteries'
+import { savePrompt, removePrompt, markPromptUsed } from './prompts'
+import { search } from './search'
+import { suggestCommitMessage, reviewChanges } from './gitAi'
+import { pullsReport, pullChecks, createPull, describePull } from './pulls'
+import { exportSessions, importSessions } from './exchange'
 import { attentionList, dismissAttention, notifyHookInfo, installNotifyHook, uninstallNotifyHook } from './claudeNotify'
 import { setKey, getStoredKey, mask } from './secrets'
 import type {
   GitOpName, GitOpParams, StoredSession, TermEvent, PullProgress, RelaySource, RelayPackage, KeySource, McpClient,
-  Battery, BatteryRun
+  Battery, BatteryRun, PromptTemplate, SearchQuery
 } from '@shared/types'
 
 export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
@@ -177,6 +186,31 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     pokeRepo(path)
     return r
   })
+  handle('git:review', (path: string, scope: 'commit' | 'branch', base: string | undefined, pick: { providerId: string; model: string }, lang?: 'es' | 'en') => {
+    if (!pick?.providerId || !pick?.model) throw new Error('Elige qué modelo revisa')
+    return reviewChanges(
+      str(path, 'ruta'),
+      scope === 'branch' ? 'branch' : 'commit',
+      typeof base === 'string' ? base : undefined,
+      { providerId: String(pick.providerId), model: String(pick.model) },
+      lang === 'en' ? 'en' : 'es'
+    )
+  })
+  handle('pulls:report', (path: string) => pullsReport(str(path, 'ruta')))
+  handle('pulls:checks', (path: string, num: number) => pullChecks(str(path, 'ruta'), Number(num)))
+  handle('pulls:create', async (path: string, input: { title: string; body: string; base: string; draft?: boolean }) => {
+    const r = await createPull(str(path, 'ruta'), input ?? { title: '', body: '', base: '' })
+    pokeRepo(path)
+    return r
+  })
+  handle('pulls:describe', (path: string, base: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') => {
+    if (!pick?.providerId || !pick?.model) throw new Error('Elige qué modelo escribe la descripción')
+    return describePull(str(path, 'ruta'), str(base, 'rama'), { providerId: String(pick.providerId), model: String(pick.model) }, lang === 'en' ? 'en' : 'es')
+  })
+  handle('git:suggestCommit', (path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') => {
+    if (!pick?.providerId || !pick?.model) throw new Error('Elige qué modelo escribe el mensaje')
+    return suggestCommitMessage(str(path, 'ruta'), { providerId: String(pick.providerId), model: String(pick.model) }, lang === 'en' ? 'en' : 'es')
+  })
   handle('git:run', async (path: string, command: string) => {
     const r = await gitRun(path, command)
     // Lo que acaba de tocar el repositorio se relee sin esperar al vigilante.
@@ -215,8 +249,17 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
     pokeRepo(root)
     return r
   })
-  handle('files:create', (root: string, rel: string, dir: boolean) => createEntry(root, rel, Boolean(dir)))
-  handle('files:trash', (root: string, rel: string) => trashEntry(root, rel))
+  handle('files:create', (root: string, rel: string, dir: boolean) => {
+    const e = createEntry(root, rel, Boolean(dir))
+    forgetWalk(root)
+    return e
+  })
+  handle('files:trash', async (root: string, rel: string) => {
+    const ok = await trashEntry(root, rel)
+    forgetWalk(root)
+    return ok
+  })
+  handle('files:search', (root: string, query: string) => searchFiles(str(root, 'raíz'), String(query ?? '').slice(0, 200)))
   handle('files:reveal', (root: string, rel: string) => {
     revealEntry(root, rel)
     return true
@@ -234,10 +277,38 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   handle('github:loginCommand', () => ghLoginCommand())
   handle('github:logoutCommand', () => ghLogoutCommand())
 
+  /* --------------------------------- Cuentas ---------------------------------- */
+
+  initAccounts((e) => {
+    send('accounts:event', e)
+    // Con sesión nueva de GitHub cambia su cupo de Copilot; con clave nueva, el saldo.
+    if (e.phase === 'done' && e.ok) pokeQuotas()
+  })
+  handle('accounts:status', () => accountsStatus())
+  handle('accounts:githubLogin', () => startGithubLogin())
+  handle('accounts:githubCancel', () => cancelGithubLogin())
+  handle('accounts:githubGit', () => githubGitHelper())
+  handle('accounts:githubSetupGit', () => githubSetupGit())
+  handle('accounts:openrouterLogin', () => startOpenRouterLogin())
+  handle('accounts:openrouterCancel', () => cancelOpenRouterLogin())
+
   /* --------------------------------- Adjuntos --------------------------------- */
 
   handle('attach:pick', () => pickAttachments())
   handle('attach:describe', (path: string) => describeFile(path))
+  handle('attach:paste', (data: Uint8Array, mime: string) => {
+    if (!(data instanceof Uint8Array)) throw new Error('Imagen no válida')
+    return savePastedImage(data, String(mime))
+  })
+  handle('attach:thumb', (path: string) => imageThumb(str(path, 'ruta')))
+  // Sólo imágenes: abrir cualquier ruta que llegue del renderer sería lanzar
+  // lo que sea con el programa asociado.
+  handle('attach:open', async (path: string) => {
+    const p = str(path, 'ruta')
+    if (!imageMime(p)) throw new Error('Sólo se abren imágenes adjuntas')
+    const err = await shell.openPath(p)
+    if (err) throw new Error(err)
+  })
 
   /* ---------------------------- Enlaces de modelos ---------------------------- */
 
@@ -405,6 +476,33 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
       response: String(input?.response ?? '')
     })
   )
+
+  /* ------------------------------- Búsqueda ------------------------------------ */
+
+  handle('search:query', (q: SearchQuery) =>
+    search({
+      text: String(q?.text ?? '').slice(0, 300),
+      scope: q?.scope === 'sessions' || q?.scope === 'runs' ? q.scope : 'all',
+      projectId: typeof q?.projectId === 'string' && q.projectId ? q.projectId : undefined,
+      from: typeof q?.from === 'number' && q.from > 0 ? q.from : undefined,
+      archived: q?.archived !== false,
+      limit: typeof q?.limit === 'number' ? q.limit : undefined
+    })
+  )
+
+  /* ------------------------------- Exportar e importar ------------------------- */
+
+  handle('sessions:export', (ids: string[], format: 'md' | 'json', lang?: 'es' | 'en') => {
+    if (!Array.isArray(ids) || !ids.every((x) => typeof x === 'string')) throw new Error('Conversaciones no válidas')
+    return exportSessions(ids.slice(0, 1000), format === 'json' ? 'json' : 'md', lang === 'en' ? 'en' : 'es')
+  })
+  handle('sessions:import', () => importSessions())
+
+  /* ------------------------------- Prompts ------------------------------------- */
+
+  handle('prompts:save', (p: PromptTemplate) => savePrompt(p))
+  handle('prompts:remove', (id: string) => removePrompt(str(id, 'prompt')))
+  handle('prompts:used', (id: string) => markPromptUsed(str(id, 'prompt')))
 
   /* ------------------------------- Recomendador -------------------------------- */
 

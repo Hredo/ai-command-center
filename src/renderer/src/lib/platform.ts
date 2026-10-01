@@ -21,9 +21,30 @@ export function modKey(e: { ctrlKey: boolean; metaKey: boolean }): boolean {
   return IS_MAC ? e.metaKey : e.ctrlKey
 }
 
-/** Cambia «Ctrl» por «⌘» en los textos de ayuda de los atajos, en macOS. */
+/**
+ * El signo que lleva en este teclado la tecla física de «\». Los atajos de
+ * dividir la mesa van por esa tecla, que en un teclado español es la «ç» y en
+ * uno alemán la «#»: se enseña el signo que tienes delante, no el del inglés.
+ */
+let backslashKey = '\\'
+if (typeof navigator !== 'undefined') {
+  const kb = (navigator as unknown as { keyboard?: { getLayoutMap?: () => Promise<Map<string, string>> } }).keyboard
+  void kb
+    ?.getLayoutMap?.()
+    .then((map) => {
+      const k = map.get('Backslash')
+      if (k) backslashKey = k.length === 1 ? k.toUpperCase() : k
+    })
+    .catch(() => undefined)
+}
+
+/**
+ * Deja un atajo como se pulsa aquí: «⌘» en vez de «Ctrl» en macOS, y la tecla
+ * de «\» con el signo de este teclado.
+ */
 export function withMod(text: string): string {
-  return IS_MAC ? text.replace(/Ctrl( ?\+ ?)/g, '⌘$1') : text
+  const out = IS_MAC ? text.replace(/Ctrl( ?\+ ?)/g, '⌘$1') : text
+  return backslashKey !== '\\' && out.includes('\\') ? out.replace(/\\/g, backslashKey) : out
 }
 
 /** Una clave de traducción con su variante para este sistema. */

@@ -154,7 +154,7 @@ export function UndoTurn({
   )
 }
 
-function FileList({ files }: { files: string[] }): React.JSX.Element {
+export function FileList({ files }: { files: string[] }): React.JSX.Element {
   return (
     <div className="max-h-[160px] overflow-y-auto bg-void border border-line rounded-lg px-2.5 py-1.5 font-mono text-[11.5px] text-muted">
       {files.map((f) => (

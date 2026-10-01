@@ -1,7 +1,8 @@
-import { contextBridge, ipcRenderer, webFrame } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import type {
   AppConfig, Settings, Agent, CliAgent, Project, RunOptions, CliRunOptions, RunRecord, StoredSession,
-  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun
+  GitOpName, GitOpParams, RelaySource, RelayPackage, McpClient, Battery, BatteryRun, PromptTemplate, SearchQuery,
+  ScheduledTask
 } from '@shared/types'
 import type { IpcChannel, IpcArgs, IpcResult, IpcRes, IpcEvent, IpcEvents } from '@shared/ipcContract'
 
@@ -68,7 +69,7 @@ const api = {
     prompt: (opts: RunOptions, runId: string) => call('run:prompt', opts, runId),
     abort: (runId: string) => call('run:abort', runId),
     /** Contesta a un agente por API que pide permiso para un paso. */
-    approve: (runId: string, stepId: string, allow: boolean) => call('run:approve', runId, stepId, allow),
+    approve: (runId: string, stepId: string, allow: boolean, always?: boolean) => call('run:approve', runId, stepId, allow, always),
     /** Devuelve la función para desuscribirse. */
     onDelta: (cb: (d: IpcEvents['run:delta']) => void) => on('run:delta', cb)
   },
@@ -92,6 +93,7 @@ const api = {
     save: (p: Project) => call('projects:save', p),
     remove: (id: string) => call('projects:remove', id),
     scan: (path: string) => call('projects:scan', path),
+    scripts: (paths: string[]) => call('projects:scripts', paths),
     context: (path: string, opts?: any) => call('projects:context', path, opts),
     files: (path: string, query?: string) => call('projects:files', path, query),
     openEditor: (path: string) => call('projects:openEditor', path),
@@ -183,6 +185,18 @@ const api = {
     diff: (path: string, file?: string, staged = false) => call('git:diff', path, file, staged),
     stage: (path: string, files: string[], stage: boolean) => call('git:stage', path, files, stage),
     commit: (path: string, message: string, all = false) => call('git:commit', path, message, all),
+    /** Un modelo revisa lo que vas a confirmar (`commit`) o la rama entera (`branch`). */
+    review: (path: string, scope: 'commit' | 'branch', base: string | undefined, pick: { providerId: string; model: string }, lang?: 'es' | 'en') =>
+      call('git:review', path, scope, base, pick, lang),
+    /** Pull requests y CI del repositorio, por gh. */
+    pulls: (path: string) => call('pulls:report', path),
+    pullChecks: (path: string, num: number) => call('pulls:checks', path, num),
+    createPull: (path: string, input: { title: string; body: string; base: string; draft?: boolean }) => call('pulls:create', path, input),
+    describePull: (path: string, base: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') =>
+      call('pulls:describe', path, base, pick, lang),
+    /** Un modelo escribe el mensaje del commit a partir del diff. */
+    suggestCommit: (path: string, pick: { providerId: string; model: string }, lang?: 'es' | 'en') =>
+      call('git:suggestCommit', path, pick, lang),
     run: (path: string, command: string) => call('git:run', path, command),
     isDestructive: (command: string) => call('git:isDestructive', command),
     /** Árbol de commits con sus padres, para dibujar ramas y merges. */
@@ -209,6 +223,8 @@ const api = {
   },
   files: {
     list: (root: string, rel = '') => call('files:list', root, rel),
+    /** Busca por nombre en todo el proyecto (sin node_modules ni .git). */
+    search: (root: string, query: string) => call('files:search', root, query),
     read: (root: string, rel: string) => call('files:read', root, rel),
     write: (root: string, rel: string, text: string) => call('files:write', root, rel, text),
     create: (root: string, rel: string, dir: boolean) => call('files:create', root, rel, dir),
@@ -226,7 +242,15 @@ const api = {
   },
   attach: {
     pick: () => call('attach:pick'),
-    describe: (path: string) => call('attach:describe', path)
+    describe: (path: string) => call('attach:describe', path),
+    /** Una imagen pegada: se guarda en la carpeta de datos y vuelve como adjunto. */
+    paste: (data: Uint8Array, mime: string) => call('attach:paste', data, mime),
+    /** Miniatura en data URL de una imagen adjunta. */
+    thumb: (path: string) => call('attach:thumb', path),
+    /** Abre un adjunto con el programa del sistema. */
+    open: (path: string) => call('attach:open', path),
+    /** La ruta en disco de un archivo arrastrado a la ventana. */
+    pathOf: (file: File): string => webUtils.getPathForFile(file)
   },
   /** Relevo: pasar un trabajo a medias de una IA a otra con todo su contexto. */
   relay: {
@@ -260,6 +284,21 @@ const api = {
     saveRun: (run: BatteryRun) => call('batteries:saveRun', run),
     removeRun: (id: string) => call('batteries:removeRun', id),
     judge: (model: string, input: { rubric: string; prompt: string; response: string }) => call('batteries:judge', model, input)
+  },
+  /** Exportar e importar conversaciones (Markdown y JSON). */
+  exchange: {
+    export: (ids: string[], format: 'md' | 'json', lang?: 'es' | 'en') => call('sessions:export', ids, format, lang),
+    import: () => call('sessions:import')
+  },
+  /** Búsqueda de texto completo en conversaciones e histórico. */
+  search: {
+    query: (q: SearchQuery) => call('search:query', q)
+  },
+  /** Biblioteca de prompts con variables. */
+  prompts: {
+    save: (prompt: PromptTemplate) => call('prompts:save', prompt),
+    remove: (id: string) => call('prompts:remove', id),
+    used: (id: string) => call('prompts:used', id)
   },
   /** El recomendador: un modelo local de Ollama clasifica la tarea. */
   recommend: {
@@ -318,6 +357,51 @@ const api = {
     uninstall: () => call('attention:uninstall'),
     onChanged: (cb: (list: IpcEvents['attention:changed']) => void) => on('attention:changed', cb)
   },
+  /** Tareas que se lanzan solas a su hora. */
+  schedules: {
+    list: () => call('schedules:list'),
+    save: (task: ScheduledTask) => call('schedules:save', task),
+    remove: (id: string) => call('schedules:remove', id),
+    runNow: (id: string) => call('schedules:runNow', id),
+    started: (runId: string, sessionId: string) => call('schedules:started', runId, sessionId),
+    finished: (runId: string, ok: boolean, error?: string) => call('schedules:finished', runId, ok, error),
+    onRun: (cb: (r: IpcEvents['schedules:run']) => void) => on('schedules:run', cb)
+  },
+  /** Versiones nuevas publicadas en GitHub (sólo avisa: no descarga ni instala). */
+  /** Cuentas: con qué hay sesión iniciada y cómo entrar en lo que falta. */
+  accounts: {
+    status: () => call('accounts:status'),
+    /** `gh auth login --web` sin terminal: el código llega por onEvent. */
+    githubLogin: () => call('accounts:githubLogin'),
+    githubCancel: () => call('accounts:githubCancel'),
+    /** ¿Usa git la sesión de gh para github.com? */
+    githubGit: () => call('accounts:githubGit'),
+    githubSetupGit: () => call('accounts:githubSetupGit'),
+    /** OAuth de OpenRouter: la clave se guarda en main, aquí sólo llega si fue bien. */
+    openrouterLogin: () => call('accounts:openrouterLogin'),
+    openrouterCancel: () => call('accounts:openrouterCancel'),
+    onEvent: (cb: (e: IpcEvents['accounts:event']) => void) => on('accounts:event', cb)
+  },
+  updates: {
+    get: () => call('updates:get'),
+    check: () => call('updates:check'),
+    skip: (version: string | null) => call('updates:skip', version),
+    onStatus: (cb: (u: IpcEvents['updates:status']) => void) => on('updates:status', cb)
+  },
+  /** Prompt rápido: la ventanita del atajo global y la principal que lo lanza. */
+  quick: {
+    submit: (req: { prompt: string; providerId: string; model: string; sessionId?: string }) => call('quick:submit', req),
+    bind: (requestId: string, sessionId: string) => call('quick:bind', requestId, sessionId),
+    fail: (requestId: string, error: string) => call('quick:fail', requestId, error),
+    hide: () => call('quick:hide'),
+    open: () => call('quick:open'),
+    openConsole: (sessionId: string) => call('quick:openConsole', sessionId),
+    status: () => call('quick:status'),
+    onRun: (cb: (r: IpcEvents['quick:run']) => void) => on('quick:run', cb),
+    onFocus: (cb: (r: IpcEvents['quick:focus']) => void) => on('quick:focus', cb),
+    onEvent: (cb: (r: IpcEvents['quick:event']) => void) => on('quick:event', cb),
+    onShown: (cb: (r: IpcEvents['quick:shown']) => void) => on('quick:shown', cb)
+  },
   quotas: {
     get: (force?: boolean) => call('quotas:get', force),
     statusLine: () => call('quotas:statusLine'),
@@ -350,6 +434,11 @@ const api = {
      * del puente; el proceso principal se entera para recolocar los botones de
      * Windows, que los pinta el sistema y no se enteran del zoom por su cuenta.
      */
+    /** Abrir la app al iniciar sesión, escondida en la bandeja. */
+    loginItem: () => call('app:loginItem'),
+    setLoginItem: (enabled: boolean) => call('app:setLoginItem', enabled),
+    /** Lo que hay en marcha, para el icono de la bandeja y para avisar antes de salir. */
+    setBusy: (busy: { chats: number; arena: number; terms: number }) => call('app:busy', busy),
     setChrome: (opts: { zoom?: number; background?: string; symbol?: string }) => {
       const zoom = Math.min(2, Math.max(0.5, Number(opts?.zoom) || 1))
       webFrame.setZoomFactor(zoom)

@@ -319,6 +319,128 @@ export interface BatteryCase {
   checks: BatteryCheck[]
 }
 
+/* ------------------------------------------------------------------ *
+ * Pull requests y CI (por gh)                                        *
+ * ------------------------------------------------------------------ */
+
+export interface PullSummary {
+  number: number
+  title: string
+  url: string
+  state: 'OPEN' | 'CLOSED' | 'MERGED'
+  draft: boolean
+  head: string
+  base: string
+  author?: string
+  updatedAt?: number
+  /** APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED… */
+  review?: string
+  /** Cómo va su CI: cuántas comprobaciones pasan, fallan o siguen en marcha. */
+  checks: { pass: number; fail: number; pending: number; total: number }
+}
+
+export interface PullCheck {
+  name: string
+  state: 'pass' | 'fail' | 'pending' | 'skipped' | 'cancel'
+  url?: string
+  workflow?: string
+}
+
+export interface WorkflowRun {
+  id: number
+  title: string
+  workflow: string
+  /** queued, in_progress, completed… */
+  status: string
+  /** success, failure, cancelled… al terminar. */
+  conclusion?: string
+  branch?: string
+  event?: string
+  createdAt: number
+  url: string
+}
+
+export interface PullsReport {
+  /** `missing`: gh no está; `noauth`: sin sesión; `ok`: se puede hablar con GitHub. */
+  gh: 'missing' | 'noauth' | 'ok'
+  /** El repositorio tiene un remoto de GitHub. */
+  github: boolean
+  branch?: string
+  /** La rama principal, hacia la que se abren las PR por omisión. */
+  base?: string
+  /** La PR de la rama en la que estás, si la hay. */
+  current?: PullSummary | null
+  open: PullSummary[]
+  /** Últimas ejecuciones de Actions de esta rama. */
+  runs: WorkflowRun[]
+  /** La rama no está subida o tiene commits sin subir. */
+  needsPush?: boolean
+  upstream?: boolean
+  error?: string
+}
+
+/** Búsqueda de texto completo en conversaciones e histórico. */
+export interface SearchQuery {
+  text: string
+  /** Dónde: todo, sólo las conversaciones o sólo el histórico. */
+  scope?: 'all' | 'sessions' | 'runs'
+  projectId?: string
+  /** Desde cuándo (ms). */
+  from?: number
+  /** false deja fuera las conversaciones cerradas. */
+  archived?: boolean
+  limit?: number
+}
+
+export interface SearchHit {
+  /** Un mensaje de una conversación o una ejecución del histórico. */
+  kind: 'turn' | 'run'
+  id: string
+  sessionId?: string
+  turnId?: string
+  runId?: string
+  /** Título de la conversación, o el agente o el modelo de la ejecución. */
+  title: string
+  role?: 'user' | 'assistant'
+  /** En qué parte de la ejecución está. */
+  field?: 'prompt' | 'response'
+  /** El trozo alrededor del acierto y dónde está cada palabra dentro. */
+  snippet: string
+  ranges: [number, number][]
+  at: number
+  projectId?: string
+  projectName?: string
+  model?: string
+  sessionKind?: 'chat' | 'cli'
+  runKind?: string
+  archived?: boolean
+  score: number
+}
+
+export interface SearchResult {
+  hits: SearchHit[]
+  total: number
+  tookMs: number
+  truncated: boolean
+}
+
+/**
+ * Un prompt de la biblioteca. `{{nombre}}` o `{{nombre:valor por omisión}}`
+ * son variables que se piden al insertarlo; `{{proyecto}}`, `{{rama}}` y
+ * `{{fecha}}` se rellenan solas.
+ */
+export interface PromptTemplate {
+  id: string
+  name: string
+  text: string
+  description?: string
+  createdAt: number
+  updatedAt?: number
+  /** Veces que se ha insertado. */
+  uses?: number
+  lastUsedAt?: number
+}
+
 export interface Battery {
   id: string
   name: string
@@ -475,13 +597,17 @@ export interface ProjectInfo {
   scripts?: Record<string, string>
 }
 
+/** Los scripts del package.json de cada proyecto, por su carpeta. */
+export type ProjectScripts = Record<string, { packageManager: string; scripts: Record<string, string> }>
+
 export type RunStatus = 'ok' | 'error' | 'aborted' | 'running'
 
 /** Una ejecución: la unidad de análisis de toda la app. */
 export interface RunRecord {
   id: string
   createdAt: number
-  kind: 'chat' | 'arena' | 'cli'
+  /** `git`: lo que la app le pide a un modelo para git (el mensaje de un commit…). */
+  kind: 'chat' | 'arena' | 'cli' | 'git'
   providerId: string
   model: string
   agentId?: string
@@ -583,6 +709,128 @@ export interface StreamDelta {
   files?: FileChange[]
   /** Modo agente: archivos que dice haber leído o editado. */
   touched?: FileTouch[]
+}
+
+/** Cada cuánto se repite una tarea programada. */
+export type ScheduleRepeat = 'daily' | 'weekdays' | 'weekly' | 'hourly'
+
+/**
+ * Una tarea que se lanza sola a su hora, como las del tablero de Tareas: un
+ * agente sobre un proyecto, normalmente en un worktree aparte, y queda para
+ * revisar. Sólo corre con la app abierta (vale en la bandeja).
+ */
+export interface ScheduledTask {
+  id: string
+  name: string
+  enabled: boolean
+  projectId: string
+  /** 'cli:<id>', 'api:<id>' o 'model' (un modelo por API como agente, el de `pick`). */
+  agent: string
+  pick?: { providerId: string; model: string }
+  permissionMode?: string
+  /** En un worktree aparte: tu carpeta no se toca. */
+  worktree: boolean
+  prompt: string
+  repeat: ScheduleRepeat
+  /** Hora local HH:MM (diaria, laborables y semanal). */
+  time?: string
+  /** Día de la semana, 0 domingo … 6 sábado (semanal). */
+  weekday?: number
+  /** Cada cuántas horas (repetición por horas). */
+  everyHours?: number
+  /** Si la app estaba cerrada a su hora, lanzarla al abrir (por omisión, sí). */
+  catchUp?: boolean
+  createdAt: number
+  lastRunAt?: number
+  lastStatus?: 'running' | 'ok' | 'error' | 'missed'
+  lastError?: string
+  /** La conversación de la última vez, para revisarla. */
+  lastSessionId?: string
+}
+
+/** Abrir la app al iniciar sesión (en la bandeja). */
+export interface LoginItemStatus {
+  /** Sólo en la app instalada. */
+  supported: boolean
+  enabled: boolean
+  /** dev: en desarrollo no se registra nada. */
+  reason?: 'dev'
+}
+
+/** Una tarea programada con su próxima hora ya calculada. */
+export type ScheduledTaskView = ScheduledTask & { nextRunAt: number | null; running: boolean }
+
+/** Main pide a la ventana que lance una tarea programada. */
+export interface ScheduleRun {
+  runId: string
+  reason: 'time' | 'catchup' | 'manual'
+  task: ScheduledTask
+}
+
+/** Un fichero de una versión publicada, para este sistema. */
+export interface UpdateDownload {
+  name: string
+  url: string
+  size: number
+  kind: 'installer' | 'portable' | 'dmg' | 'appimage' | 'deb' | 'checksums'
+}
+
+/** Lo último que se sabe de las versiones publicadas en GitHub. */
+export interface UpdateInfo {
+  current: string
+  latest?: string
+  /** La publicada es más nueva que la instalada. */
+  newer: boolean
+  /** Es más nueva, pero pediste no volver a anunciarla. */
+  skipped?: boolean
+  /** Página de la versión en GitHub. */
+  url?: string
+  publishedAt?: string
+  /** Notas de la versión (markdown). */
+  notes?: string
+  downloads: UpdateDownload[]
+  checkedAt: number
+  error?: string
+}
+
+/** Un prompt lanzado desde la ventana del prompt rápido, camino de la Consola. */
+export interface QuickRun {
+  requestId: string
+  prompt: string
+  providerId: string
+  model: string
+  /** Para seguir la misma conversación con otra pregunta. */
+  sessionId?: string
+}
+
+/** Lo que le llega a la ventana del prompt rápido mientras contesta. */
+export interface QuickEvent {
+  requestId: string
+  sessionId?: string
+  /** Un trozo de la respuesta, tal cual lo manda el proveedor. */
+  delta?: StreamDelta
+  /** Terminó: con la respuesta entera y sus números. */
+  done?: boolean
+  response?: string
+  error?: string
+  model?: string
+  costTotal?: number
+  totalMs?: number
+}
+
+/** El atajo global: cuál es, si se pudo registrar y por qué no. */
+export interface QuickHotkeyStatus {
+  accelerator: string
+  /** El que se usa si no eliges otro. */
+  defaultAccelerator: string
+  registered: boolean
+  /** taken: otra app ya lo tiene; invalid: no es un atajo válido. */
+  error?: 'taken' | 'invalid'
+  /**
+   * Linux: la orden que abre el prompt rápido, para asignarla en los atajos del
+   * escritorio cuando el atajo global no llega (Wayland).
+   */
+  command?: string
 }
 
 /** Idioma de la interfaz. */
@@ -698,6 +946,32 @@ export interface Settings {
   notifyOnFinish: boolean
   /** Sólo notificar si la ventana no está en primer plano. */
   notifyOnlyWhenUnfocused: boolean
+  /**
+   * Al cerrar la ventana se esconde en la bandeja y lo que está en marcha
+   * sigue (por omisión). Con false, cerrar sale, preguntando si hay algo en marcha.
+   */
+  closeToTray?: boolean
+  /** Ya se avisó una vez de que la app sigue en la bandeja. */
+  trayHintShown?: boolean
+  /** La mesa de trabajo: qué secciones están a la vista y cómo se reparten. Ver shared/workspace.ts. */
+  workspace?: import('./workspace').Workspace
+  /** Distribuciones de la mesa guardadas con nombre. */
+  layouts?: import('./workspace').SavedLayout[]
+  /** El menú lateral a tu gusto: el orden de las secciones y las que no quieres ver. */
+  nav?: { order?: string[]; hidden?: string[] }
+  /** Ya se hizo (o se saltó) el recorrido de bienvenida. */
+  tourDone?: boolean
+  /**
+   * Atajo global del prompt rápido, en formato de Electron
+   * («Control+Alt+Space»). Sin definir: el de cada sistema; vacío: apagado.
+   */
+  quickHotkey?: string
+  /** El modelo que usó el prompt rápido la última vez. */
+  quickModel?: { providerId: string; model: string } | null
+  /** Mirar en GitHub si hay versión nueva (por omisión, sí). */
+  checkUpdates?: boolean
+  /** Versión que pediste no volver a anunciar. */
+  skippedVersion?: string
   /** Ejecutable de la shell para las terminales integradas. */
   shellPath?: string
   /** Segundos entre sondeos automáticos de motores locales. 0 lo desactiva. */
@@ -713,6 +987,8 @@ export interface Settings {
   budgets?: Budget[]
   /** Guardar una foto del repositorio antes de cada turno de un agente. Sí por omisión. */
   checkpoints?: boolean
+  /** Modelo que escribe mensajes de commit y descripciones de PR: mejor uno barato o local. */
+  gitModel?: { providerId: string; model: string }
 }
 
 export interface AppConfig {
@@ -727,6 +1003,10 @@ export interface AppConfig {
   mcpServers?: Record<string, AppMcpServer>
   /** Baterías de prompts con sus comprobaciones, para relanzarlas en la Arena. */
   batteries?: Battery[]
+  /** Biblioteca de prompts: se insertan con «/» en la Consola, la Arena y las baterías. */
+  prompts?: PromptTemplate[]
+  /** Tareas que se lanzan solas a su hora (Tareas › Programadas). */
+  schedules?: ScheduledTask[]
 }
 
 export interface ProviderOverride {
@@ -867,8 +1147,15 @@ export interface AgentStep {
   denied?: boolean
   /** La regla de permiso que lo habría dejado (Claude Code): «Bash(npm test)». */
   rule?: string
-  /** Agente por API: el paso espera tu permiso, o ya lo tuvo, o se le negó. */
+  /** El paso espera tu permiso, o ya lo tuvo, o se le negó (agentes por API y CLIs que preguntan). */
   approval?: 'pending' | 'approved' | 'denied'
+  /** Qué pide exactamente, dicho por el propio agente (una carpeta fuera del proyecto, un comando…). */
+  ask?: { kind: 'outside' | 'edit' | 'run' | 'read' | 'fetch' | 'other'; target?: string }
+  /**
+   * El agente ofrece «permitir siempre» y hasta dónde llega: esta sesión,
+   * este proyecto o todo tu usuario, y qué regla o modo quedaría.
+   */
+  always?: { scope: 'session' | 'project' | 'user'; what?: string }
 }
 
 /** Una tarea de la lista que lleva el propio agente (TodoWrite y compañía). */
@@ -988,7 +1275,7 @@ export const PERMISSION_MODES = [
   { id: 'acceptEdits', label: 'Edita solo', hint: 'crea y modifica archivos sin preguntar; para lo demás pide permiso' },
   { id: 'auto', label: 'Automático', hint: 'decide él qué necesita aprobación, como en la app de Claude' },
   { id: 'plan', label: 'Sólo plan', hint: 'mira y propone, pero no toca nada' },
-  { id: 'manual', label: 'Pregunta', hint: 'se detiene y te dice qué necesitaba; aquí no puede preguntarte' },
+  { id: 'manual', label: 'Pregunta', hint: 'te pregunta aquí antes de cada cosa, como en su terminal' },
   { id: 'bypassPermissions', label: 'Sin límites', hint: 'hace cualquier cosa sin pedir nada: ojo con lo que le mandas' }
 ] as const
 
@@ -1004,6 +1291,27 @@ export const API_PERMISSION_MODES = [
   { id: 'bypassPermissions', label: 'Sin límites', hint: 'edita y ejecuta comandos sin preguntar: ojo con lo que le pides' }
 ] as const
 
+/**
+ * OpenCode y Gemini CLI hablan ACP: lo que su configuración tiene en «ask»
+ * llega aquí como una pregunta con sus botones, como en su terminal.
+ */
+export const ACP_PERMISSION_MODES = [
+  { id: 'manual', label: 'Pregunta', hint: 'lo que su configuración pide confirmar te lo pregunta aquí, como en su terminal' },
+  { id: 'plan', label: 'Sólo plan', hint: 'su modo plan: mira y propone, pero no edita nada' },
+  { id: 'bypassPermissions', label: 'Sin límites', hint: 'dice que sí a todo lo que pregunte (lo que tengas denegado sigue denegado)' }
+] as const
+
+/**
+ * Codex, por su app-server: los modos de su selector de aprobaciones (Read
+ * Only, Auto y Full Access) más el de preguntar por todo lo que no sea de fiar.
+ */
+export const CODEX_PERMISSION_MODES = [
+  { id: 'acceptEdits', label: 'Edita solo', hint: 'trabaja dentro del proyecto sin preguntar; para salir de él o usar la red te pregunta aquí (su modo Auto)' },
+  { id: 'manual', label: 'Pregunta', hint: 'sólo hace sin preguntar lo que es de fiar (leer, listar); lo demás te lo pregunta aquí' },
+  { id: 'plan', label: 'Sólo lectura', hint: 'lee y propone; para editar o ejecutar algo te pregunta aquí (su modo Read Only)' },
+  { id: 'bypassPermissions', label: 'Sin límites', hint: 'sin sandbox y sin preguntas (su Full Access): ojo con lo que le mandas' }
+] as const
+
 export const EFFORTS: Effort[] = ['auto', 'minimal', 'low', 'medium', 'high', 'max']
 
 /** Un archivo adjunto al prompt. */
@@ -1013,6 +1321,9 @@ export interface Attachment {
   bytes: number
   /** false para binarios: se manda la ruta, no el contenido. */
   text: boolean
+  /** Imagen que un modelo con visión recibe como imagen (PNG, JPEG, GIF o WebP). */
+  image?: boolean
+  mime?: string
   lines?: number
   /** Motivo por el que no se envía el contenido, si aplica. */
   skipped?: string
@@ -1048,6 +1359,43 @@ export interface FileContent {
 /* ------------------------------------------------------------------ *
  * GitHub                                                             *
  * ------------------------------------------------------------------ */
+
+/**
+ * Una cuenta con la que se puede iniciar sesión: GitHub (por gh) o un CLI con
+ * su propio inicio de sesión. La app sólo pregunta a la herramienta si hay
+ * sesión; el secreto lo guarda ella.
+ */
+export interface AccountStatus {
+  id: string
+  name: string
+  kind: 'github' | 'cli'
+  installed: boolean
+  /** null: está instalada pero no dice desde fuera si hay sesión. */
+  signedIn: boolean | null
+  /** La cuenta, o los proveedores conectados. */
+  who?: string
+  /** El plan o el tipo de sesión (pro, plus, API…). */
+  plan?: string
+  detail?: string
+  /** El comando oficial que inicia sesión, para lanzarlo en una terminal. */
+  loginCommand?: string
+  logoutCommand?: string
+  installCommand?: string
+  installUrl?: string
+  /** El inicio de sesión se hace sin salir de la app (GitHub). */
+  inApp?: boolean
+}
+
+/** Lo que va pasando en un inicio de sesión lanzado desde la app. */
+export interface AccountsEvent {
+  id: 'github' | 'openrouter'
+  /** code: gh ha dado su código de un solo uso. browser: la dirección que hay que abrir. done: terminó. */
+  phase: 'code' | 'browser' | 'done'
+  code?: string
+  url?: string
+  ok?: boolean
+  error?: string
+}
 
 export interface GhStatus {
   installed: boolean
@@ -1094,7 +1442,7 @@ export interface RunOptions {
   projectName?: string
   arenaId?: string
   conversationId?: string
-  kind?: 'chat' | 'arena'
+  kind?: 'chat' | 'arena' | 'git'
   /** Cuánto debe pensar. 'auto' o sin valor: no se toca la petición. */
   effort?: Effort
   attachments?: Attachment[]
@@ -1109,6 +1457,17 @@ export interface RunOptions {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
+  /** Lo que el usuario adjuntó a ese mensaje: se vuelve a mandar con el historial. */
+  attachments?: Attachment[]
+  /** Ya compuesto: las imágenes que van como imagen (sólo en main). */
+  images?: ImageRef[]
+}
+
+/** Una imagen de un mensaje: se lee del disco al montar la petición. */
+export interface ImageRef {
+  path: string
+  mime: string
+  name?: string
 }
 
 export interface CliRunOptions {
@@ -1141,6 +1500,12 @@ export interface CliRunOptions {
    * sesión: entonces va dentro del prompt para que no empiece de cero.
    */
   history?: { role: 'user' | 'assistant'; content: string }[]
+  /**
+   * La conversación se ha rebobinado: lo que el CLI guarda (por id o en la
+   * carpeta) lleva mensajes que ya no están, así que no se retoma y la
+   * conversación va en el prompt.
+   */
+  rewound?: boolean
 }
 
 export interface CliEvent {
@@ -1314,6 +1679,8 @@ export interface StoredSession {
   id: string
   kind: SessionKind
   title: string
+  /** El título se puso a mano (o es el de una copia): el primer prompt no lo cambia. */
+  titled?: boolean
   createdAt: number
   updatedAt: number
   /** Ajustes con los que se retoma la sesión. */
@@ -1347,6 +1714,11 @@ export interface StoredSession {
   cliContinue?: boolean
   /** El próximo turno retoma en una sesión nueva (bifurca). */
   cliForkNext?: boolean
+  /**
+   * Se editó o regeneró un mensaje: la sesión del agente tiene lo descartado,
+   * así que el próximo turno empieza una nueva con la conversación en el prompt.
+   */
+  cliRewound?: boolean
   /** Trabaja en un worktree aparte (su carpeta) en vez de en la del proyecto. */
   worktreePath?: string
   /**
