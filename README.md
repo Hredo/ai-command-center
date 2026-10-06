@@ -13,6 +13,7 @@ Everything on your own machine: no account, no server, no telemetry.
 [![latest release](https://img.shields.io/github/v/release/Hredo/ai-command-center?label=download)](https://github.com/Hredo/ai-command-center/releases/latest)
 [![downloads](https://img.shields.io/github/downloads/Hredo/ai-command-center/total?label=downloads)](https://github.com/Hredo/ai-command-center/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![HOL trust](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Dhredo%252Fai-command-center%26metric%3Dtrust%26style%3Dflat)](https://hol.org/registry/plugins/hredo%2Fai-command-center)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](#windows)
 [![macOS](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple)](#macos)
 [![Linux](https://img.shields.io/badge/Linux-deb%20%7C%20AppImage-FCC624?logo=linux&logoColor=black)](#linux)
@@ -908,7 +909,10 @@ App Control is enabled and enforcing, so the NSIS installer **cannot even be gen
 electron-builder needs to launch a temporary executable to write the uninstaller and
 Windows won't let it.
 
-Releasing is pushing a tag:
+Releasing is pushing a tag. Before that, bump the version in `package.json` and in
+[`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) — the manifest the
+[HOL registry](https://hol.org/registry/plugins/hredo%2Fai-command-center) reads — or the
+`plugin-scanner` workflow fails:
 
 ```bash
 git tag v0.8.0 && git push origin v0.8.0
@@ -1075,3 +1079,5 @@ your version and how you installed the app, which is what's needed to reproduce 
 
 You may use, modify and distribute it, including commercially, as long as the copyright
 notice is kept. It is provided **with no warranty of any kind**.
+
+See also the [terms of use](TERMS.md) and the [privacy policy](PRIVACY.md).

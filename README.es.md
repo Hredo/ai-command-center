@@ -13,6 +13,7 @@ Todo en tu equipo: sin cuenta, sin servidor y sin telemetría.
 [![última versión](https://img.shields.io/github/v/release/Hredo/ai-command-center?label=descargar)](https://github.com/Hredo/ai-command-center/releases/latest)
 [![descargas](https://img.shields.io/github/downloads/Hredo/ai-command-center/total?label=descargas)](https://github.com/Hredo/ai-command-center/releases)
 [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
+[![HOL trust](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Dhredo%252Fai-command-center%26metric%3Dtrust%26style%3Dflat)](https://hol.org/registry/plugins/hredo%2Fai-command-center)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](#windows)
 [![macOS](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple)](#macos)
 [![Linux](https://img.shields.io/badge/Linux-deb%20%7C%20AppImage-FCC624?logo=linux&logoColor=black)](#linux)
@@ -918,7 +919,10 @@ Smart App Control está activado y en modo de imposición, así que el instalado
 se puede ni generar** —electron-builder necesita lanzar un ejecutable temporal para
 escribir el desinstalador y Windows no le deja—.
 
-Publicar es empujar una etiqueta:
+Publicar es empujar una etiqueta. Antes hay que subir la versión en `package.json` y en
+[`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) —el manifiesto que lee el
+[registro de HOL](https://hol.org/registry/plugins/hredo%2Fai-command-center)—, o falla el
+workflow `plugin-scanner`:
 
 ```bash
 git tag v0.8.0 && git push origin v0.8.0
@@ -1084,3 +1088,5 @@ pide la versión y cómo instalaste la app, que es lo que hace falta para reprod
 
 Puedes usarlo, modificarlo y distribuirlo, incluso comercialmente, conservando el aviso de
 copyright. Se entrega **sin garantía de ningún tipo**.
+
+Ver también las [condiciones de uso](TERMS.md) y la [política de privacidad](PRIVACY.md).
