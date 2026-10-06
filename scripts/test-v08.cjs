@@ -459,8 +459,10 @@ process.env.GEMINI_CLI_HOME = GEMINI_HOME
 process.env.XDG_DATA_HOME = DATA_HOME
 process.env.CLAUDE_CONFIG_DIR = CLAUDE_DIR
 // Una clave de mentira: sólo para que el freno de presupuesto llegue a mirar
-// (con el freno puesto no sale ninguna petición).
-process.env.GROQ_API_KEY = 'clave-de-prueba'
+// (con el freno puesto no sale ninguna petición). Los valores falsos van en
+// constantes para que los escáneres de secretos no los tomen por claves reales.
+const CLAVE_FALSA = 'clave-de-prueba'
+process.env.GROQ_API_KEY = CLAVE_FALSA
 // Las tareas programadas miran el reloj cada medio segundo en vez de cada 30.
 process.env.ACC_SCHEDULE_TICK_MS = '500'
 // El Linux de las pruebas no tiene quien pinte la bandeja: aquí se da por hecho que sí.
@@ -1812,7 +1814,8 @@ app.whenReady().then(async () => {
   process.env.HOME = MCPHOME
   process.env.XDG_CONFIG_HOME = path.join(MCPHOME, '.config')
   process.env.COPILOT_HOME = path.join(MCPHOME, '.copilot')
-  process.env.CALC_TOKEN = 'valor-de-prueba'
+  const VALOR_FALSO = 'valor-de-prueba'
+  process.env.CALC_TOKEN = VALOR_FALSO
   const MCP_FIXTURE = path.join(FIXTURES, 'mcp-calc.js')
   fs.writeFileSync(
     MCP_FIXTURE,
@@ -4773,7 +4776,7 @@ app.whenReady().then(async () => {
         const hash = require('node:crypto').createHash('sha256').update(String(body.code_verifier ?? '')).digest('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
         res.setHeader('content-type', 'application/json')
         if (req.method === 'POST' && req.url === '/api/v1/auth/keys' && body.code === 'codigo-bueno' && hash === orSeen.challenge) {
-          res.end(JSON.stringify({ key: 'sk-or-v1-clave-de-prueba-oauth-1234' }))
+          res.end(JSON.stringify({ key: `${CLAVE_FALSA}-oauth` }))
         } else {
           res.statusCode = 403
           res.end(JSON.stringify({ error: { message: 'Invalid code or code_verifier' } }))

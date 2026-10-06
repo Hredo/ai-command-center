@@ -1,0 +1,15 @@
+# Lo que no forma parte del código: dependencias, compilados, instaladores,
+# capturas locales y cualquier fichero de entorno o clave.
+node_modules/
+out/
+release/
+dist/
+shots/
+smoke.png
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+*.pem
+*.key

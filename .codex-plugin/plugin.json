@@ -1,0 +1,27 @@
+{
+  "name": "ai-command-center",
+  "version": "0.8.0",
+  "description": "Local-first Windows, macOS and Linux command center for Claude Code, Codex, OpenCode, Aider, Gemini CLI, Ollama and 8,000+ API models, with live cost and token analytics (even for Claude Code sessions in other terminals), a side-by-side Arena, real terminals and git per project",
+  "author": {
+    "name": "Hredo",
+    "url": "https://github.com/Hredo"
+  },
+  "homepage": "https://github.com/Hredo/ai-command-center",
+  "repository": "https://github.com/Hredo/ai-command-center",
+  "license": "MIT",
+  "keywords": ["claude-code", "codex", "opencode", "ollama", "electron", "agents", "analytics", "local-first"],
+  "interface": {
+    "displayName": "AI Command Center",
+    "shortDescription": "Local command center for your AIs, agents and projects",
+    "longDescription": "A desktop app that brings Claude Code, Codex, OpenCode, Aider, Gemini CLI, Ollama and 8,000+ API models together on your own machine: live cost and token analytics (also for sessions running in other terminals), a side-by-side Arena, real terminals and git per project. No account, no server, no telemetry.",
+    "developerName": "Hredo",
+    "category": "Tools & Integrations",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://github.com/Hredo/ai-command-center",
+    "privacyPolicyURL": "https://github.com/Hredo/ai-command-center/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/Hredo/ai-command-center/blob/main/TERMS.md",
+    "composerIcon": "./build/icon.png",
+    "logo": "./build/icon.png",
+    "screenshots": ["./docs/media/en/dashboard.png", "./docs/media/en/terminal.png", "./docs/media/en/graph.png"]
+  }
+}

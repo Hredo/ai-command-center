@@ -1,0 +1,40 @@
+# Escáner de HOL (el registro de plugins donde está publicada la app) en cada
+# empujón y cada PR: busca secretos, código peligroso y fallos del manifiesto
+# .codex-plugin/plugin.json. Que corra aquí es lo que HOL comprueba para no
+# rebajar la puntuación de confianza.
+name: plugin-scanner
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Solo lee: el escáner no necesita escribir nada en el repositorio.
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: HOL plugin scanner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # El manifiesto lleva su propia versión: si no cuadra con package.json,
+      # el registro anunciaría una que no es.
+      - name: Versión del manifiesto
+        run: |
+          node -e "
+            const a = require('./package.json').version
+            const b = require('./.codex-plugin/plugin.json').version
+            if (a !== b) { console.error('package.json dice ' + a + ' y .codex-plugin/plugin.json dice ' + b); process.exit(1) }
+          "
+      - uses: hashgraph-online/ai-plugin-scanner-action@ac513da02cd2d28e6da5593e55add3f5b4cdce1e # v1.2.767
+        with:
+          plugin_dir: "."
+          mode: scan
+          fail_on_severity: high
+          min_score: 80
+          # Comentar en la PR pide permiso de escritura, y aquí no se da.
+          pr_comment: "off"
