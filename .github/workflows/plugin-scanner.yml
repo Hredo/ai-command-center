@@ -30,7 +30,7 @@ jobs:
             const b = require('./.codex-plugin/plugin.json').version
             if (a !== b) { console.error('package.json dice ' + a + ' y .codex-plugin/plugin.json dice ' + b); process.exit(1) }
           "
-      - uses: hashgraph-online/ai-plugin-scanner-action@ac513da02cd2d28e6da5593e55add3f5b4cdce1e # v1.2.767
+      - uses: hashgraph-online/ai-plugin-scanner-action@d6f2a2d075b68d828ef9d71fdde6854be8f97211 # v1.2.772
         with:
           plugin_dir: "."
           mode: scan
