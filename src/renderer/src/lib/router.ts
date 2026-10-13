@@ -130,6 +130,8 @@ export interface RouteOption {
   quotaLabel?: string
   supportsEffort: boolean
   passes: boolean
+  /** Escalón del alias dentro de su CLI (haiku 1 … fable 5): manda sobre la puntuación. */
+  rank?: number
 }
 
 export interface RouteDecision {
@@ -239,6 +241,9 @@ export function routeOptions(p: RoutedProfile, inputs: RouteInputs): { options: 
       supportsEffort: EFFORT_CLIS.has(cmd)
     }
     if (cmd === 'claude') {
+      // Con la suscripción todos «cuestan» lo mismo: el alias lo marca la
+      // dificultad exigida, y los de más nivel quedan como alternativas.
+      const matched = Math.max(...CLAUDE_TIERS.filter((x) => x.minDifficulty <= required).map((x) => x.minDifficulty))
       for (const tier of CLAUDE_TIERS) {
         const ref = newest(inputs.market, tier.match)
         const level = ref ? indexOf(ref, p.category).value : undefined
@@ -248,7 +253,8 @@ export function routeOptions(p: RoutedProfile, inputs: RouteInputs): { options: 
           label: tier.alias,
           cliModel: tier.alias,
           level,
-          passes: level != null && threshold != null ? level >= threshold : required >= tier.minDifficulty || tier.alias === 'fable'
+          rank: tier.minDifficulty,
+          passes: tier.minDifficulty >= matched
         })
       }
     } else {
@@ -275,7 +281,7 @@ export function decideRoute(p: RoutedProfile, inputs: RouteInputs): RouteDecisio
     (a.cost ?? Infinity) - (b.cost ?? Infinity) || (b.level ?? 0) - (a.level ?? 0)
   // Entre agentes de consola: el alias más ligero que llega y, a igualdad, el que más cupo tiene.
   const byTier = (a: RouteOption, b: RouteOption): number =>
-    (a.level ?? 0) - (b.level ?? 0) || (b.quotaLeftPct ?? 50) - (a.quotaLeftPct ?? 50)
+    (a.rank ?? 0) - (b.rank ?? 0) || (a.level ?? 0) - (b.level ?? 0) || (b.quotaLeftPct ?? 50) - (a.quotaLeftPct ?? 50)
 
   const cli = pass.filter((o) => o.kind === 'cli').sort(byTier)
   const local = pass.filter((o) => o.kind === 'local').sort((a, b) => (b.level ?? 0) - (a.level ?? 0))

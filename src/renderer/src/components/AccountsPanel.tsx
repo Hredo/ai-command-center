@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { Badge, Button, Input, Modal, Panel, PanelHeader, cx } from './ui'
 import { relTime } from '../lib/format'
+import { IS_WIN } from '../lib/platform'
 import { useT } from '../lib/i18n'
 import { useStore } from '../lib/store'
 import { useIsPageActive } from '../lib/pageActive'
@@ -117,6 +118,14 @@ export function GithubLoginModal(): React.JSX.Element | null {
   )
 }
 
+/**
+ * Dos órdenes seguidas, la segunda sólo si la primera sale bien. En Windows
+ * la terminal es PowerShell, y la 5.1 no entiende `&&`.
+ */
+function thenRun(first: string, second: string): string {
+  return IS_WIN ? `${first}; if ($?) { ${second} }` : `${first} && ${second}`
+}
+
 function StateBadge({ a }: { a: AccountStatus }): React.JSX.Element {
   const t = useT()
   if (!a.installed) return <Badge tone="neutral">{t('no instalado')}</Badge>
@@ -169,15 +178,38 @@ function AccountRow({ a, gitHelper, onSetupGit }: { a: AccountStatus; gitHelper?
       </div>
       <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
         {!a.installed ? (
-          a.installCommand ? (
-            <Button size="sm" onClick={() => void inTerminal(a.installCommand!)}>
-              <TerminalIcon size={12} /> {t('Instalarlo en la terminal')}
-            </Button>
-          ) : a.installUrl ? (
-            <Button size="sm" variant="ghost" onClick={() => void window.api.app.openExternal(a.installUrl!)}>
-              <ExternalLink size={12} /> {t('Cómo instalarlo')}
-            </Button>
-          ) : null
+          <>
+            {a.installCommand ? (
+              <Button size="sm" variant="ghost" onClick={() => void inTerminal(a.installCommand!)}>
+                <TerminalIcon size={12} /> {t('Instalarlo en la terminal')}
+              </Button>
+            ) : a.installUrl ? (
+              <Button size="sm" variant="ghost" onClick={() => void window.api.app.openExternal(a.installUrl!)}>
+                <ExternalLink size={12} /> {t('Cómo instalarlo')}
+              </Button>
+            ) : null}
+            {a.loginCommand ? (
+              <Button
+                size="sm"
+                variant="primary"
+                data-account-login={a.id}
+                title={
+                  a.installCommand
+                    ? t('Lo instala y, al terminar, abre su inicio de sesión en la misma terminal')
+                    : t('Hay que instalarlo antes: te llevo a cómo hacerlo')
+                }
+                onClick={() => {
+                  if (a.installCommand) void inTerminal(thenRun(a.installCommand, a.loginCommand!))
+                  else if (a.installUrl) {
+                    toast('error', t('Instala {name} primero; después podrás iniciar sesión desde aquí.', { name: a.name }))
+                    void window.api.app.openExternal(a.installUrl)
+                  }
+                }}
+              >
+                <LogIn size={12} /> {t('Iniciar sesión')}
+              </Button>
+            ) : null}
+          </>
         ) : a.signedIn ? (
           <>
             {a.kind === 'github' && !gitHelper && onSetupGit ? (

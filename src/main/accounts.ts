@@ -65,7 +65,14 @@ function binOf(cmd: string): string | undefined {
   const re = new RegExp(`(^|[\\\\/])${cmd}(\\.(cmd|exe|bat|ps1))?$`, 'i')
   const own = getConfig().cliAgents.find((a) => re.test(a.command.trim()))?.command.trim()
   if (own && (own.includes('/') || own.includes('\\')) && existsSync(own)) return own
-  return findInPath(cmd)
+  const found = findInPath(cmd)
+  if (found) return found
+  // Recién instalado con pnpm: la app arrancó antes de que su carpeta entrara en el PATH.
+  for (const ext of IS_WIN ? ['.cmd', '.exe'] : ['']) {
+    const p = join(pnpmHome(), cmd + ext)
+    if (existsSync(p)) return p
+  }
+  return undefined
 }
 
 async function github(): Promise<AccountStatus> {
@@ -86,9 +93,35 @@ async function github(): Promise<AccountStatus> {
   }
 }
 
-/** Instalar un CLI de npm: con pnpm si lo tienes, si no con npm. */
+/** La carpeta donde pnpm deja los ejecutables globales (la de `pnpm setup`). */
+function pnpmHome(): string {
+  if (process.env['PNPM_HOME']) return process.env['PNPM_HOME']
+  if (IS_WIN) return join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'pnpm')
+  if (process.platform === 'darwin') return join(homedir(), 'Library', 'pnpm')
+  return join(process.env['XDG_DATA_HOME'] || join(homedir(), '.local', 'share'), 'pnpm')
+}
+
+/** ¿Tiene pnpm su carpeta global lista? Sin `pnpm setup`, `pnpm add -g` falla. Se pregunta una vez. */
+let pnpmReady: Promise<boolean> | null = null
+function pnpmGlobalReady(): Promise<boolean> {
+  const pnpm = findInPath('pnpm')
+  if (!pnpm) return Promise.resolve(false)
+  pnpmReady ??= run(pnpm, ['bin', '-g'], 10000).then((r) => r.ok && !/not in PATH/i.test(r.out + r.err))
+  return pnpmReady
+}
+let pnpmIsReady = false
+
+/**
+ * Instalar un CLI de npm: con pnpm si lo tienes, si no con npm. Si pnpm no
+ * tiene aún su carpeta global, primero `pnpm setup` (lo deja en tu PATH para
+ * siempre) y se aplica ya en esa terminal, para que instalar funcione a la primera.
+ */
 function npmInstall(pkg: string): string {
-  return findInPath('pnpm') ? `pnpm add -g ${pkg}` : `npm install -g ${pkg}`
+  if (!findInPath('pnpm')) return `npm install -g ${pkg}`
+  if (pnpmIsReady) return `pnpm add -g ${pkg}`
+  if (IS_WIN) return `pnpm setup; $env:PNPM_HOME = "$env:LOCALAPPDATA\\pnpm"; $env:Path = "$env:PNPM_HOME;$env:Path"; pnpm add -g ${pkg}`
+  const home = process.platform === 'darwin' ? '$HOME/Library/pnpm' : '$HOME/.local/share/pnpm'
+  return `pnpm setup && export PNPM_HOME="${home}" && export PATH="$PNPM_HOME:$PATH" && pnpm add -g ${pkg}`
 }
 
 function readJson(file: string): any {
@@ -393,6 +426,7 @@ function remember(list: AccountStatus[]): AccountStatus[] {
 
 /** El estado de todo, a la vez. Uno que falle no tumba a los demás. */
 export async function accountsStatus(): Promise<AccountStatus[]> {
+  pnpmIsReady = await pnpmGlobalReady()
   const checks: [string, string, () => Promise<AccountStatus>][] = [
     ['github', 'GitHub', github],
     ['claude', 'Claude Code', claude],

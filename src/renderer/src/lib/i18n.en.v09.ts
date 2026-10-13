@@ -116,5 +116,8 @@ export const enV09: Record<string, string> = {
   'No hay ningún inicio de sesión de OpenRouter en marcha': 'There is no OpenRouter sign-in in progress',
   'Eso no parece un código de OpenRouter': 'That does not look like an OpenRouter code',
   'Este inicio de sesión ya terminó': 'This sign-in has already finished',
-  'No se pudo guardar': 'Could not save'
+  'No se pudo guardar': 'Could not save',
+  'Lo instala y, al terminar, abre su inicio de sesión en la misma terminal': 'Installs it and, when done, opens its sign-in in the same terminal',
+  'Hay que instalarlo antes: te llevo a cómo hacerlo': 'It has to be installed first: I will take you to how',
+  'Instala {name} primero; después podrás iniciar sesión desde aquí.': 'Install {name} first; then you can sign in from here.'
 }
