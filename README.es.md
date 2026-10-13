@@ -32,7 +32,7 @@ Todo en tu equipo: sin cuenta, sin servidor y sin telemetría.
 
 - [Qué es](#qué-es)
 - [Un vistazo](#un-vistazo)
-- [Novedades de la 0.8](#novedades-de-la-08)
+- [Novedades de la 0.9](#novedades-de-la-09) · [de la 0.8](#novedades-de-la-08)
 - [**Instalación**](#instalación) — [qué archivo](#qué-archivo-me-descargo) · [Windows](#windows) · [macOS](#macos) · [Linux](#linux) · [compilarla](#compilarla-tú-mismo)
 - [Verificar la descarga](#verificar-la-descarga)
 - [Primeros pasos](#primeros-pasos)
@@ -108,6 +108,54 @@ el histórico vive en ficheros tuyos. No hay servidor, ni cuenta que crear, ni t
 </table>
 
 ---
+
+## Novedades de la 0.9
+
+**Laya decide por ti**
+
+- **Enrutador** (Modelos › Enrutador, y «Enrutar con Laya» en la Consola). Escribes el
+  prompt y [Laya](https://github.com/NandhaKishorM/laya), un modelo de decisiones que corre
+  en tu equipo, lee qué tipo de tarea es, cuánto cuesta, si hay que tocar archivos o mirar
+  imágenes y si hay que pensar con calma. Con eso se elige **modelo, esfuerzo y proveedor**
+  entre lo que tienes de verdad: claves de API, CLIs con sesión iniciada y cupo, y modelos
+  locales. «Lanzar» abre la conversación con esa elección y le manda el prompt; debajo van
+  las alternativas y lo que contestó Laya, para que se vea por qué.
+- **Se instala con un botón y no sale de tu equipo.** Un entorno de Python propio con
+  PyTorch sólo para CPU y el modelo multilingüe (unos 1,5 GB). Todo va fijado a lo que se
+  revisó: la rueda de `laya` 0.4.6 se comprueba por su SHA-256 y los pesos (`safetensors`,
+  nada de pickle) se bajan de un commit concreto de Hugging Face. No se usa su servidor
+  HTTP: es un proceso hijo que habla por la entrada y la salida estándar, sin abrir ningún
+  puerto, y descargado funciona sin red.
+- **Sin vender humo.** Se midió con 70 tareas etiquetadas a mano: en tareas nuevas Laya
+  acierta el tipo la mitad de las veces y la dificultad, a un punto, nueve de cada diez.
+  Por eso se combina con las reglas que ya tenía el recomendador, que también lo usa
+  como clasificador.
+
+**Un Panel a tu gusto**
+
+- **Organizar.** Cada recuadro del Panel se arrastra por su asa, cambia de ancho y de alto
+  desde la esquina y se esconde. Se guarda solo; «Restablecer» vuelve a lo de siempre. Con
+  el teclado también: ← → lo mueven y, con Mayús, cambian su tamaño. En un panel estrecho
+  los recuadros pequeños se recolocan solos sin tocar lo guardado.
+
+**Cuentas que se quedan**
+
+- **Arreglado: Claude Code y OpenCode salían «sin sesión» en Windows** aunque la tuvieras.
+  La app ejecutaba el `claude` sin extensión que npm deja para Git Bash, que Windows no
+  sabe lanzar.
+- **Más cuentas:** GitHub Copilot CLI, Qwen Code, Cursor CLI, Ollama (ollama.com) y Hugging
+  Face, además de las que había. Cada una con **Iniciar sesión** e **Instalar**: si no está
+  instalada, «Iniciar sesión» la instala con pnpm (preparando `pnpm setup` si hace falta) y
+  después abre su inicio de sesión en la misma terminal.
+- **En vivo y sin sobresaltos.** Entrar o salir desde cualquier terminal se nota al momento;
+  si una herramienta no contesta, se enseña lo último que se supo en vez de «sin sesión».
+- **Todas las claves en un sitio.** Cada proveedor que sólo funciona con clave aparece en
+  Cuentas con el enlace a su página de claves y dónde pegarla; se prueba al guardarla.
+- **OpenRouter** escucha la vuelta también por IPv6 y, si el navegador no vuelve a la app,
+  basta con pegar la dirección en la que se quedó.
+
+**Seguridad:** fuera la alerta de `sprintf-js` (GHSA-hp3w-g68c-fv3c), que entraba por las
+herramientas de empaquetado.
 
 ## Novedades de la 0.8
 
@@ -231,12 +279,12 @@ en la sección **Assets**. Busca la línea de tu sistema:
 
 | Tu sistema | Descarga | Qué es |
 |---|---|---|
-| **Windows** 10 u 11 | `AI-Command-Center-Setup-0.8.0.exe` | Instalador (recomendado) |
-| | `AI-Command-Center-0.8.0-x64.zip` | Portátil, sin instalar nada |
-| **macOS** con chip de Apple (M1, M2, M3, M4…) | `AI-Command-Center-0.8.0-mac-arm64.dmg` | Imagen de disco |
-| **macOS** con procesador Intel | `AI-Command-Center-0.8.0-mac-x64.dmg` | Imagen de disco |
-| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.8.0-linux-amd64.deb` | Paquete, se instala con `apt` |
-| **Cualquier otro Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.8.0-linux-x86_64.AppImage` | Un solo archivo, sin instalar nada |
+| **Windows** 10 u 11 | `AI-Command-Center-Setup-0.9.0.exe` | Instalador (recomendado) |
+| | `AI-Command-Center-0.9.0-x64.zip` | Portátil, sin instalar nada |
+| **macOS** con chip de Apple (M1, M2, M3, M4…) | `AI-Command-Center-0.9.0-mac-arm64.dmg` | Imagen de disco |
+| **macOS** con procesador Intel | `AI-Command-Center-0.9.0-mac-x64.dmg` | Imagen de disco |
+| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.9.0-linux-amd64.deb` | Paquete, se instala con `apt` |
+| **Cualquier otro Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.9.0-linux-x86_64.AppImage` | Un solo archivo, sin instalar nada |
 | Linux en **ARM** (Raspberry Pi 5, Ampere…) | `…-linux-arm64.deb` o `…-linux-arm64.AppImage` | Lo mismo, para ARM64 |
 
 > **¿No sabes qué Mac tienes?** Menú Apple → **Acerca de este Mac**. Si pone *Chip Apple
@@ -281,7 +329,7 @@ aplicación funciona igual. No hay nada que se rompa por faltar.
 
 #### Opción A — Instalador (recomendado)
 
-1. Descarga `AI-Command-Center-Setup-0.8.0.exe`.
+1. Descarga `AI-Command-Center-Setup-0.9.0.exe`.
 2. Ejecútalo con doble clic. **Windows va a mostrarte un aviso azul**; es normal y está
    explicado [aquí abajo](#windows-te-va-a-avisar-por-qué-y-qué-hacer): pulsa **Más
    información** y después **Ejecutar de todas formas**.
@@ -295,7 +343,7 @@ No pide permisos de administrador y no toca nada fuera de tu perfil de usuario.
 Útil si no quieres instalar nada, si vas a llevártela en un USB, o si el instalador se te
 queda bloqueado.
 
-1. Descarga `AI-Command-Center-0.8.0-x64.zip`.
+1. Descarga `AI-Command-Center-0.9.0-x64.zip`.
 2. **Antes de descomprimir**, haz clic derecho sobre el `.zip`, entra en **Propiedades**,
    marca **Desbloquear** abajo del todo y pulsa **Aceptar**.
 
@@ -388,7 +436,7 @@ Cosas propias del Mac que ya están resueltas:
 Desde la carpeta donde lo hayas descargado:
 
 ```bash
-sudo apt install ./AI-Command-Center-0.8.0-linux-amd64.deb
+sudo apt install ./AI-Command-Center-0.9.0-linux-amd64.deb
 ```
 
 (El `./` importa: sin él, `apt` busca en internet un paquete con ese nombre.) Aparece en
@@ -399,11 +447,11 @@ incluido el perfil de AppArmor que piden Ubuntu 24.04 y posteriores.
 #### Opción B — AppImage (cualquier distribución)
 
 ```bash
-chmod +x AI-Command-Center-0.8.0-linux-x86_64.AppImage
+chmod +x AI-Command-Center-0.9.0-linux-x86_64.AppImage
 ```
 
 ```bash
-./AI-Command-Center-0.8.0-linux-x86_64.AppImage
+./AI-Command-Center-0.9.0-linux-x86_64.AppImage
 ```
 
 O dale permiso de ejecución desde el gestor de archivos (*Propiedades → Permisos →
@@ -487,8 +535,8 @@ lo descargaste:
 
 | Sistema | Orden |
 |---|---|
-| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.8.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.8.0-mac-arm64.dmg` |
+| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.9.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.9.0-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 El valor tiene que coincidir, letra por letra, con la línea correspondiente de
@@ -925,7 +973,7 @@ Publicar es empujar una etiqueta. Antes hay que subir la versión en `package.js
 workflow `plugin-scanner`:
 
 ```bash
-git tag v0.8.0 && git push origin v0.8.0
+git tag v0.9.0 && git push origin v0.9.0
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) genera, en máquinas
