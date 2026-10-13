@@ -917,6 +917,18 @@ export interface EditorPrefs {
 /** Tamaños de los paneles redimensionables, por clave. */
 export type PaneSizes = Record<string, number>
 
+/** Un recuadro del Panel: ancho en columnas (de 30) y alto en píxeles (sin alto: el que pida). */
+export interface DashboardTile {
+  id: string
+  w: number
+  h?: number
+}
+
+export interface DashboardLayout {
+  tiles: DashboardTile[]
+  hidden: string[]
+}
+
 export interface Settings {
   theme: 'dark' | 'light'
   /** Idioma de toda la interfaz. */
@@ -957,6 +969,8 @@ export interface Settings {
   workspace?: import('./workspace').Workspace
   /** Distribuciones de la mesa guardadas con nombre. */
   layouts?: import('./workspace').SavedLayout[]
+  /** El Panel a tu gusto: orden, tamaño y qué recuadros se ven. Ver renderer/lib/dashboardLayout.ts. */
+  dashboard?: DashboardLayout
   /** El menú lateral a tu gusto: el orden de las secciones y las que no quieres ver. */
   nav?: { order?: string[]; hidden?: string[] }
   /** Ya se hizo (o se saltó) el recorrido de bienvenida. */
@@ -1384,13 +1398,56 @@ export interface AccountStatus {
   installUrl?: string
   /** El inicio de sesión se hace sin salir de la app (GitHub). */
   inApp?: boolean
+  /** Esta vez no contestó: lo que se enseña es lo que se supo en este momento. */
+  staleAt?: number
+}
+
+/* ------------------------------------------------------------------ *
+ * Laya: el modelo de decisiones del enrutador                        *
+ * ------------------------------------------------------------------ */
+
+export interface LayaStatus {
+  /** absent: sin instalar; installing: instalándose; ready: listo. */
+  state: 'absent' | 'installing' | 'ready'
+  version: string
+  repo: string
+  revision: string
+  /** El proceso está en marcha con el modelo en memoria. */
+  running: boolean
+  /** Lo que tardó en cargar el modelo la última vez. */
+  loadedMs?: number
+  python?: string
+  diskBytes?: number
+  error?: string
+}
+
+export interface LayaEvent {
+  phase: 'venv' | 'packages' | 'weights' | 'load' | 'done'
+  /** Qué está haciendo, como clave que se traduce; sus valores van en `vars`. */
+  detail?: string
+  vars?: Record<string, string | number>
+  /** Avance de la descarga del modelo, 0–100. */
+  pct?: number
+  ok?: boolean
+  error?: string
+}
+
+/** Lo que contesta Laya sobre una tarea: probabilidad de «sí» de cada pregunta y el reparto del tipo. */
+export interface LayaClassification {
+  yes: Record<string, number>
+  category: Record<string, number>
+  ms: number
 }
 
 /** Lo que va pasando en un inicio de sesión lanzado desde la app. */
 export interface AccountsEvent {
-  id: 'github' | 'openrouter'
-  /** code: gh ha dado su código de un solo uso. browser: la dirección que hay que abrir. done: terminó. */
-  phase: 'code' | 'browser' | 'done'
+  /** 'all': cambió el fichero de sesión de alguna herramienta. */
+  id: 'github' | 'openrouter' | 'all'
+  /**
+   * code: gh ha dado su código de un solo uso. browser: la dirección que hay
+   * que abrir. done: terminó. changed: alguna sesión cambió en el disco.
+   */
+  phase: 'code' | 'browser' | 'done' | 'changed'
   code?: string
   url?: string
   ok?: boolean

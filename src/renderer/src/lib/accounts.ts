@@ -84,7 +84,7 @@ export function watchAccounts(id?: string, ms = 5 * 60 * 1000): void {
         fastTimer = null
       }
     })
-  }, 2500)
+  }, 4000)
 }
 
 let wired = false
@@ -103,6 +103,13 @@ function wire(): void {
           set({ github: e.error === 'cancelado' ? null : { phase: 'error', error: e.error } })
         }
       }
+    } else if (e.id === 'all') {
+      // Una herramienta guardó o borró su sesión (desde la app o desde fuera).
+      const before = new Map((state.list ?? []).map((a) => [a.id, a.signedIn]))
+      void refreshAccounts().then(() => {
+        const moved = (state.list ?? []).find((a) => before.has(a.id) && a.signedIn !== null && before.get(a.id) !== a.signedIn)
+        if (moved) set(changed(moved.name, Boolean(moved.signedIn)))
+      })
     } else if (e.id === 'openrouter') {
       if (e.phase === 'browser') set({ openrouter: { url: e.url } })
       else if (e.phase === 'done') set({ openrouter: null })
@@ -129,6 +136,12 @@ export async function startOpenRouterLogin(): Promise<{ ok: boolean; error?: str
   set({ openrouter: {} })
   const r = await window.api.accounts.openrouterLogin()
   set({ openrouter: null })
+  return r.ok && r.data ? r.data : { ok: false, error: r.error }
+}
+
+/** El navegador no volvió a la app: se pega la dirección o el código. */
+export async function submitOpenRouterCode(input: string): Promise<{ ok: boolean; error?: string }> {
+  const r = await window.api.accounts.openrouterCode(input)
   return r.ok && r.data ? r.data : { ok: false, error: r.error }
 }
 

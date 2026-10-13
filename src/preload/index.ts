@@ -300,6 +300,16 @@ const api = {
     remove: (id: string) => call('prompts:remove', id),
     used: (id: string) => call('prompts:used', id)
   },
+  /** Laya: el modelo de decisiones local que lee el prompt para el enrutador. */
+  laya: {
+    status: () => call('laya:status'),
+    install: () => call('laya:install'),
+    cancel: () => call('laya:cancel'),
+    warm: () => call('laya:warm'),
+    remove: () => call('laya:remove'),
+    classify: (text: string) => call('laya:classify', text),
+    onEvent: (cb: (e: IpcEvents['laya:event']) => void) => on('laya:event', cb)
+  },
   /** El recomendador: un modelo local de Ollama clasifica la tarea. */
   recommend: {
     classify: (text: string, model: string) =>
@@ -380,6 +390,7 @@ const api = {
     /** OAuth de OpenRouter: la clave se guarda en main, aquí sólo llega si fue bien. */
     openrouterLogin: () => call('accounts:openrouterLogin'),
     openrouterCancel: () => call('accounts:openrouterCancel'),
+    openrouterCode: (input: string) => call('accounts:openrouterCode', input),
     onEvent: (cb: (e: IpcEvents['accounts:event']) => void) => on('accounts:event', cb)
   },
   updates: {

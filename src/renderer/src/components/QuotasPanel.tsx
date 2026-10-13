@@ -195,7 +195,7 @@ export function QuotasPanel({ onSettings }: { onSettings?: () => void }): React.
       ) : (
         <div className="p-3 space-y-3">
           {groups.length ? (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))' }}>
               {groups.map(([provider, list]) => {
                 const target = list[0].providerKey !== 'budget' ? list[0].target : undefined
                 return (

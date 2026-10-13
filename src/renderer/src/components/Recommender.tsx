@@ -18,7 +18,9 @@ import {
   classifyByRules, estimateTokens, recommend, TASK_CATEGORIES,
   type ModelPick, type SubscriptionPick, type TaskCategory, type TaskProfile
 } from '../lib/recommend'
-import type { ModelInfo, ModelUsage } from '@shared/types'
+import { useLaya } from '../lib/laya'
+import { mixProfile } from '../lib/router'
+import type { LayaClassification, ModelInfo, ModelUsage } from '@shared/types'
 
 const CATEGORY_LABEL: Record<TaskCategory, string> = {
   code: 'Código',
@@ -69,6 +71,8 @@ export function Recommender({
   const [classifying, setClassifying] = useState(false)
   const [classError, setClassError] = useState<string | null>(null)
   const [manual, setManual] = useState<{ category?: TaskCategory; difficulty?: number }>({})
+  const [layaRes, setLayaRes] = useState<{ text: string; c: LayaClassification } | null>(null)
+  const { status: layaStatus } = useLaya()
   const seq = useRef(0)
 
   useEffect(() => {
@@ -87,7 +91,33 @@ export function Recommender({
     [models]
   )
   const chosen = config?.settings.recommendClassifier ?? ''
-  const classifier = chosen === 'rules' ? null : localModels.find((m) => m.id === chosen)?.id ?? localModels[0]?.id ?? null
+  // Laya, si está instalado y no elegiste otra cosa: es el que está hecho para decidir.
+  const layaReady = layaStatus?.state === 'ready'
+  const withLaya = chosen === 'laya' ? layaReady : chosen === '' && layaReady
+  const classifier =
+    chosen === 'rules' || withLaya || chosen === 'laya' ? null : localModels.find((m) => m.id === chosen)?.id ?? localModels[0]?.id ?? null
+
+  useEffect(() => {
+    if (withLaya) void window.api.laya.warm()
+  }, [withLaya])
+
+  // Con Laya: lo lee al dejar de escribir, en menos de un segundo.
+  useEffect(() => {
+    setManual({})
+    if (!withLaya || text.trim().length < 6) return
+    const n = ++seq.current
+    const timer = setTimeout(async () => {
+      setClassifying(true)
+      const r = await window.api.laya.classify(text.trim())
+      if (n !== seq.current) return
+      setClassifying(false)
+      if (r.ok && r.data) {
+        setClassError(null)
+        setLayaRes({ text, c: r.data })
+      } else setClassError(r.error ?? t('Laya no contestó'))
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [text, withLaya, t])
 
   // Al parar de escribir, el modelo local la vuelve a leer.
   useEffect(() => {
@@ -118,8 +148,11 @@ export function Recommender({
   }, [text, classifier, t])
 
   const profile: TaskProfile = useMemo(() => {
-    const rules = classifyByRules(text, { project: Boolean(projectId) })
-    const fromLocal = local && local.text === text ? local.profile : null
+    const rules =
+      withLaya && layaRes && layaRes.text === text
+        ? mixProfile(text, layaRes.c, { project: Boolean(projectId) })
+        : classifyByRules(text, { project: Boolean(projectId) })
+    const fromLocal = !withLaya && local && local.text === text ? local.profile : null
     let p: TaskProfile = fromLocal
       ? {
           ...rules,
@@ -136,7 +169,7 @@ export function Recommender({
       p.needsTools = p.category === 'agentic' || (Boolean(projectId) && p.needsTools)
     }
     return { ...p, ...estimateTokens(text, p) }
-  }, [text, projectId, local, manual])
+  }, [text, projectId, local, manual, withLaya, layaRes])
 
   const rec = useMemo(
     () =>
@@ -250,13 +283,17 @@ export function Recommender({
         </span>
         <span className="ml-auto text-dim flex items-center gap-1.5" data-classifier={profile.source}>
           {classifying ? <Sparkles size={11} className="animate-pulse text-accent" /> : null}
-          {profile.source === 'local'
+          {profile.source === 'laya'
+            ? t('Laya + reglas · Laya contestó en {ms} ms', { ms: Math.round(layaRes?.c.ms ?? 0) })
+            : profile.source === 'local'
             ? t('Clasificada por {model} ({ms})', { model: profile.classifier ?? '', ms: seconds((local?.ms ?? 0) / 1000) })
             : profile.source === 'manual'
               ? t('Ajustada por ti')
               : classifier
                 ? t('Por reglas; {model} la afina al dejar de escribir', { model: classifier })
-                : t('Por reglas (sin modelo local)')}
+                : withLaya
+                  ? t('Por reglas; Laya lo afina al dejar de escribir')
+                  : t('Por reglas (sin modelo local)')}
         </span>
       </div>
       {classError ? <div className="text-[11px] text-warn">{classError}</div> : null}
@@ -353,7 +390,10 @@ export function Recommender({
               className="h-7 text-[11.5px] py-0"
               onChange={(e) => void window.api.config.settings({ recommendClassifier: e.target.value }).then(() => reload())}
             >
-              <option value="">{t('El modelo local más pequeño')}</option>
+              <option value="">{layaReady ? t('Laya (si no, el modelo local más pequeño)') : t('El modelo local más pequeño')}</option>
+              <option value="laya" disabled={!layaReady}>
+                {layaReady ? t('Laya, en tu equipo') : t('Laya (instálalo en Modelos › Enrutador)')}
+              </option>
               {localModels.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.id}

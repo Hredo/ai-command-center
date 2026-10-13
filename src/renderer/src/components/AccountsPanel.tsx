@@ -3,21 +3,24 @@
  * falta, y el diálogo del código de GitHub.
  *
  * Cada sesión la abre y la guarda la herramienta oficial (gh, claude, codex,
- * gemini, opencode). La app sólo les pregunta si hay sesión y con qué cuenta:
- * no ve contraseñas ni tokens.
+ * gemini, opencode, copilot, qwen, cursor-agent, ollama, hf). La app sólo les
+ * pregunta si hay sesión y con qué cuenta: no ve contraseñas ni tokens. Los
+ * proveedores que sólo funcionan con clave de API están todos abajo, con el
+ * enlace a su página de claves y dónde pegarla.
  */
 import React, { useEffect, useRef, useState } from 'react'
 import {
   Bot, Check, Copy, ExternalLink, FolderGit2, GitBranch, KeyRound, Loader2, LogIn, LogOut, RefreshCw,
   Terminal as TerminalIcon, UserCircle2, X
 } from 'lucide-react'
-import { Badge, Button, Modal, Panel, PanelHeader, cx } from './ui'
+import { Badge, Button, Input, Modal, Panel, PanelHeader, cx } from './ui'
+import { relTime } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { useStore } from '../lib/store'
 import { useIsPageActive } from '../lib/pageActive'
 import {
   cancelGithubLogin, cancelOpenRouterLogin, refreshAccounts, runAccountCommand, startGithubLogin,
-  startOpenRouterLogin, useAccounts
+  startOpenRouterLogin, submitOpenRouterCode, useAccounts
 } from '../lib/accounts'
 import type { AccountStatus } from '@shared/types'
 
@@ -152,6 +155,11 @@ function AccountRow({ a, gitHelper, onSetupGit }: { a: AccountStatus; gitHelper?
           ) : null}
         </div>
         {a.who ? <div className="text-[12px] text-muted truncate mt-0.5" data-account-who>{a.who}</div> : null}
+        {a.staleAt ? (
+          <div className="text-[11px] text-dim mt-0.5" data-account-stale>
+            {t('Esta vez no contestó: es lo que se supo {when}.', { when: relTime(a.staleAt) })}
+          </div>
+        ) : null}
         {a.detail && (a.installed || a.kind === 'github') ? (
           <div className="text-[11.5px] text-dim mt-0.5 leading-relaxed">{t(a.detail)}</div>
         ) : null}
@@ -204,9 +212,95 @@ function AccountRow({ a, gitHelper, onSetupGit }: { a: AccountStatus; gitHelper?
   )
 }
 
+/** Un proveedor que sólo se usa con clave: dónde conseguirla y dónde pegarla. */
+function KeyRow({
+  id,
+  name,
+  url,
+  source,
+  envVar,
+  onSaved
+}: {
+  id: string
+  name: string
+  url?: string
+  source: 'stored' | 'env' | 'none'
+  envVar?: string
+  onSaved: () => void
+}): React.JSX.Element {
+  const t = useT()
+  const { toast } = useStore()
+  const [editing, setEditing] = useState(false)
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const save = async (): Promise<void> => {
+    if (!key.trim()) return
+    setBusy(true)
+    const r = await window.api.providers.setKey(id, key.trim())
+    if (r.ok) {
+      setKey('')
+      setEditing(false)
+      onSaved()
+      // Se prueba al momento: una clave mal copiada se dice ya, no al primer prompt.
+      const test = await window.api.providers.test(id)
+      if (test.ok && test.data) toast(test.data.ok ? 'ok' : 'error', `${name}: ${t(test.data.detail)}`)
+      else toast('ok', t('prov.keySaved', { name }))
+    } else toast('error', r.error ?? t('No se pudo guardar'))
+    setBusy(false)
+  }
+  return (
+    <div className="px-4 py-2 flex items-center gap-3 border-b border-line-soft last:border-0 text-[12.5px]" data-key-row={id}>
+      <KeyRound size={13} className={source !== 'none' ? 'text-ok shrink-0' : 'text-dim shrink-0'} />
+      <span className="w-40 shrink-0 truncate">{name}</span>
+      {source === 'none' ? (
+        <Badge tone="warn">{t('sin clave')}</Badge>
+      ) : (
+        <Badge tone="ok">
+          <Check size={10} /> {source === 'env' ? envVar : t('key guardada')}
+        </Badge>
+      )}
+      {editing ? (
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <Input
+            type="password"
+            autoFocus
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder={t('Pega la clave')}
+            className="h-7 text-[11.5px]"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void save()
+              if (e.key === 'Escape') setEditing(false)
+            }}
+          />
+          <Button size="sm" variant="primary" loading={busy} disabled={!key.trim()} onClick={() => void save()}>
+            {t('Guardar')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+            <X size={12} />
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 ml-auto">
+          {url ? (
+            <Button size="sm" variant="ghost" onClick={() => void window.api.app.openExternal(url)}>
+              <ExternalLink size={12} /> {t('Conseguir clave')}
+            </Button>
+          ) : null}
+          <Button size="sm" variant={source === 'none' ? 'outline' : 'ghost'} onClick={() => setEditing(true)}>
+            <LogIn size={12} /> {source === 'none' ? t('Pegar clave') : t('Cambiar')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AccountsPanel({ onProviders }: { onProviders: () => void }): React.JSX.Element {
   const t = useT()
-  const { status, toast, reloadStatus, reloadModels } = useStore()
+  const { status, defs, toast, reloadStatus, reloadModels } = useStore()
+  const [orCode, setOrCode] = useState('')
+  const [orSending, setOrSending] = useState(false)
   const { list, loading, openrouter, signedInTick } = useAccounts()
   const active = useIsPageActive()
   const [gitHelper, setGitHelper] = useState<boolean | undefined>(undefined)
@@ -222,7 +316,8 @@ export function AccountsPanel({ onProviders }: { onProviders: () => void }): Rea
     if (!active) return
     void refreshAccounts()
     loadGit()
-    const timer = setInterval(() => void refreshAccounts(), 20000)
+    // Entrar o salir se nota al momento (main vigila sus ficheros); esto es por si acaso.
+    const timer = setInterval(() => void refreshAccounts(), 60000)
     return () => clearInterval(timer)
   }, [active])
 
@@ -234,6 +329,14 @@ export function AccountsPanel({ onProviders }: { onProviders: () => void }): Rea
     const r = await window.api.accounts.githubSetupGit()
     toast(r.ok && r.data?.ok ? 'ok' : 'error', t(r.data?.detail ?? r.error ?? 'gh auth setup-git falló'))
     loadGit()
+  }
+
+  const sendOrCode = async (): Promise<void> => {
+    setOrSending(true)
+    const r = await submitOpenRouterCode(orCode)
+    setOrSending(false)
+    if (r.ok) setOrCode('')
+    else toast('error', t('No se pudo conectar con OpenRouter:') + ' ' + t(r.error ?? ''))
   }
 
   const connectOpenRouter = async (): Promise<void> => {
@@ -307,6 +410,27 @@ export function AccountsPanel({ onProviders }: { onProviders: () => void }): Rea
                 {t('¿No se abrió el navegador? Ábrelo desde aquí')}
               </button>
             ) : null}
+            {openrouter ? (
+              <div className="mt-2 space-y-1" data-openrouter-code>
+                <div className="text-[11px] text-dim leading-relaxed">
+                  {t('¿Autorizaste y el navegador no volvió a la app? Copia la dirección que se quedó en su barra (empieza por http://localhost) y pégala aquí.')}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    value={orCode}
+                    onChange={(e) => setOrCode(e.target.value)}
+                    placeholder="http://localhost:…/callback?code=…"
+                    className="h-7 text-[11.5px] font-mono"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && orCode.trim()) void sendOrCode()
+                    }}
+                  />
+                  <Button size="sm" disabled={!orCode.trim()} loading={orSending} onClick={() => void sendOrCode()}>
+                    {t('Usar')}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {openrouter ? (
@@ -325,14 +449,27 @@ export function AccountsPanel({ onProviders }: { onProviders: () => void }): Rea
             )}
           </div>
         </div>
-        <div className={cx('px-4 py-3 flex items-center gap-3')}>
+        <div className="px-4 py-3 flex items-center gap-3 border-b border-line-soft">
           <p className="text-[11.5px] text-dim leading-relaxed flex-1">
             {t('Anthropic, OpenAI, Google y los demás no ofrecen inicio de sesión a aplicaciones de terceros: se entra con una clave de API. Tu plan de Claude o de ChatGPT se usa con Claude Code y Codex, arriba.')}
           </p>
           <Button size="sm" variant="ghost" onClick={onProviders}>
-            <KeyRound size={12} /> {t('Poner una clave')}
+            <KeyRound size={12} /> {t('Todos los ajustes')}
           </Button>
         </div>
+        {defs
+          .filter((d) => !d.local && d.id !== 'openrouter')
+          .map((d) => (
+            <KeyRow
+              key={d.id}
+              id={d.id}
+              name={d.name}
+              url={d.docsUrl}
+              source={status.find((x) => x.id === d.id)?.keySource ?? 'none'}
+              envVar={status.find((x) => x.id === d.id)?.envVar}
+              onSaved={() => void reloadStatus().then(() => reloadModels())}
+            />
+          ))}
       </Panel>
     </div>
   )

@@ -1,5 +1,5 @@
 /**
- * Las dos gráficas del panel: gasto y tokens por día.
+ * Las dos gráficas del panel: gasto y tokens por día, cada una en su recuadro.
  *
  * Viven en su propio fichero por dos motivos que van juntos. Uno, la librería
  * de gráficas pesa más que el resto de la aplicación entera, y aquí se carga
@@ -40,72 +40,59 @@ function ChartTip({ active, payload, label }: any): React.JSX.Element | null {
   )
 }
 
-export default function DashboardCharts({ data }: { data: DayPoint[] }): React.JSX.Element {
-  const t = useT()
+function useAxis(): { ui: ReturnType<typeof usePrefs>['theme']['ui']; axis: Record<string, unknown> } {
   const { theme } = usePrefs()
   const ui = theme.ui
+  return { ui, axis: { stroke: ui.dim, fontSize: 10.5, fontFamily: 'var(--font-mono)' } }
+}
 
-  const axis = {
-    stroke: ui.dim,
-    fontSize: 10.5,
-    fontFamily: 'var(--font-mono)'
-  }
-
+/** Gasto por día. Llena el alto que tenga su recuadro. */
+export function CostChart({ data }: { data: DayPoint[] }): React.JSX.Element {
+  const t = useT()
+  const { ui, axis } = useAxis()
   return (
-    <div className="grid grid-cols-3 gap-3">
-      <Panel className="col-span-2 flex flex-col">
-        <PanelHeader
-          title={t('dash.costByDay')}
-          subtitle={t('dash.costByDay.hint')}
-          icon={<DollarSign size={14} />}
-        />
-        <div className="p-3 h-[212px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 6, right: 14, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id="gCost" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={ui.accent} stopOpacity={0.45} />
-                  <stop offset="100%" stopColor={ui.accent} stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke={ui.line} vertical={false} />
-              <XAxis dataKey="label" {...axis} tickLine={false} axisLine={false} minTickGap={22} />
-              <YAxis
-                {...axis}
-                tickLine={false}
-                axisLine={false}
-                width={52}
-                tickFormatter={(v) => (v === 0 ? '0' : cost(v))}
-              />
-              <Tooltip content={<ChartTip />} cursor={{ stroke: ui.line }} />
-              <Area
-                type="monotone"
-                dataKey="cost"
-                name={t('dash.cost')}
-                stroke={ui.accent}
-                strokeWidth={1.6}
-                fill="url(#gCost)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </Panel>
+    <Panel className="h-full flex flex-col">
+      <PanelHeader title={t('dash.costByDay')} subtitle={t('dash.costByDay.hint')} icon={<DollarSign size={14} />} />
+      <div className="p-3 flex-1 min-h-[140px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 6, right: 14, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id="gCost" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={ui.accent} stopOpacity={0.45} />
+                <stop offset="100%" stopColor={ui.accent} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke={ui.line} vertical={false} />
+            <XAxis dataKey="label" {...axis} tickLine={false} axisLine={false} minTickGap={22} />
+            <YAxis {...axis} tickLine={false} axisLine={false} width={52} tickFormatter={(v) => (v === 0 ? '0' : cost(v))} />
+            <Tooltip content={<ChartTip />} cursor={{ stroke: ui.line }} />
+            <Area type="monotone" dataKey="cost" name={t('dash.cost')} stroke={ui.accent} strokeWidth={1.6} fill="url(#gCost)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </Panel>
+  )
+}
 
-      <Panel className="flex flex-col">
-        <PanelHeader title={t('dash.tokensByDay')} subtitle={t('dash.tokensByDay.hint')} icon={<Coins size={14} />} />
-        <div className="p-3 h-[212px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 6, right: 14, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke={ui.line} vertical={false} />
-              <XAxis dataKey="label" {...axis} tickLine={false} axisLine={false} minTickGap={26} />
-              <YAxis {...axis} tickLine={false} axisLine={false} width={44} tickFormatter={(v) => tokens(v)} />
-              <Tooltip content={<ChartTip />} cursor={{ fill: ui.raised }} />
-              <Bar dataKey="tokensIn" name={t('dash.in')} stackId="t" fill={ui.accentDim} />
-              <Bar dataKey="tokensOut" name={t('dash.out')} stackId="t" fill={ui.accent} radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Panel>
-    </div>
+/** Tokens de entrada y salida por día. */
+export function TokensChart({ data }: { data: DayPoint[] }): React.JSX.Element {
+  const t = useT()
+  const { ui, axis } = useAxis()
+  return (
+    <Panel className="h-full flex flex-col">
+      <PanelHeader title={t('dash.tokensByDay')} subtitle={t('dash.tokensByDay.hint')} icon={<Coins size={14} />} />
+      <div className="p-3 flex-1 min-h-[140px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 6, right: 14, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke={ui.line} vertical={false} />
+            <XAxis dataKey="label" {...axis} tickLine={false} axisLine={false} minTickGap={26} />
+            <YAxis {...axis} tickLine={false} axisLine={false} width={44} tickFormatter={(v) => tokens(v)} />
+            <Tooltip content={<ChartTip />} cursor={{ fill: ui.raised }} />
+            <Bar dataKey="tokensIn" name={t('dash.in')} stackId="t" fill={ui.accentDim} />
+            <Bar dataKey="tokensOut" name={t('dash.out')} stackId="t" fill={ui.accent} radius={[2, 2, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </Panel>
   )
 }

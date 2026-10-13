@@ -15,7 +15,7 @@ import type {
   DetectionResult, DirEntry, EloRow, FileChange, FileContent, GhRepo, GhStatus, GitGraph, GitInfo, GitOpName,
   GitOpParams, GitOpState, GitWatchEvent, HardwareInfo, InstructionFile, KeySource, McpClient, McpCopyPlan,
   McpReport, ModelInfo, NotifyHookInfo, TerminalAttention, ModelLinks, ModelRecommendation, ModelUsage, OllamaStatus, OpencodeModel, Project,
-  ProjectInfo, ProjectScripts, UpdateInfo, AccountStatus, AccountsEvent, ScheduledTask, ScheduledTaskView, ScheduleRun, LoginItemStatus, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
+  ProjectInfo, ProjectScripts, LayaStatus, LayaEvent, LayaClassification, UpdateInfo, AccountStatus, AccountsEvent, ScheduledTask, ScheduledTaskView, ScheduleRun, LoginItemStatus, QuickEvent, QuickHotkeyStatus, QuickRun, ProviderDef, ProviderStatus, PullProgress, QuotaAlert, QuotaReport, RelayPackage, RelaySource,
   RunOptions, RunRecord, Settings, SkillsReport, StatsBucket, StoredSession, StreamDelta, TermEvent, TermInfo,
   UsageSnapshot, WorktreeInfo, WorktreeSetup
 } from './types'
@@ -96,6 +96,7 @@ export interface IpcContract {
   'accounts:githubSetupGit': { args: []; result: { ok: boolean; detail: string } }
   'accounts:openrouterLogin': { args: []; result: { ok: boolean; error?: string } }
   'accounts:openrouterCancel': { args: []; result: boolean }
+  'accounts:openrouterCode': { args: [input: string]; result: { ok: boolean; error?: string } }
   'updates:get': { args: []; result: UpdateInfo | null }
   'updates:check': { args: []; result: UpdateInfo }
   'updates:skip': { args: [version: string | null]; result: UpdateInfo | null }
@@ -237,6 +238,12 @@ export interface IpcContract {
   'quotas:setAdminKey': { args: [which: 'anthropic' | 'openai', key: string]; result: { source: KeySource; masked: string } }
   'quotas:statusLine': { args: []; result: StatusLineInfo }
   'quotas:uninstallStatusLine': { args: []; result: StatusLineInfo }
+  'laya:status': { args: []; result: LayaStatus }
+  'laya:install': { args: []; result: { ok: boolean; error?: string } }
+  'laya:cancel': { args: []; result: boolean }
+  'laya:warm': { args: []; result: boolean }
+  'laya:remove': { args: []; result: LayaStatus }
+  'laya:classify': { args: [text: string]; result: LayaClassification }
   'recommend:classify': { args: [text: string, model: string]; result: { category: string; difficulty: number; needsTools: boolean; needsVision: boolean; ms: number } }
   'relay:build': { args: [src: RelaySource]; result: RelayPackage }
   'relay:prompt': { args: [pkg: RelayPackage, opts?: { includeDiff?: boolean; note?: string }]; result: string }
@@ -331,6 +338,7 @@ export interface IpcEvents {
   'updates:status': UpdateInfo
   /** Un inicio de sesión lanzado desde la app: el código de gh, la dirección, el final. */
   'accounts:event': AccountsEvent
+  'laya:event': LayaEvent
   /** Prompt rápido: a la ventana principal, que lo lanza en la Consola. */
   'quick:run': QuickRun
   /** Prompt rápido: abrir en la Consola la conversación que salió de él. */

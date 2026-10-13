@@ -32,7 +32,7 @@ import { listDir, readProjectFile, writeProjectFile, createEntry, trashEntry, re
 import { ghStatus, ghRepos, ghClone, ghLoginCommand, ghLogoutCommand, forgetGhPath } from './github'
 import {
   accountsStatus, initAccounts, startGithubLogin, cancelGithubLogin, githubGitHelper, githubSetupGit,
-  startOpenRouterLogin, cancelOpenRouterLogin
+  startOpenRouterLogin, cancelOpenRouterLogin, submitOpenRouterCode
 } from './accounts'
 import { notifyArena, notifyCommand, notifyPull } from './notify'
 import { allRuns } from './runs'
@@ -48,7 +48,8 @@ import { readInstructionFiles, writeInstructionFiles } from './instructions'
 import { listSkills, copySkill } from './skills'
 import { mcpReport, planMcpCopy, copyMcpServer, setAppMcpEnabled, removeAppMcp, addAppMcp } from './mcp/configs'
 import { testAppMcp, pruneMcp } from './mcp/client'
-import { classifyWithOllama } from './recommend'
+import { classifyWithOllama, classifyWithLaya } from './recommend'
+import { initLaya, layaStatus, installLaya, cancelLayaInstall, removeLaya, warmLaya } from './laya'
 import { saveBattery, removeBattery, batteryRuns, saveBatteryRun, removeBatteryRun, judgeWithOllama } from './batteries'
 import { savePrompt, removePrompt, markPromptUsed } from './prompts'
 import { search } from './search'
@@ -291,6 +292,7 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
   handle('accounts:githubSetupGit', () => githubSetupGit())
   handle('accounts:openrouterLogin', () => startOpenRouterLogin())
   handle('accounts:openrouterCancel', () => cancelOpenRouterLogin())
+  handle('accounts:openrouterCode', (input: string) => submitOpenRouterCode(str(input, 'código')))
 
   /* --------------------------------- Adjuntos --------------------------------- */
 
@@ -506,6 +508,16 @@ export function registerExtraIpc(getWindow: () => BrowserWindow | null): void {
 
   /* ------------------------------- Recomendador -------------------------------- */
 
+  initLaya((e) => send('laya:event', e))
+  handle('laya:status', () => layaStatus())
+  handle('laya:install', () => installLaya())
+  handle('laya:cancel', () => cancelLayaInstall())
+  handle('laya:warm', () => warmLaya())
+  handle('laya:remove', () => {
+    removeLaya()
+    return layaStatus()
+  })
+  handle('laya:classify', (text: string) => classifyWithLaya(str(text, 'tarea')))
   handle('recommend:classify', (text: string, model: string) => classifyWithOllama(str(text, 'tarea'), str(model, 'modelo')))
 
   /* ---------------------------------- Cupos ----------------------------------- */
