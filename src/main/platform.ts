@@ -32,12 +32,16 @@ export function defaultTerminalCommand(): string {
 /**
  * Busca un ejecutable en el PATH sin lanzar ningún proceso.
  *
- * En Windows también prueba las extensiones de PATHEXT, que es como `where`
- * encuentra `claude.cmd` cuando se le pide `claude`.
+ * En Windows prueba las extensiones de PATHEXT, que es como `where` encuentra
+ * `claude.cmd` cuando se le pide `claude`. Sin extensión no vale: npm deja al
+ * lado de cada `claude.cmd` un `claude` sin extensión para Git Bash que
+ * Windows no sabe ejecutar (ENOENT), y devolverlo hacía creer que Claude Code
+ * u OpenCode no tenían sesión.
  */
 export function findInPath(cmd: string): string | undefined {
   if (!cmd) return undefined
-  const exts = IS_WIN ? ['', ...(process.env['PATHEXT'] ?? '.EXE;.CMD;.BAT').split(';').map((e) => e.toLowerCase())] : ['']
+  const pathExt = (process.env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((e) => e.toLowerCase())
+  const exts = IS_WIN ? (pathExt.some((e) => cmd.toLowerCase().endsWith(e)) ? [''] : pathExt) : ['']
   for (const dir of (process.env['PATH'] ?? '').split(delimiter)) {
     if (!dir) continue
     for (const ext of exts) {

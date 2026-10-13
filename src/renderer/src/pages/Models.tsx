@@ -8,6 +8,7 @@ import { ModelCompare, modelFavKey, usageOf } from '../components/ModelCompare'
 import { useStore } from '../lib/store'
 import { useRunsVersion, newSession, sendTurn, focusChat } from '../lib/engine'
 import { Recommender } from '../components/Recommender'
+import { AutoRouter } from '../components/AutoRouter'
 import { price, tokens, relTime, bytes, ms, tps, cost } from '../lib/format'
 import type { ModelInfo, ModelLinks, ModelUsage } from '@shared/types'
 
@@ -80,7 +81,7 @@ function RecommendTab(): React.JSX.Element {
 export default function Models(): React.JSX.Element {
   const t = useT()
   const { models, modelsLoading, reloadModels, defs, toast, config, reload } = useStore()
-  const [tab, setTab] = useState<'available' | 'catalog' | 'recommend'>('available')
+  const [tab, setTab] = useState<'available' | 'catalog' | 'recommend' | 'router'>('available')
   const [q, setQ] = useState('')
   const [catalog, setCatalog] = useState<ModelInfo[]>([])
   const [meta, setMeta] = useState<{ fetchedAt: number; count: number } | null>(null)
@@ -230,7 +231,9 @@ export default function Models(): React.JSX.Element {
           <div>
             <h1 className="text-[19px] font-semibold tracking-tight">{t('Modelos')}</h1>
             <p className="text-[12.5px] text-dim mt-0.5">
-              {tab === 'recommend'
+              {tab === 'router'
+                ? t('Escribe el prompt y Laya decide modelo, esfuerzo y proveedor')
+                : tab === 'recommend'
                 ? t('Qué IA usar para cada tarea, sin gastar de más')
                 : tab === 'available'
                 ? t('Lo que puedes usar ahora mismo con tus proveedores conectados')
@@ -246,10 +249,11 @@ export default function Models(): React.JSX.Element {
               items={[
                 { id: 'available', label: 'Disponibles', count: models.length },
                 { id: 'catalog', label: t('Catálogo global'), count: meta?.count },
+                { id: 'router', label: t('Enrutador') },
                 { id: 'recommend', label: t('Recomendar') }
               ]}
             />
-            {tab === 'recommend' ? null : tab === 'available' ? (
+            {tab === 'recommend' || tab === 'router' ? null : tab === 'available' ? (
               <Button onClick={() => void reloadModels()} loading={modelsLoading}>
                 <RefreshCw size={14} /> {t('Refrescar')}
               </Button>
@@ -261,7 +265,7 @@ export default function Models(): React.JSX.Element {
           </div>
         </div>
 
-        <div className={cx('flex items-center gap-2 flex-wrap', tab === 'recommend' && 'hidden')}>
+        <div className={cx('flex items-center gap-2 flex-wrap', (tab === 'recommend' || tab === 'router') && 'hidden')}>
           <div className="relative flex-1 min-w-[200px] max-w-[420px]">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dim" />
             <Input
@@ -322,7 +326,15 @@ export default function Models(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className={cx('flex-1 min-h-0 px-6 pb-5', tab === 'recommend' && 'hidden')}>
+      {tab === 'router' ? (
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-5">
+          <Panel className="p-4 max-w-[1100px]">
+            <AutoRouter />
+          </Panel>
+        </div>
+      ) : null}
+
+      <div className={cx('flex-1 min-h-0 px-6 pb-5', (tab === 'recommend' || tab === 'router') && 'hidden')}>
         <Panel className="h-full flex flex-col overflow-hidden">
           {(tab === 'available' && modelsLoading) || (tab === 'catalog' && loading && !rows.length) ? (
             <div className="flex-1 flex items-center justify-center gap-2.5 text-dim text-[12.5px]">

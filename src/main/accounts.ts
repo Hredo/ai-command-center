@@ -7,8 +7,9 @@
  *  - GitHub: `gh auth login --web`. Sin terminal, gh da un código de un solo
  *    uso y la dirección donde escribirlo; la app enseña ese código (no es un
  *    secreto: es lo que tecleas tú en github.com) y espera a que gh termine.
- *  - Claude Code, Codex, Gemini CLI y OpenCode: su propio comando de entrada,
- *    en una terminal de la app. Aquí sólo se les pregunta si hay sesión.
+ *  - Claude Code, Codex, Gemini CLI, OpenCode, Copilot CLI, Qwen Code, Cursor
+ *    CLI, Ollama y Hugging Face: su propio comando de entrada, en una terminal
+ *    de la app. Aquí sólo se les pregunta si hay sesión.
  *  - OpenRouter: su OAuth con PKCE. La clave que devuelve se guarda cifrada
  *    en main, como cualquier otra, y no pasa por la ventana.
  *
@@ -18,7 +19,7 @@
 import { shell } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, watch, type FSWatcher } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +27,9 @@ import { getConfig } from './config'
 import { forgetGhPath, ghPath, ghStatus } from './github'
 import { IS_WIN, findInPath, killTree } from './platform'
 import { setKey } from './secrets'
+import { ollamaBase } from './ollama'
+import { dataDir } from './paths'
+import { writeFileAtomic } from './atomic'
 import { openRouterOrigin } from './testSeams'
 import type { AccountStatus, AccountsEvent } from '@shared/types'
 
@@ -34,6 +38,7 @@ let emit: Emit = () => {}
 
 export function initAccounts(send: Emit): void {
   emit = send
+  watchAccountFiles()
 }
 
 /* ------------------------------------------------------------------ *
@@ -60,7 +65,14 @@ function binOf(cmd: string): string | undefined {
   const re = new RegExp(`(^|[\\\\/])${cmd}(\\.(cmd|exe|bat|ps1))?$`, 'i')
   const own = getConfig().cliAgents.find((a) => re.test(a.command.trim()))?.command.trim()
   if (own && (own.includes('/') || own.includes('\\')) && existsSync(own)) return own
-  return findInPath(cmd)
+  const found = findInPath(cmd)
+  if (found) return found
+  // Recién instalado con pnpm: la app arrancó antes de que su carpeta entrara en el PATH.
+  for (const ext of IS_WIN ? ['.cmd', '.exe'] : ['']) {
+    const p = join(pnpmHome(), cmd + ext)
+    if (existsSync(p)) return p
+  }
+  return undefined
 }
 
 async function github(): Promise<AccountStatus> {
@@ -81,6 +93,47 @@ async function github(): Promise<AccountStatus> {
   }
 }
 
+/** La carpeta donde pnpm deja los ejecutables globales (la de `pnpm setup`). */
+function pnpmHome(): string {
+  if (process.env['PNPM_HOME']) return process.env['PNPM_HOME']
+  if (IS_WIN) return join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'pnpm')
+  if (process.platform === 'darwin') return join(homedir(), 'Library', 'pnpm')
+  return join(process.env['XDG_DATA_HOME'] || join(homedir(), '.local', 'share'), 'pnpm')
+}
+
+/** ¿Tiene pnpm su carpeta global lista? Sin `pnpm setup`, `pnpm add -g` falla. Se pregunta una vez. */
+let pnpmReady: Promise<boolean> | null = null
+function pnpmGlobalReady(): Promise<boolean> {
+  const pnpm = findInPath('pnpm')
+  if (!pnpm) return Promise.resolve(false)
+  pnpmReady ??= run(pnpm, ['bin', '-g'], 10000).then((r) => r.ok && !/not in PATH/i.test(r.out + r.err))
+  return pnpmReady
+}
+let pnpmIsReady = false
+
+/**
+ * Instalar un CLI de npm: con pnpm si lo tienes, si no con npm. Si pnpm no
+ * tiene aún su carpeta global, primero `pnpm setup` (lo deja en tu PATH para
+ * siempre) y se aplica ya en esa terminal, para que instalar funcione a la primera.
+ */
+function npmInstall(pkg: string): string {
+  if (!findInPath('pnpm')) return `npm install -g ${pkg}`
+  if (pnpmIsReady) return `pnpm add -g ${pkg}`
+  if (IS_WIN) return `pnpm setup; $env:PNPM_HOME = "$env:LOCALAPPDATA\\pnpm"; $env:Path = "$env:PNPM_HOME;$env:Path"; pnpm add -g ${pkg}`
+  const home = process.platform === 'darwin' ? '$HOME/Library/pnpm' : '$HOME/.local/share/pnpm'
+  return `pnpm setup && export PNPM_HOME="${home}" && export PATH="$PNPM_HOME:$PATH" && pnpm add -g ${pkg}`
+}
+
+function readJson(file: string): any {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+const claudeDir = (): string => process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude')
+
 async function claude(): Promise<AccountStatus> {
   const base: AccountStatus = {
     id: 'claude',
@@ -90,6 +143,7 @@ async function claude(): Promise<AccountStatus> {
     signedIn: false,
     loginCommand: 'claude auth login',
     logoutCommand: 'claude auth logout',
+    installCommand: npmInstall('@anthropic-ai/claude-code'),
     installUrl: 'https://docs.claude.com/en/docs/claude-code/setup'
   }
   const bin = binOf('claude')
@@ -105,8 +159,15 @@ async function claude(): Promise<AccountStatus> {
       plan: typeof j.subscriptionType === 'string' ? j.subscriptionType : j.authMethod === 'api_key' ? 'API' : undefined
     }
   } catch {
-    // Una versión que no tiene `auth status`: no se puede saber desde fuera.
-    return { ...base, installed: true, signedIn: r.ok ? null : false, detail: r.ok ? undefined : 'Sin sesión.' }
+    // No contestó a tiempo (al arrancar el equipo pasa) o es una versión sin
+    // `auth status`: se mira si está el fichero de su sesión, sin enseñarlo.
+    // Que no conteste no quiere decir que no haya sesión.
+    const creds = readJson(join(claudeDir(), '.credentials.json'))
+    if (creds?.claudeAiOauth) {
+      const plan = creds.claudeAiOauth.subscriptionType
+      return { ...base, installed: true, signedIn: true, plan: typeof plan === 'string' ? plan : undefined }
+    }
+    return { ...base, installed: true, signedIn: null, detail: 'No contestó al preguntarle; vuelve a comprobarlo en un momento.' }
   }
 }
 
@@ -119,6 +180,7 @@ async function codex(): Promise<AccountStatus> {
     signedIn: false,
     loginCommand: 'codex login',
     logoutCommand: 'codex logout',
+    installCommand: npmInstall('@openai/codex'),
     installUrl: 'https://developers.openai.com/codex/cli'
   }
   const bin = binOf('codex')
@@ -128,6 +190,8 @@ async function codex(): Promise<AccountStatus> {
   if (/not logged in/i.test(text)) return { ...base, installed: true, signedIn: false }
   const m = /logged in using (an? )?([\w ]+?)(\s+-|\s*$)/im.exec(text)
   if (m) return { ...base, installed: true, signedIn: true, plan: /api key/i.test(m[2]) ? 'API' : m[2].trim() }
+  const home = process.env['CODEX_HOME'] || join(homedir(), '.codex')
+  if (existsSync(join(home, 'auth.json'))) return { ...base, installed: true, signedIn: true }
   return { ...base, installed: true, signedIn: null }
 }
 
@@ -141,14 +205,24 @@ async function gemini(): Promise<AccountStatus> {
     // No tiene un comando de entrada: se elige la cuenta al abrirlo (o con /auth).
     loginCommand: 'gemini',
     detail: 'Al abrirlo elige «Login with Google»; dentro, /auth cambia de cuenta.',
+    installCommand: npmInstall('@google/gemini-cli'),
     installUrl: 'https://github.com/google-gemini/gemini-cli'
   }
   const bin = binOf('gemini')
   if (!bin) return base
   // Sólo se mira si el fichero de su sesión existe: no se abre.
-  const oauth = existsSync(join(homedir(), '.gemini', 'oauth_creds.json'))
+  const dir = join(process.env['GEMINI_CLI_HOME'] || homedir(), '.gemini')
+  const oauth = existsSync(join(dir, 'oauth_creds.json'))
   const key = Boolean(process.env['GEMINI_API_KEY'] || process.env['GOOGLE_API_KEY'])
-  return { ...base, installed: true, signedIn: oauth || key, plan: oauth ? 'Google' : key ? 'API' : undefined }
+  const active = readJson(join(dir, 'google_accounts.json'))?.active
+  return {
+    ...base,
+    installed: true,
+    signedIn: oauth || key,
+    who: oauth && typeof active === 'string' ? active : undefined,
+    plan: oauth ? 'Google' : key ? 'API' : undefined,
+    detail: oauth || key ? undefined : base.detail
+  }
 }
 
 async function opencode(): Promise<AccountStatus> {
@@ -160,6 +234,7 @@ async function opencode(): Promise<AccountStatus> {
     signedIn: false,
     loginCommand: 'opencode auth login',
     logoutCommand: 'opencode auth logout',
+    installCommand: npmInstall('opencode-ai'),
     installUrl: 'https://opencode.ai/docs'
   }
   const bin = binOf('opencode')
@@ -175,7 +250,13 @@ async function opencode(): Promise<AccountStatus> {
     const item = /^●\s+(.+?)\s+(\S+)\s*$/.exec(line)
     if (item && /^cred/i.test(section)) names.push(item[1].trim())
   }
-  if (!r.ok && !names.length) return { ...base, installed: true, signedIn: null }
+  if (!r.ok && !names.length) {
+    // No contestó: su fichero de credenciales dice al menos si hay alguna.
+    const data = process.env['XDG_DATA_HOME'] ? join(process.env['XDG_DATA_HOME'], 'opencode') : join(homedir(), '.local', 'share', 'opencode')
+    const auth = readJson(join(data, 'auth.json'))
+    if (auth && typeof auth === 'object' && Object.keys(auth).length) return { ...base, installed: true, signedIn: true, who: Object.keys(auth).join(', ') }
+    return { ...base, installed: true, signedIn: null }
+  }
   return {
     ...base,
     installed: true,
@@ -185,22 +266,240 @@ async function opencode(): Promise<AccountStatus> {
   }
 }
 
+async function copilot(): Promise<AccountStatus> {
+  const base: AccountStatus = {
+    id: 'copilot',
+    name: 'GitHub Copilot CLI',
+    kind: 'cli',
+    installed: false,
+    signedIn: false,
+    loginCommand: 'copilot',
+    detail: 'Al abrirlo escribe /login y sigue los pasos; /logout para salir.',
+    installCommand: npmInstall('@github/copilot'),
+    installUrl: 'https://github.com/github/copilot-cli'
+  }
+  const bin = binOf('copilot')
+  if (!bin) return base
+  const token = ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'].find((k) => process.env[k]?.trim())
+  if (token) return { ...base, installed: true, signedIn: true, plan: token, detail: undefined }
+  // Guarda el token en el almacén de credenciales del sistema; en su
+  // configuración queda con qué cuenta entraste. Si no se ve, no se afirma nada.
+  const cfg = readJson(join(process.env['COPILOT_HOME'] || join(homedir(), '.copilot'), 'config.json'))
+  const users: any[] = Array.isArray(cfg?.logged_in_users) ? cfg.logged_in_users : []
+  const last = cfg?.last_logged_in_user
+  const who = (last?.login ?? users[0]?.login) as string | undefined
+  if (who) return { ...base, installed: true, signedIn: true, who, detail: undefined }
+  return { ...base, installed: true, signedIn: cfg ? null : false }
+}
+
+async function qwen(): Promise<AccountStatus> {
+  const base: AccountStatus = {
+    id: 'qwen',
+    name: 'Qwen Code',
+    kind: 'cli',
+    installed: false,
+    signedIn: false,
+    loginCommand: 'qwen',
+    detail: 'Al abrirlo elige «Qwen OAuth» (gratis con cuenta de qwen.ai); dentro, /auth cambia de cuenta.',
+    installCommand: npmInstall('@qwen-code/qwen-code'),
+    installUrl: 'https://github.com/QwenLM/qwen-code'
+  }
+  const bin = binOf('qwen')
+  if (!bin) return base
+  const dir = join(homedir(), '.qwen')
+  const oauth = existsSync(join(dir, 'oauth_creds.json'))
+  const key = Boolean(process.env['DASHSCOPE_API_KEY'] || process.env['OPENAI_API_KEY'])
+  return { ...base, installed: true, signedIn: oauth || key, plan: oauth ? 'Qwen OAuth' : key ? 'API' : undefined, detail: oauth || key ? undefined : base.detail }
+}
+
+async function cursor(): Promise<AccountStatus> {
+  const base: AccountStatus = {
+    id: 'cursor',
+    name: 'Cursor CLI',
+    kind: 'cli',
+    installed: false,
+    signedIn: false,
+    loginCommand: 'cursor-agent login',
+    logoutCommand: 'cursor-agent logout',
+    installUrl: 'https://cursor.com/cli'
+  }
+  const bin = binOf('cursor-agent')
+  if (!bin) return base
+  const r = await run(bin, ['status'])
+  const text = plain(r.out + '\n' + r.err)
+  if (/not (logged|authenticated)/i.test(text)) return { ...base, installed: true, signedIn: false }
+  const m = /logged in as\s+(\S+)/i.exec(text)
+  if (m) return { ...base, installed: true, signedIn: true, who: m[1] }
+  return { ...base, installed: true, signedIn: null }
+}
+
+async function ollamaAccount(): Promise<AccountStatus> {
+  const base: AccountStatus = {
+    id: 'ollama',
+    name: 'Ollama (ollama.com)',
+    kind: 'cli',
+    installed: false,
+    signedIn: false,
+    loginCommand: 'ollama signin',
+    logoutCommand: 'ollama signout',
+    installUrl: 'https://ollama.com/download'
+  }
+  if (!findInPath('ollama')) return base
+  // El servidor local sabe con qué cuenta de ollama.com entraste (para sus modelos en la nube).
+  try {
+    const res = await fetch(`${ollamaBase()}/api/me`, { method: 'POST', signal: AbortSignal.timeout(4000) })
+    if (res.status === 401 || res.status === 403) return { ...base, installed: true, signedIn: false, detail: 'Hace falta para sus modelos en la nube; los locales van sin cuenta.' }
+    if (!res.ok) return { ...base, installed: true, signedIn: null }
+    const j: any = await res.json().catch(() => ({}))
+    const who = j?.name || j?.email
+    return { ...base, installed: true, signedIn: Boolean(who), who: who || undefined }
+  } catch {
+    return { ...base, installed: true, signedIn: null, detail: 'Ollama está apagado: arráncalo para saber si hay sesión.' }
+  }
+}
+
+async function huggingface(): Promise<AccountStatus> {
+  const base: AccountStatus = {
+    id: 'huggingface',
+    name: 'Hugging Face',
+    kind: 'cli',
+    installed: false,
+    signedIn: false,
+    loginCommand: 'hf auth login',
+    logoutCommand: 'hf auth logout',
+    installUrl: 'https://huggingface.co/docs/huggingface_hub/guides/cli'
+  }
+  const bin = findInPath('hf')
+  if (!bin) return base
+  const home = process.env['HF_HOME'] || join(homedir(), '.cache', 'huggingface')
+  const file = existsSync(join(home, 'token')) || existsSync(join(home, 'stored_tokens'))
+  const env = Boolean(process.env['HF_TOKEN'])
+  if (!file && !env) return { ...base, installed: true, signedIn: false }
+  const r = await run(bin, ['auth', 'whoami'], 10000)
+  const who = plain(r.out).split(/\r?\n/).map((l) => l.replace(/^user:\s*/i, '').trim()).find((l) => l && !/not logged|warning/i.test(l))
+  return { ...base, installed: true, signedIn: r.ok ? true : null, who: r.ok ? who : undefined }
+}
+
+/* ------------------------------------------------------------------ *
+ * Lo último que se supo                                              *
+ * ------------------------------------------------------------------ */
+
+/**
+ * La última respuesta clara de cada cuenta, guardada en disco (sin nada
+ * secreto: si había sesión, con quién y el plan). Una comprobación que no
+ * contesta —el CLI tarda al arrancar el equipo, Ollama está apagado— no
+ * convierte una sesión en «sin sesión»: se enseña lo último que se supo.
+ */
+type Known = Pick<AccountStatus, 'signedIn' | 'who' | 'plan'> & { at: number }
+const knownPath = (): string => join(dataDir(), 'cuentas.json')
+let known: Record<string, Known> | null = null
+
+function loadKnown(): Record<string, Known> {
+  known ??= readJson(knownPath()) ?? {}
+  return known!
+}
+
+function remember(list: AccountStatus[]): AccountStatus[] {
+  const k = loadKnown()
+  let dirty = false
+  const out = list.map((a) => {
+    if (!a.installed) return a
+    if (a.signedIn !== null) {
+      const prev = k[a.id]
+      if (!prev || prev.signedIn !== a.signedIn || prev.who !== a.who || prev.plan !== a.plan) dirty = true
+      k[a.id] = { signedIn: a.signedIn, who: a.who, plan: a.plan, at: Date.now() }
+      return a
+    }
+    const prev = k[a.id]
+    if (!prev || prev.signedIn === null) return a
+    return { ...a, signedIn: prev.signedIn, who: a.who ?? prev.who, plan: a.plan ?? prev.plan, staleAt: prev.at }
+  })
+  if (dirty) {
+    try {
+      writeFileAtomic(knownPath(), JSON.stringify(k, null, 2))
+    } catch {
+      /* sin disco no pasa nada: se vuelve a preguntar */
+    }
+  }
+  return out
+}
+
 /** El estado de todo, a la vez. Uno que falle no tumba a los demás. */
 export async function accountsStatus(): Promise<AccountStatus[]> {
+  pnpmIsReady = await pnpmGlobalReady()
   const checks: [string, string, () => Promise<AccountStatus>][] = [
     ['github', 'GitHub', github],
     ['claude', 'Claude Code', claude],
     ['codex', 'Codex (ChatGPT)', codex],
     ['gemini', 'Gemini CLI', gemini],
-    ['opencode', 'OpenCode', opencode]
+    ['opencode', 'OpenCode', opencode],
+    ['copilot', 'GitHub Copilot CLI', copilot],
+    ['qwen', 'Qwen Code', qwen],
+    ['cursor', 'Cursor CLI', cursor],
+    ['ollama', 'Ollama (ollama.com)', ollamaAccount],
+    ['huggingface', 'Hugging Face', huggingface]
   ]
-  return Promise.all(
+  const list = await Promise.all(
     checks.map(([id, name, fn]) =>
       fn().catch(
-        (): AccountStatus => ({ id, name, kind: id === 'github' ? 'github' : 'cli', installed: false, signedIn: null })
+        (): AccountStatus => ({ id, name, kind: id === 'github' ? 'github' : 'cli', installed: true, signedIn: null })
       )
     )
   )
+  return remember(list)
+}
+
+/* ------------------------------------------------------------------ *
+ * En vivo: cuando una herramienta guarda o borra su sesión            *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Se vigilan las carpetas donde cada herramienta guarda su sesión: entrar o
+ * salir desde cualquier terminal (de la app o de fuera) se nota al momento,
+ * sin preguntar a todos los CLIs cada pocos segundos.
+ */
+let watchers: FSWatcher[] = []
+let watchTimer: ReturnType<typeof setTimeout> | null = null
+
+function sessionDirs(): string[] {
+  const h = homedir()
+  return [
+    claudeDir(),
+    process.env['CODEX_HOME'] || join(h, '.codex'),
+    join(process.env['GEMINI_CLI_HOME'] || h, '.gemini'),
+    process.env['XDG_DATA_HOME'] ? join(process.env['XDG_DATA_HOME'], 'opencode') : join(h, '.local', 'share', 'opencode'),
+    process.env['COPILOT_HOME'] || join(h, '.copilot'),
+    join(h, '.qwen'),
+    process.env['HF_HOME'] || join(h, '.cache', 'huggingface'),
+    process.env['GH_CONFIG_DIR'] || (IS_WIN ? join(process.env['APPDATA'] || join(h, 'AppData', 'Roaming'), 'GitHub CLI') : join(h, '.config', 'gh'))
+  ]
+}
+
+const SESSION_FILE = /credentials|auth|oauth|token|hosts\.yml|config\.json|google_accounts|stored_tokens/i
+
+export function watchAccountFiles(): void {
+  stopWatchingAccounts()
+  for (const dir of sessionDirs()) {
+    if (!existsSync(dir)) continue
+    try {
+      const w = watch(dir, { persistent: false }, (_event, file) => {
+        if (file && !SESSION_FILE.test(String(file))) return
+        if (watchTimer) clearTimeout(watchTimer)
+        watchTimer = setTimeout(() => emit({ id: 'all', phase: 'changed' }), 1200)
+      })
+      w.on('error', () => {})
+      watchers.push(w)
+    } catch {
+      /* una carpeta que no deja vigilarse: se queda con la comprobación normal */
+    }
+  }
+}
+
+function stopWatchingAccounts(): void {
+  for (const w of watchers) w.close()
+  watchers = []
+  if (watchTimer) clearTimeout(watchTimer)
+  watchTimer = null
 }
 
 /* ------------------------------------------------------------------ *
@@ -300,7 +599,7 @@ const b64url = (b: Buffer): string => b.toString('base64').replace(/\+/g, '-').r
 
 const openRouterBase = openRouterOrigin
 
-let orFlow: { server: Server; cancel: (why: string) => void } | null = null
+let orFlow: { server: Server; cancel: (why: string) => void; submit: (code: string) => Promise<{ ok: boolean; error?: string }> } | null = null
 
 const PAGE = (title: string, text: string): string =>
   `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
@@ -319,6 +618,9 @@ export function startOpenRouterLogin(): Promise<{ ok: boolean; error?: string }>
     const verifier = b64url(randomBytes(48))
     const challenge = b64url(createHash('sha256').update(verifier).digest())
     let done = false
+    // Se escucha en IPv4 y en IPv6: según el navegador y el sistema, «localhost»
+    // es 127.0.0.1 o ::1, y si la vuelta llama a la que no escucha no llega nunca.
+    let server6: Server | null = null
     const server = createServer((req, res) => {
       const u = new URL(req.url ?? '/', 'http://localhost')
       const code = u.searchParams.get('code')
@@ -350,7 +652,10 @@ export function startOpenRouterLogin(): Promise<{ ok: boolean; error?: string }>
       orFlow = null
       clearTimeout(timer)
       // Se deja salir la página de respuesta antes de cerrar.
-      setTimeout(() => server.close(), 300).unref?.()
+      setTimeout(() => {
+        server.close()
+        server6?.close()
+      }, 300).unref?.()
       emit({ id: 'openrouter', phase: 'done', ok: r.ok, error: r.error })
       resolve(r)
     }
@@ -367,11 +672,33 @@ export function startOpenRouterLogin(): Promise<{ ok: boolean; error?: string }>
       }
       setKey('openrouter', body.key)
     }
-    orFlow = { server, cancel: (why) => finish({ ok: false, error: why }) }
+    orFlow = {
+      server,
+      cancel: (why) => finish({ ok: false, error: why }),
+      // Si el navegador no vuelve a la app, el código está en su barra de direcciones.
+      submit: async (code) => {
+        if (done) return { ok: false, error: 'Este inicio de sesión ya terminó' }
+        done = true
+        try {
+          await exchange(code)
+          finish({ ok: true })
+          return { ok: true }
+        } catch (e) {
+          const error = e instanceof Error ? e.message : String(e)
+          finish({ ok: false, error })
+          return { ok: false, error }
+        }
+      }
+    }
     server.on('error', (e) => finish({ ok: false, error: e.message }))
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address()
       const port = typeof addr === 'object' && addr ? addr.port : 0
+      server6 = createServer((req, res) => server.emit('request', req, res))
+      server6.on('error', () => {
+        /* sin IPv6 en este equipo: se queda con IPv4 */
+      })
+      server6.listen(port, '::1')
       const url =
         `${openRouterBase()}/auth?callback_url=${encodeURIComponent(`http://localhost:${port}/callback`)}` +
         `&code_challenge=${challenge}&code_challenge_method=S256`
@@ -382,6 +709,23 @@ export function startOpenRouterLogin(): Promise<{ ok: boolean; error?: string }>
   })
 }
 
+/**
+ * Plan B: pegar el código (o la dirección entera a la que intentó volver el
+ * navegador) cuando la vuelta a la app no llega.
+ */
+export function submitOpenRouterCode(input: string): Promise<{ ok: boolean; error?: string }> {
+  if (!orFlow) return Promise.resolve({ ok: false, error: 'No hay ningún inicio de sesión de OpenRouter en marcha' })
+  const raw = String(input ?? '').trim()
+  let code = raw
+  try {
+    if (/^https?:\/\//i.test(raw)) code = new URL(raw).searchParams.get('code') ?? ''
+  } catch {
+    code = ''
+  }
+  if (!/^[\w.~-]{8,}$/.test(code)) return Promise.resolve({ ok: false, error: 'Eso no parece un código de OpenRouter' })
+  return orFlow.submit(code)
+}
+
 export function cancelOpenRouterLogin(): boolean {
   if (!orFlow) return false
   orFlow.cancel('cancelado')
@@ -389,6 +733,7 @@ export function cancelOpenRouterLogin(): boolean {
 }
 
 export function stopAccounts(): void {
+  stopWatchingAccounts()
   cancelGithubLogin()
   cancelOpenRouterLogin()
 }

@@ -12,7 +12,7 @@ import {
   Send, Square, Plus, Bot, FolderGit2, ChevronRight, Copy, Check,
   AlertTriangle, User, Sparkles, MessagesSquare, Trash2, X, Pin, PinOff, Archive,
   ArchiveRestore, Search, Pencil, Terminal as TerminalIcon, Cpu, GitBranch, FolderOpen, GitFork, RotateCcw,
-  ArrowRightLeft, FileDiff, Lightbulb, RefreshCw, Download, Upload
+  ArrowRightLeft, FileDiff, Lightbulb, RefreshCw, Download, Upload, Route
 } from 'lucide-react'
 import { Panel, PanelHeader, Button, Textarea, Input, Field, Select, Badge, Empty, cx, Dot, Modal, Toggle } from '../components/ui'
 import { ModelPicker, type Pick } from '../components/ModelPicker'
@@ -50,6 +50,7 @@ import { Pane } from '../components/Resizable'
 import { cliPermissionModes, nativeCommand, resumeCaps } from '@shared/cliCaps'
 import { RelayModal, endedByLimit } from '../components/RelayModal'
 import { Recommender } from '../components/Recommender'
+import { AutoRouter } from '../components/AutoRouter'
 
 import { useT } from '../lib/i18n'
 import { IS_WIN, withMod } from '../lib/platform'
@@ -774,6 +775,7 @@ export default function Chat(): React.JSX.Element {
 
   const [relayOpen, setRelayOpen] = useState(false)
   const [recommending, setRecommending] = useState(false)
+  const [routing, setRouting] = useState(false)
   const relaySource = useMemo(() => (session ? { kind: 'session' as const, id: session.id } : null), [session?.id])
   const lastAssistant = [...turns].reverse().find((x) => x.role === 'assistant')
   const limited = !running && Boolean(lastAssistant && endedByLimit(lastAssistant))
@@ -1122,6 +1124,16 @@ export default function Chat(): React.JSX.Element {
                     <Lightbulb size={12} /> {t('¿Qué modelo?')}
                   </button>
                 ) : null}
+                {session ? (
+                  <button
+                    className="inline-flex items-center gap-1 text-dim hover:text-accent transition-colors"
+                    onClick={() => setRouting(true)}
+                    title={t('Laya lee el prompt y lo lanza en una conversación nueva con el modelo, el esfuerzo y el proveedor que convienen')}
+                    data-open-router
+                  >
+                    <Route size={12} /> {t('Enrutar con Laya')}
+                  </button>
+                ) : null}
               </div>
               <span className="num">{t('common.chars', { n: input.length })}</span>
             </div>
@@ -1161,6 +1173,21 @@ export default function Chat(): React.JSX.Element {
               patchSessionConfig(session.id, { providerId: m.providerId, model: m.id, agentId: undefined })
               setRecommending(false)
               toast('ok', t('La conversación sigue con {model}', { model: shortModel(m.id) }))
+            }}
+          />
+        ) : null}
+      </Modal>
+
+      <Modal open={routing} onClose={() => setRouting(false)} title={t('Enrutar con Laya')} width="max-w-4xl">
+        {routing && session ? (
+          <AutoRouter
+            initialText={input}
+            projectId={session.projectId}
+            onLaunched={(id) => {
+              setRouting(false)
+              setInput('')
+              setActiveId(id)
+              setShowArchived(false)
             }}
           />
         ) : null}

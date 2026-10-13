@@ -13,6 +13,7 @@
  */
 
 import { enV08 } from './i18n.en.v08'
+import { enV09 } from './i18n.en.v09'
 
 const base: Record<string, string> = {
   /* ---------------------------------------------------------- Generic */
@@ -1102,4 +1103,4 @@ const base: Record<string, string> = {
 }
 
 /** Lo de la 0.8 va en su propio fichero y se suma aquí. */
-export const en: Record<string, string> = { ...base, ...enV08 }
+export const en: Record<string, string> = { ...base, ...enV08, ...enV09 }

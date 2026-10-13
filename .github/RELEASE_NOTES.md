@@ -18,6 +18,18 @@ Cada paquete se instaló y se probó en GitHub Actions antes de publicarse · *E
 
 ---
 
+## ✨ Novedades en 0.9.0 · What's new in 0.9.0
+
+| Español | English |
+|---|---|
+| **Enrutador con Laya.** Escribes el prompt y Laya, un modelo de decisiones que corre en tu equipo, decide **modelo, esfuerzo y proveedor** entre tus claves de API, tus CLIs con sesión y tus modelos locales. «Lanzar» abre la conversación y le manda el prompt. | **Router with Laya.** Write the prompt and Laya, a decision model running on your computer, picks **model, effort and provider** among your API keys, signed-in CLIs and local models. “Launch” opens the conversation and sends the prompt. |
+| **Laya, revisado y local.** Se instala con un botón (Python propio, PyTorch sólo CPU, ~1,5 GB), fijado por SHA-256 y commit, sin puertos abiertos y sin red una vez descargado. Medido con 70 tareas: por eso se combina con las reglas. | **Laya, reviewed and local.** One-click install (own Python, CPU-only PyTorch, ~1.5 GB), pinned by SHA-256 and commit, no open ports and offline once downloaded. Measured on 70 tasks: that is why it is combined with rules. |
+| **Panel a tu gusto.** Arrastra, redimensiona y esconde cada recuadro; se guarda solo. | **Your own Dashboard.** Drag, resize and hide every box; it saves itself. |
+| **Cuentas arregladas.** En Windows Claude Code y OpenCode ya no salen «sin sesión» por error. Nuevas: Copilot CLI, Qwen Code, Cursor CLI, Ollama y Hugging Face, cada una con «Iniciar sesión» e «Instalar». Todas las claves de API en un sitio y OpenRouter más robusto. | **Accounts fixed.** On Windows Claude Code and OpenCode no longer show “signed out” by mistake. New: Copilot CLI, Qwen Code, Cursor CLI, Ollama and Hugging Face, each with “Sign in” and “Install”. Every API key in one place and a sturdier OpenRouter sign-in. |
+| **Seguridad.** Fuera la alerta de `sprintf-js` (GHSA-hp3w-g68c-fv3c). | **Security.** The `sprintf-js` alert (GHSA-hp3w-g68c-fv3c) is gone. |
+
+---
+
 ## ✨ Novedades en 0.8.0 · What's new in 0.8.0
 
 | Español | English |
@@ -112,8 +124,8 @@ instala el perfil de AppArmor que lo permite.
 
 | Sistema | Orden |
 |---|---|
-| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.8.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.8.0-mac-arm64.dmg` |
+| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.9.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.9.0-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
@@ -172,8 +184,8 @@ the `.deb`: the AppImage starts there without Chromium's isolation, because only
 
 | System | Command |
 |---|---|
-| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.8.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.8.0-mac-arm64.dmg` |
+| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.9.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.9.0-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.

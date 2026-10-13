@@ -32,7 +32,7 @@ Everything on your own machine: no account, no server, no telemetry.
 
 - [What it is](#what-it-is)
 - [A quick look](#a-quick-look)
-- [What's new in 0.8](#whats-new-in-08)
+- [What's new in 0.9](#whats-new-in-09) · [in 0.8](#whats-new-in-08)
 - [**Installation**](#installation) — [which file](#which-file-do-i-download) · [Windows](#windows) · [macOS](#macos) · [Linux](#linux) · [build it](#build-it-yourself)
 - [Verifying your download](#verifying-your-download)
 - [First steps](#first-steps)
@@ -106,6 +106,54 @@ history lives in your own files. There is no server, no account to create, no te
 </table>
 
 ---
+
+## What's new in 0.9
+
+**Laya decides for you**
+
+- **Router** (Models › Router, and “Route with Laya” in the Console). Write the prompt and
+  [Laya](https://github.com/NandhaKishorM/laya), a decision model running on your computer,
+  reads what kind of task it is, how hard it is, whether files or images are involved and
+  whether it needs careful thinking. From that it picks **model, effort and provider** among
+  what you actually have: API keys, signed-in CLIs with quota left, and local models.
+  “Launch” opens the conversation with that choice and sends the prompt; the alternatives
+  and Laya's answers are shown below, so you can see why.
+- **One-click install, nothing leaves your computer.** Its own Python environment with
+  CPU-only PyTorch and the multilingual model (about 1.5 GB). Everything is pinned to what
+  was reviewed: the `laya` 0.4.6 wheel is checked by SHA-256 and the weights (`safetensors`,
+  no pickle) come from a fixed Hugging Face commit. Its HTTP server is not used: it is a
+  child process speaking over stdin/stdout, with no open port, and works offline once
+  downloaded.
+- **No hype.** Measured on 70 hand-labelled tasks: on unseen tasks Laya gets the kind right
+  half the time and the difficulty, within one point, nine times out of ten. That is why it
+  is combined with the recommender's existing rules; the recommender uses it as its
+  classifier too.
+
+**A Dashboard your way**
+
+- **Arrange.** Drag each Dashboard box by its handle, resize width and height from its
+  corner, or hide it. It saves itself; “Reset” brings back the default. Keyboard too: ← →
+  move it and, with Shift, resize it. In a narrow pane small boxes rearrange on their own
+  without touching what you saved.
+
+**Accounts that stick**
+
+- **Fixed: Claude Code and OpenCode showed “signed out” on Windows** even when they were
+  signed in. The app ran the extensionless `claude` shim npm creates for Git Bash, which
+  Windows cannot launch.
+- **More accounts:** GitHub Copilot CLI, Qwen Code, Cursor CLI, Ollama (ollama.com) and
+  Hugging Face, on top of the existing ones. Each with **Sign in** and **Install**: if it is
+  not installed, “Sign in” installs it with pnpm (running `pnpm setup` first if needed) and
+  then opens its sign-in in the same terminal.
+- **Live and steady.** Signing in or out from any terminal shows up at once; if a tool does
+  not answer, the last known state is shown instead of “signed out”.
+- **Every key in one place.** Each provider that only works with a key is listed in
+  Accounts with a link to its keys page and a field to paste it; it is tested on save.
+- **OpenRouter** listens for the callback on IPv6 too and, if the browser does not come
+  back to the app, you can paste the address it ended up on.
+
+**Security:** the `sprintf-js` alert (GHSA-hp3w-g68c-fv3c), pulled in by the packaging
+tools, is gone.
 
 ## What's new in 0.8
 
@@ -229,12 +277,12 @@ under **Assets**. Pick the line for your system:
 
 | Your system | Download | What it is |
 |---|---|---|
-| **Windows** 10 or 11 | `AI-Command-Center-Setup-0.8.0.exe` | Installer (recommended) |
-| | `AI-Command-Center-0.8.0-x64.zip` | Portable, nothing to install |
-| **macOS** with an Apple chip (M1, M2, M3, M4…) | `AI-Command-Center-0.8.0-mac-arm64.dmg` | Disk image |
-| **macOS** with an Intel processor | `AI-Command-Center-0.8.0-mac-x64.dmg` | Disk image |
-| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.8.0-linux-amd64.deb` | Package, installed with `apt` |
-| **Any other Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.8.0-linux-x86_64.AppImage` | Single file, nothing to install |
+| **Windows** 10 or 11 | `AI-Command-Center-Setup-0.9.0.exe` | Installer (recommended) |
+| | `AI-Command-Center-0.9.0-x64.zip` | Portable, nothing to install |
+| **macOS** with an Apple chip (M1, M2, M3, M4…) | `AI-Command-Center-0.9.0-mac-arm64.dmg` | Disk image |
+| **macOS** with an Intel processor | `AI-Command-Center-0.9.0-mac-x64.dmg` | Disk image |
+| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.9.0-linux-amd64.deb` | Package, installed with `apt` |
+| **Any other Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.9.0-linux-x86_64.AppImage` | Single file, nothing to install |
 | Linux on **ARM** (Raspberry Pi 5, Ampere…) | `…-linux-arm64.deb` or `…-linux-arm64.AppImage` | Same as above, for ARM64 |
 
 > **Not sure which Mac you have?** Apple menu → **About This Mac**. If it says *Chip Apple
@@ -278,7 +326,7 @@ application works exactly the same. Nothing breaks because something is missing.
 
 #### Option A — Installer (recommended)
 
-1. Download `AI-Command-Center-Setup-0.8.0.exe`.
+1. Download `AI-Command-Center-Setup-0.9.0.exe`.
 2. Double-click it. **Windows will show you a blue warning**; that is expected and is
    explained [below](#windows-will-warn-you-why-and-what-to-do): click **More info**, then
    **Run anyway**.
@@ -292,7 +340,7 @@ It never asks for administrator rights and touches nothing outside your user pro
 Useful if you would rather not install anything, if you want to carry it on a USB stick,
 or if the installer is being blocked for you.
 
-1. Download `AI-Command-Center-0.8.0-x64.zip`.
+1. Download `AI-Command-Center-0.9.0-x64.zip`.
 2. **Before extracting**, right-click the `.zip`, open **Properties**, tick **Unblock** at
    the bottom and click **OK**.
 
@@ -384,7 +432,7 @@ Things that are specific to the Mac, and already taken care of:
 From the folder where you downloaded it:
 
 ```bash
-sudo apt install ./AI-Command-Center-0.8.0-linux-amd64.deb
+sudo apt install ./AI-Command-Center-0.9.0-linux-amd64.deb
 ```
 
 (The `./` matters: without it `apt` looks for a package with that name online.) It shows
@@ -395,11 +443,11 @@ the AppArmor profile Ubuntu 24.04 and later require.
 #### Option B — AppImage (any distribution)
 
 ```bash
-chmod +x AI-Command-Center-0.8.0-linux-x86_64.AppImage
+chmod +x AI-Command-Center-0.9.0-linux-x86_64.AppImage
 ```
 
 ```bash
-./AI-Command-Center-0.8.0-linux-x86_64.AppImage
+./AI-Command-Center-0.9.0-linux-x86_64.AppImage
 ```
 
 Or give it execute permission from your file manager (*Properties → Permissions → Allow
@@ -483,8 +531,8 @@ downloaded it:
 
 | System | Command |
 |---|---|
-| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.8.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.8.0-mac-arm64.dmg` |
+| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.9.0.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.9.0-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 The value must match, character for character, the matching line in `SHA256SUMS.txt` (on
@@ -915,7 +963,7 @@ Releasing is pushing a tag. Before that, bump the version in `package.json` and 
 `plugin-scanner` workflow fails:
 
 ```bash
-git tag v0.8.0 && git push origin v0.8.0
+git tag v0.9.0 && git push origin v0.9.0
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) builds, on clean GitHub

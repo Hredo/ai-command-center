@@ -33,7 +33,7 @@ export interface TaskProfile {
   /** Tokens estimados de entrada y salida, contando las vueltas de un agente. */
   inTokens: number
   outTokens: number
-  source: 'rules' | 'local' | 'manual'
+  source: 'rules' | 'local' | 'manual' | 'laya'
   /** El modelo local que la clasificó. */
   classifier?: string
 }

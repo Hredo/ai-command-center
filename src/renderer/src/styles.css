@@ -585,3 +585,33 @@ h1,
   flex-wrap: wrap;
   row-gap: calc(var(--spacing) * 2);
 }
+
+/* ------------------------------------------------------------------ *
+ * Panel organizable                                                  *
+ * ------------------------------------------------------------------ */
+
+/* El contenido de cada recuadro ocupa su celda entera: en una fila, todos
+   igual de altos; con alto elegido, lo que no quepa se desplaza dentro. */
+.dash-tile > :first-child {
+  height: 100%;
+}
+.dash-tile[data-fixed] > :first-child {
+  overflow: auto;
+}
+.dash-drop-before::before,
+.dash-drop-after::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-accent);
+  z-index: 30;
+}
+.dash-drop-before::before {
+  left: -8px;
+}
+.dash-drop-after::after {
+  right: -8px;
+}
