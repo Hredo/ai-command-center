@@ -3,3 +3,9 @@ allowBuilds:
   electron: true
   esbuild: true
   electron-winstaller: false
+
+# global-agent 3 arrastra roarr → sprintf-js ≤ 1.1.3 (GHSA-hp3w-g68c-fv3c, sin
+# parche). La 4 ya no depende de roarr y mantiene bootstrap(), que es lo único
+# que usa @electron/get (y sólo con un proxy configurado).
+overrides:
+  global-agent: ^4.1.3
