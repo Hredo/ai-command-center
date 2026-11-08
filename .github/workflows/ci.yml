@@ -44,8 +44,19 @@ jobs:
       # Electron 44 ya no se descarga al instalar, sino la primera vez que se
       # le pide la ruta, y entonces lo anuncia por la salida estándar. Se
       # descarga aquí aparte para que la autoprueba reciba sólo la ruta.
+      # GitHub devuelve un 504 de vez en cuando al bajar el binario (rompió el
+      # CI de main el 8-11-2026 sin que el código tuviera nada que ver), así
+      # que se reintenta con espera creciente antes de dar el paso por fallido.
       - name: Descargar Electron
-        run: node node_modules/electron/install.js
+        shell: bash
+        run: |
+          for intento in 1 2 3 4 5 6; do
+            node node_modules/electron/install.js && exit 0
+            [ "$intento" = 6 ] && break
+            echo "Descarga fallida (intento $intento de 6); reintento en $((intento * 30)) s"
+            sleep $((intento * 30))
+          done
+          exit 1
       - run: pnpm exec tsc --noEmit -p tsconfig.node.json
       - run: pnpm exec tsc --noEmit -p tsconfig.web.json
       - run: node scripts/check-native.cjs
