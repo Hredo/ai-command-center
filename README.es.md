@@ -157,6 +157,11 @@ el histórico vive en ficheros tuyos. No hay servidor, ni cuenta que crear, ni t
 **Seguridad:** fuera la alerta de `sprintf-js` (GHSA-hp3w-g68c-fv3c), que entraba por las
 herramientas de empaquetado.
 
+**La 0.9.1** es de mantenimiento, sin funciones nuevas: Electron 44.9.3, Vite 8.3.5 y SDK de
+MCP 1.32.2, versiones parcheadas de `hono`, `@hono/node-server`, `qs`, `minimatch` y `zod`
+(`pnpm audit` sale limpio), y la build de la Release reintenta la descarga de Electron
+cuando GitHub responde con un 504.
+
 ## Novedades de la 0.8
 
 La 0.8 es la versión grande: la app deja de ser sólo un sitio donde lanzar IAs y pasa a
@@ -279,12 +284,12 @@ en la sección **Assets**. Busca la línea de tu sistema:
 
 | Tu sistema | Descarga | Qué es |
 |---|---|---|
-| **Windows** 10 u 11 | `AI-Command-Center-Setup-0.9.0.exe` | Instalador (recomendado) |
-| | `AI-Command-Center-0.9.0-x64.zip` | Portátil, sin instalar nada |
-| **macOS** con chip de Apple (M1, M2, M3, M4…) | `AI-Command-Center-0.9.0-mac-arm64.dmg` | Imagen de disco |
-| **macOS** con procesador Intel | `AI-Command-Center-0.9.0-mac-x64.dmg` | Imagen de disco |
-| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.9.0-linux-amd64.deb` | Paquete, se instala con `apt` |
-| **Cualquier otro Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.9.0-linux-x86_64.AppImage` | Un solo archivo, sin instalar nada |
+| **Windows** 10 u 11 | `AI-Command-Center-Setup-0.9.1.exe` | Instalador (recomendado) |
+| | `AI-Command-Center-0.9.1-x64.zip` | Portátil, sin instalar nada |
+| **macOS** con chip de Apple (M1, M2, M3, M4…) | `AI-Command-Center-0.9.1-mac-arm64.dmg` | Imagen de disco |
+| **macOS** con procesador Intel | `AI-Command-Center-0.9.1-mac-x64.dmg` | Imagen de disco |
+| **Ubuntu, Debian, Linux Mint, Pop!_OS**… | `AI-Command-Center-0.9.1-linux-amd64.deb` | Paquete, se instala con `apt` |
+| **Cualquier otro Linux** (Fedora, Arch, openSUSE…) | `AI-Command-Center-0.9.1-linux-x86_64.AppImage` | Un solo archivo, sin instalar nada |
 | Linux en **ARM** (Raspberry Pi 5, Ampere…) | `…-linux-arm64.deb` o `…-linux-arm64.AppImage` | Lo mismo, para ARM64 |
 
 > **¿No sabes qué Mac tienes?** Menú Apple → **Acerca de este Mac**. Si pone *Chip Apple
@@ -329,7 +334,7 @@ aplicación funciona igual. No hay nada que se rompa por faltar.
 
 #### Opción A — Instalador (recomendado)
 
-1. Descarga `AI-Command-Center-Setup-0.9.0.exe`.
+1. Descarga `AI-Command-Center-Setup-0.9.1.exe`.
 2. Ejecútalo con doble clic. **Windows va a mostrarte un aviso azul**; es normal y está
    explicado [aquí abajo](#windows-te-va-a-avisar-por-qué-y-qué-hacer): pulsa **Más
    información** y después **Ejecutar de todas formas**.
@@ -343,7 +348,7 @@ No pide permisos de administrador y no toca nada fuera de tu perfil de usuario.
 Útil si no quieres instalar nada, si vas a llevártela en un USB, o si el instalador se te
 queda bloqueado.
 
-1. Descarga `AI-Command-Center-0.9.0-x64.zip`.
+1. Descarga `AI-Command-Center-0.9.1-x64.zip`.
 2. **Antes de descomprimir**, haz clic derecho sobre el `.zip`, entra en **Propiedades**,
    marca **Desbloquear** abajo del todo y pulsa **Aceptar**.
 
@@ -436,7 +441,7 @@ Cosas propias del Mac que ya están resueltas:
 Desde la carpeta donde lo hayas descargado:
 
 ```bash
-sudo apt install ./AI-Command-Center-0.9.0-linux-amd64.deb
+sudo apt install ./AI-Command-Center-0.9.1-linux-amd64.deb
 ```
 
 (El `./` importa: sin él, `apt` busca en internet un paquete con ese nombre.) Aparece en
@@ -447,11 +452,11 @@ incluido el perfil de AppArmor que piden Ubuntu 24.04 y posteriores.
 #### Opción B — AppImage (cualquier distribución)
 
 ```bash
-chmod +x AI-Command-Center-0.9.0-linux-x86_64.AppImage
+chmod +x AI-Command-Center-0.9.1-linux-x86_64.AppImage
 ```
 
 ```bash
-./AI-Command-Center-0.9.0-linux-x86_64.AppImage
+./AI-Command-Center-0.9.1-linux-x86_64.AppImage
 ```
 
 O dale permiso de ejecución desde el gestor de archivos (*Propiedades → Permisos →
@@ -535,8 +540,8 @@ lo descargaste:
 
 | Sistema | Orden |
 |---|---|
-| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.9.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.9.0-mac-arm64.dmg` |
+| Windows (PowerShell) | `Get-FileHash '.\AI-Command-Center-Setup-0.9.1.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.9.1-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 El valor tiene que coincidir, letra por letra, con la línea correspondiente de
@@ -973,7 +978,7 @@ Publicar es empujar una etiqueta. Antes hay que subir la versión en `package.js
 workflow `plugin-scanner`:
 
 ```bash
-git tag v0.9.0 && git push origin v0.9.0
+git tag v0.9.1 && git push origin v0.9.1
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) genera, en máquinas
