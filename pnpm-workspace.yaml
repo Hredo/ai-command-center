@@ -11,3 +11,9 @@ overrides:
   global-agent: ^4.1.3
   # El SDK de MCP admite ^4.0 pero pnpm se queda en 4.6.5 (GHSA-mrhx-c7xc-m3w5).
   zod: ^4.6.7
+  # Dependabot (nov 2026): todas vienen del SDK de MCP o de electron-builder,
+  # sólo en desarrollo. Se fuerzan las versiones parcheadas.
+  "hono@<4.13.16": ^4.13.16
+  "@hono/node-server@>=2.0.0 <2.1.6": ^2.1.6
+  "qs@>=6.7.0 <6.16.1": ^6.16.1
+  "minimatch@>=7.0.0 <11.0.1": ^11.0.1
