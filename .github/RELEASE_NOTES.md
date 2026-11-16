@@ -18,6 +18,16 @@ Cada paquete se instaló y se probó en GitHub Actions antes de publicarse · *E
 
 ---
 
+## 🔧 Novedades en 0.9.1 · What's new in 0.9.1
+
+| Español | English |
+|---|---|
+| **Mantenimiento, sin funciones nuevas.** Electron 44.9.3, Vite 8.3.5 y SDK de MCP 1.32.2. | **Maintenance, no new features.** Electron 44.9.3, Vite 8.3.5 and MCP SDK 1.32.2. |
+| **Seguridad.** Versiones parcheadas de `hono`, `@hono/node-server`, `qs`, `minimatch` y `zod`; `pnpm audit` sin avisos. | **Security.** Patched `hono`, `@hono/node-server`, `qs`, `minimatch` and `zod`; `pnpm audit` is clean. |
+| **Build más robusta.** La descarga de Electron se reintenta si GitHub responde con un 504. | **Sturdier build.** The Electron download is retried when GitHub answers with a 504. |
+
+---
+
 ## ✨ Novedades en 0.9.0 · What's new in 0.9.0
 
 | Español | English |
@@ -124,8 +134,8 @@ instala el perfil de AppArmor que lo permite.
 
 | Sistema | Orden |
 |---|---|
-| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.9.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.9.0-mac-arm64.dmg` |
+| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.9.1.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.9.1-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 Tiene que coincidir con la línea correspondiente de `SHA256SUMS.txt`. Si no coincide, no
@@ -184,8 +194,8 @@ the `.deb`: the AppImage starts there without Chromium's isolation, because only
 
 | System | Command |
 |---|---|
-| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.9.0.exe' -Algorithm SHA256` |
-| macOS | `shasum -a 256 AI-Command-Center-0.9.0-mac-arm64.dmg` |
+| Windows | `Get-FileHash '.\AI-Command-Center-Setup-0.9.1.exe' -Algorithm SHA256` |
+| macOS | `shasum -a 256 AI-Command-Center-0.9.1-mac-arm64.dmg` |
 | Linux | `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 It must match the corresponding line in `SHA256SUMS.txt`. If it doesn't, don't run it.
